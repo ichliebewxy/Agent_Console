@@ -1,0 +1,99 @@
+﻿.trace-panel {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in oklch, var(--surface-raised) 72%, transparent);
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.trace-panel summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--blue);
+}
+
+.trace-grid {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 8px 14px;
+}
+
+.trace-grid b {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.sources {
+  margin-top: 12px;
+}
+
+.sources h4 {
+  margin: 0 0 8px;
+  color: var(--ink);
+}
+
+.source-row {
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+
+.source-row div {
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  color: var(--muted);
+}
+
+.source-row p {
+  margin: 6px 0 0;
+  color: var(--ink);
+}
+
+.composer {
+  margin: 0 28px 24px;
+  flex: 0 0 auto;
+  padding: 10px;
+  min-height: 62px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  display: grid;
+  grid-template-columns: 42px 1fr 42px;
+  gap: 10px;
+  align-items: end;
+}
+
+.composer button {
+  width: 42px;
+  height: 42px;
+  border: 0;
+  border-radius: var(--radius);
+  background: var(--surface-soft);
+  color: var(--green-dark);
+}
+
+.composer button:last-child {
+  background: var(--green);
+  color: oklch(99% 0.006 154);
+}
+
+.composer button.stop {
+  background: var(--coral);
+  color: oklch(99% 0.006 34);
+}
+
+.composer textarea {
+  width: 100%;
+  max-height: 180px;
+  min-height: 42px;
+  resize: none;
+  border: 0;
+  outline: 0;
+  padding: 10px 0;
+  background: transparent;
+  color: var(--ink);
+}
+

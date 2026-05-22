@@ -1,0 +1,211 @@
+﻿:root {
+  --bg: oklch(96% 0.014 142);
+  --surface: oklch(99% 0.006 142);
+  --surface-soft: oklch(97.5% 0.011 142);
+  --surface-raised: oklch(100% 0.004 142);
+  --ink: oklch(22% 0.025 148);
+  --muted: oklch(49% 0.027 148);
+  --line: oklch(89% 0.018 142);
+  --line-strong: oklch(80% 0.026 142);
+  --green: oklch(48% 0.105 154);
+  --green-dark: oklch(38% 0.092 154);
+  --blue: oklch(49% 0.105 230);
+  --coral: oklch(53% 0.135 34);
+  --amber: oklch(55% 0.12 72);
+  --success-bg: oklch(93% 0.035 151);
+  --danger-bg: oklch(95% 0.034 35);
+  --warning-bg: oklch(95% 0.04 78);
+  --info-bg: oklch(94% 0.028 229);
+  --shadow: 0 16px 40px color-mix(in oklch, var(--ink) 12%, transparent);
+  --radius: 8px;
+  --space-xs: 8px;
+  --space-sm: 12px;
+  --space-md: 16px;
+  --space-lg: 24px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", system-ui, sans-serif;
+  letter-spacing: 0;
+  font-size: 1rem;
+  font-kerning: normal;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+button:focus-visible,
+textarea:focus-visible,
+summary:focus-visible {
+  outline: 3px solid color-mix(in oklch, var(--green) 42%, transparent);
+  outline-offset: 2px;
+}
+
+.shell {
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 248px 1fr;
+}
+
+.rail {
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 22px 16px;
+  background: oklch(23% 0.032 148);
+  color: oklch(96% 0.014 142);
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 4px 12px;
+  border-bottom: 1px solid color-mix(in oklch, oklch(96% 0.014 142) 12%, transparent);
+}
+
+.brand-mark {
+  width: 42px;
+  height: 42px;
+  border-radius: var(--radius);
+  background: oklch(90% 0.055 138);
+  color: oklch(23% 0.032 148);
+  display: grid;
+  place-items: center;
+  font-weight: 800;
+}
+
+.brand h1,
+.brand p {
+  margin: 0;
+}
+
+.brand h1 {
+  font-size: 1.05rem;
+}
+
+.brand p {
+  color: color-mix(in oklch, oklch(96% 0.014 142) 68%, transparent);
+  font-size: 0.78rem;
+}
+
+.nav-list {
+  display: grid;
+  gap: 8px;
+}
+
+.nav-list button,
+.secondary-action,
+.danger-action,
+.primary-action,
+.item-actions button {
+  min-height: 40px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  transition: 0.16s ease;
+}
+
+.nav-list button {
+  width: 100%;
+  padding: 0 12px;
+  background: transparent;
+  color: color-mix(in oklch, oklch(96% 0.014 142) 78%, transparent);
+  justify-content: flex-start;
+}
+
+.nav-list button:hover,
+.nav-list button.active {
+  background: color-mix(in oklch, oklch(96% 0.014 142) 10%, transparent);
+  color: oklch(99% 0.006 142);
+}
+
+.nav-list i {
+  width: 18px;
+  text-align: center;
+}
+
+.nav-list strong {
+  margin-left: auto;
+  min-width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: var(--coral);
+  color: oklch(99% 0.006 34);
+  font-size: 0.75rem;
+}
+
+.rail-actions {
+  margin-top: auto;
+  display: grid;
+  gap: 10px;
+}
+
+.secondary-action,
+.danger-action {
+  width: 100%;
+  background: color-mix(in oklch, oklch(96% 0.014 142) 8%, transparent);
+  color: oklch(98% 0.008 142);
+  border-color: color-mix(in oklch, oklch(96% 0.014 142) 12%, transparent);
+}
+
+.danger-action {
+  color: oklch(88% 0.06 35);
+}
+
+.inline {
+  width: auto;
+  padding: 0 14px;
+  background: var(--surface);
+  color: var(--ink);
+  border-color: var(--line);
+}
+
+.primary-action {
+  padding: 0 16px;
+  background: var(--green);
+  color: oklch(99% 0.006 154);
+}
+
+.primary-action:hover,
+.composer button:last-child:hover {
+  background: var(--green-dark);
+}
+

@@ -1,0 +1,56 @@
+﻿@media (max-width: 900px) {
+  .shell {
+    grid-template-columns: 72px 1fr;
+  }
+
+  .rail {
+    padding: 14px 10px;
+  }
+
+  .brand {
+    justify-content: center;
+  }
+
+  .brand > div:not(.brand-mark),
+  .nav-list span,
+  .rail-actions span {
+    display: none;
+  }
+
+  .nav-list button,
+  .secondary-action,
+  .danger-action {
+    justify-content: center;
+  }
+
+  .topbar {
+    padding: 14px 16px;
+  }
+
+  .session-pill {
+    display: none;
+  }
+
+  .review-indicator,
+  .failure-indicator {
+    display: none;
+  }
+
+  .message {
+    width: 100%;
+  }
+
+  .chat-stream,
+  .panel-view {
+    padding: 18px 16px;
+  }
+
+  .composer {
+    margin: 0 16px 16px;
+  }
+
+  .table-row {
+    grid-template-columns: minmax(140px, 1fr) 80px 58px 50px;
+    padding: 0 10px;
+  }
+}

@@ -1,0 +1,77 @@
+﻿.workspace {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: 76px 1fr;
+  background: var(--surface-soft);
+}
+
+.topbar {
+  padding: 16px 28px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in oklch, var(--surface-raised) 88%, transparent);
+  backdrop-filter: blur(12px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.topbar h2,
+.topbar p {
+  margin: 0;
+}
+
+.topbar h2 {
+  font-size: 1.12rem;
+}
+
+.eyebrow {
+  color: var(--green);
+  text-transform: uppercase;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.topbar-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.status-pill,
+.session-pill {
+  min-height: 32px;
+  max-width: 280px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface-raised);
+  color: var(--muted);
+  font-size: 0.82rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.status-pill i {
+  color: var(--green);
+  font-size: 0.54rem;
+}
+
+.review-indicator i {
+  color: var(--blue);
+}
+
+.failure-indicator i {
+  color: var(--amber);
+}
+

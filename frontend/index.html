@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NebulaNest Agent Console</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/github.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+</head>
+<body>
+  <div id="app" class="shell">
+    <aside class="rail">
+      <div class="brand">
+        <div class="brand-mark">NN</div>
+        <div>
+          <h1>NebulaNest</h1>
+          <p>Agent Console</p>
+        </div>
+      </div>
+
+      <nav class="nav-list" aria-label="主导航">
+        <button :class="{active: activeView === 'chat'}" @click="switchView('chat')" title="对话" aria-label="打开对话">
+          <i class="fas fa-comments"></i><span>对话</span>
+        </button>
+        <button :class="{active: activeView === 'knowledge'}" @click="switchView('knowledge')" title="知识库" aria-label="打开知识库">
+          <i class="fas fa-folder-tree"></i><span>知识库</span>
+        </button>
+        <button :class="{active: activeView === 'reviews'}" @click="switchView('reviews')" title="人工审核" aria-label="打开人工审核">
+          <i class="fas fa-user-check"></i><span>人工审核</span>
+          <strong v-if="pendingReviewCount">{{ pendingReviewCount }}</strong>
+        </button>
+        <button :class="{active: activeView === 'ops'}" @click="switchView('ops')" title="运行回调" aria-label="打开运行回调">
+          <i class="fas fa-triangle-exclamation"></i><span>运行回调</span>
+          <strong v-if="openFailureCount">{{ openFailureCount }}</strong>
+        </button>
+        <button :class="{active: showHistorySidebar}" @click="handleHistory" title="历史" aria-label="打开历史会话">
+          <i class="fas fa-clock-rotate-left"></i><span>历史</span>
+        </button>
+      </nav>
+
+      <div class="rail-actions">
+        <button class="secondary-action" @click="handleNewChat">
+          <i class="fas fa-plus"></i><span>新会话</span>
+        </button>
+        <button class="danger-action" @click="handleClearChat">
+          <i class="fas fa-trash"></i><span>清空当前</span>
+        </button>
+      </div>
+    </aside>
+
+    <main class="workspace">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">{{ viewTitle.eyebrow }}</p>
+          <h2>{{ viewTitle.title }}</h2>
+        </div>
+        <div class="topbar-status">
+          <span class="status-pill"><i class="fas fa-circle"></i> SSE 在线</span>
+          <span class="status-pill review-indicator"><i class="fas fa-user-check"></i>{{ pendingReviewCount }} 待审</span>
+          <span class="status-pill failure-indicator"><i class="fas fa-triangle-exclamation"></i>{{ openFailureCount }} 回调</span>
+          <span class="session-pill" :title="sessionId">{{ sessionId }}</span>
+        </div>
+      </header>
+
+      <section v-show="activeView === 'chat'" class="chat-layout">
+        <div class="chat-stream" ref="chatContainer" :aria-busy="isLoading">
+          <div v-if="messages.length === 0" class="empty-state">
+            <i class="fas fa-compass"></i>
+            <h3>从一个问题开始</h3>
+            <p>支持流式回答、RAG 过程追踪、人工审核提交和会话状态恢复。</p>
+            <div class="empty-actions">
+              <button @click="switchView('knowledge')" type="button">检查知识库</button>
+              <button @click="switchView('reviews')" type="button">查看审核队列</button>
+            </div>
+          </div>
+
+          <article v-for="(msg, index) in messages" :key="msg.id || index" :class="['message', msg.isUser ? 'from-user' : 'from-agent']">
+            <div class="message-role">
+              <span>{{ msg.isUser ? 'User' : 'Agent' }}</span>
+              <button v-if="!msg.isUser && msg.text" @click="submitForReview(msg, index)" title="提交人工审核" aria-label="提交人工审核">
+                <i class="fas fa-user-check"></i>
+              </button>
+            </div>
+
+            <div v-if="!msg.isUser && msg.isThinking && !msg.text" class="message-bubble thinking">
+              <div class="thinking-line">
+                <span class="loader"></span>
+                <strong>{{ activeThinkingLabel(msg) }}</strong>
+              </div>
+              <div v-if="msg.ragSteps && msg.ragSteps.length" class="trace-steps">
+                <div v-for="(step, sIdx) in msg.ragSteps" :key="sIdx">
+                  <span>{{ step.icon || '•' }}</span>
+                  <b>{{ step.label }}</b>
+                  <small v-if="step.detail">{{ step.detail }}</small>
+                </div>
+              </div>
+            </div>
+
+            <div v-else class="message-bubble" v-html="msg.isUser ? escapeHtml(msg.text) : parseMarkdown(msg.text)"></div>
+
+            <details v-if="!msg.isUser && msg.ragTrace" class="trace-panel">
+              <summary>检索与调用轨迹</summary>
+              <div class="trace-grid">
+                <span>工具</span><b>{{ msg.ragTrace.tool_name || '未使用' }}</b>
+                <span>召回模式</span><b>{{ msg.ragTrace.retrieval_mode || '未知' }}</b>
+                <span>评分路由</span><b>{{ msg.ragTrace.grade_score || '-' }} / {{ msg.ragTrace.grade_route || '-' }}</b>
+                <span>RAGFlow</span><b>{{ msg.ragTrace.ragflow_applied ? '已参与召回' : (msg.ragTrace.ragflow_enabled ? '已启用未命中' : '未启用') }}</b>
+                <span v-if="msg.ragTrace.ragflow_error">RAGFlow 错误</span><b v-if="msg.ragTrace.ragflow_error">{{ msg.ragTrace.ragflow_error }}</b>
+              </div>
+              <div v-if="sourceChunks(msg).length" class="sources">
+                <h4>引用片段</h4>
+                <div v-for="(chunk, cIdx) in sourceChunks(msg)" :key="cIdx" class="source-row">
+                  <div>
+                    <strong>{{ chunk.filename || 'Unknown' }}</strong>
+                    <span>{{ formatSourceMeta(chunk) }}</span>
+                  </div>
+                  <p>{{ chunk.text }}</p>
+                </div>
+              </div>
+            </details>
+          </article>
+        </div>
+
+        <form class="composer" @submit.prevent="handleSend">
+          <button type="button" title="知识库" aria-label="打开知识库" @click="switchView('knowledge')"><i class="fas fa-paperclip"></i></button>
+          <textarea
+            v-model="userInput"
+            ref="textarea"
+            rows="1"
+            aria-label="消息输入"
+            placeholder="输入消息，Enter 发送，Shift + Enter 换行"
+            @keydown="handleKeyDown"
+            @compositionstart="isComposing = true"
+            @compositionend="isComposing = false"
+            @input="autoResize"
+          ></textarea>
+          <button v-if="isLoading" type="button" class="stop" title="终止" aria-label="终止回答" @click="handleStop"><i class="fas fa-stop"></i></button>
+          <button v-else type="submit" title="发送" aria-label="发送消息" :disabled="!userInput.trim()"><i class="fas fa-paper-plane"></i></button>
+        </form>
+      </section>
+
+      <section v-show="activeView === 'knowledge'" class="panel-view">
+        <div class="section-head">
+          <div>
+            <h3>文档管理</h3>
+            <p>本地 Milvus 仍是默认知识库；配置 RAGFLOW_* 后会额外接入 RAGFlow 召回。</p>
+          </div>
+          <button class="secondary-action inline" @click="loadDocuments"><i class="fas fa-rotate"></i>刷新</button>
+        </div>
+
+        <div class="upload-band">
+          <input ref="fileInput" type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.csv,.txt" @change="handleFileSelect" hidden>
+          <button class="primary-action" @click="$refs.fileInput.click()"><i class="fas fa-cloud-arrow-up"></i>选择文件</button>
+          <span v-if="selectedFile">{{ selectedFile.name }}</span>
+          <button v-if="selectedFile" class="secondary-action inline" :disabled="isUploading" @click="uploadDocument">
+            <i class="fas fa-upload"></i>{{ isUploading ? '处理中' : '入库' }}
+          </button>
+          <p v-if="uploadProgress">{{ uploadProgress }}</p>
+        </div>
+
+        <div class="table-list">
+          <div class="table-row head">
+            <span>文件</span><span>类型</span><span>片段</span><span>操作</span>
+          </div>
+          <div v-if="documentsLoading" class="skeleton-stack" aria-label="正在加载文档">
+            <span></span><span></span><span></span>
+          </div>
+          <div v-else-if="documents.length === 0" class="muted-row">暂无文档</div>
+          <div v-for="doc in documents" :key="doc.filename" class="table-row">
+            <span><i :class="getFileIcon(doc.file_type || doc.filename)"></i>{{ doc.filename }}</span>
+            <span>{{ doc.file_type || 'document' }}</span>
+            <span>{{ doc.chunk_count }}</span>
+            <span><button class="icon-danger" @click="deleteDocument(doc.filename)" title="删除"><i class="fas fa-trash"></i></button></span>
+          </div>
+        </div>
+      </section>
+
+      <section v-show="activeView === 'reviews'" class="panel-view">
+        <div class="section-head">
+          <div>
+            <h3>Human-in-the-loop 审核</h3>
+            <p>将回答提交到审核队列后，可批准、驳回或给出修订稿。</p>
+          </div>
+          <button class="secondary-action inline" @click="loadReviews"><i class="fas fa-rotate"></i>刷新</button>
+        </div>
+
+        <div class="review-list">
+          <article v-if="reviews.length === 0" class="muted-row">暂无审核项</article>
+          <article v-for="review in reviews" :key="review.id" class="review-item">
+            <header>
+              <span :class="['badge', review.status]">{{ reviewStatusLabel(review.status) }}</span>
+              <small>{{ new Date(review.updated_at).toLocaleString() }}</small>
+            </header>
+            <h4>{{ review.question || '未记录问题' }}</h4>
+            <p>{{ review.answer }}</p>
+            <textarea v-model="review.revised_answer" placeholder="可选：填写人工修订稿"></textarea>
+            <div class="item-actions">
+              <button @click="updateReview(review, 'approved')"><i class="fas fa-check"></i>批准</button>
+              <button @click="updateReview(review, 'needs_revision')"><i class="fas fa-pen"></i>需修订</button>
+              <button class="danger-lite" @click="updateReview(review, 'rejected')"><i class="fas fa-xmark"></i>驳回</button>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section v-show="activeView === 'ops'" class="panel-view">
+        <div class="section-head">
+          <div>
+            <h3>工具失败回调</h3>
+            <p>工具、RAGFlow 或本地检索失败会落盘，方便人工补偿、重试或关闭。</p>
+          </div>
+          <button class="secondary-action inline" @click="loadFailures"><i class="fas fa-rotate"></i>刷新</button>
+        </div>
+
+        <div class="review-list">
+          <article v-if="activeFailures.length === 0" class="muted-row">暂无待处理失败记录</article>
+          <article v-for="failure in activeFailures" :key="failure.id" class="review-item">
+            <header>
+              <span :class="['badge', failure.status]">{{ failureStatusLabel(failure.status) }}</span>
+              <small>
+                <span v-if="failure.occurrence_count && failure.occurrence_count > 1">重复 {{ failure.occurrence_count }} 次 · </span>
+                {{ new Date(failure.updated_at).toLocaleString() }}
+              </small>
+            </header>
+            <h4>{{ failure.tool_name }}</h4>
+            <p>{{ failure.error }}</p>
+            <p v-if="failure.fallback" class="muted-text">降级策略：{{ failure.fallback }}</p>
+            <p v-if="failure.callback_note" class="muted-text">回调备注：{{ failure.callback_note }}</p>
+            <textarea v-model="failure.callback_note" placeholder="记录回调结果或补偿动作"></textarea>
+            <div class="item-actions">
+              <button @click="updateFailure(failure, 'retry_requested')"><i class="fas fa-rotate-right"></i>请求重试</button>
+              <button @click="updateFailure(failure, 'resolved')"><i class="fas fa-check"></i>已处理</button>
+              <button class="danger-lite" @click="updateFailure(failure, 'ignored')"><i class="fas fa-ban"></i>忽略</button>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <aside v-if="showHistorySidebar" class="history-drawer">
+        <header>
+          <h3>历史会话</h3>
+          <button @click="showHistorySidebar = false" title="关闭"><i class="fas fa-xmark"></i></button>
+        </header>
+        <div class="history-list">
+          <div v-if="sessions.length === 0" class="muted-row">暂无历史记录</div>
+          <button v-for="session in sessions" :key="session.session_id" :class="['history-row', {active: session.session_id === sessionId}]" @click="loadSession(session.session_id)">
+            <span>{{ session.session_id }}</span>
+            <small>{{ session.message_count }} 条 · {{ new Date(session.updated_at).toLocaleString() }}</small>
+          </button>
+        </div>
+      </aside>
+    </main>
+
+    <div v-if="toast" class="toast" role="status" aria-live="polite">{{ toast }}</div>
+  </div>
+
+  <script src="js/app-core.js"></script>
+  <script src="js/chat.js"></script>
+  <script src="js/knowledge.js"></script>
+  <script src="js/reviews-ops.js"></script>
+  <script src="js/formatters.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

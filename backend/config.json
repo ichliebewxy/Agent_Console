@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "map": {
+      "url": "https://dashscope.aliyuncs.com/api/v1/mcps/amap-maps/mcp",
+      "type": "streamableHttp"
+    }
+  }
+}
