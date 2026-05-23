@@ -8,7 +8,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, mess
 
 logger = logging.getLogger(__name__)
 
-
+#这是测试
 def _display_content(content) -> str:
     if isinstance(content, str):
         return content
