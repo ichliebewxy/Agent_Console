@@ -53,15 +53,13 @@
   background: var(--surface-soft);
 }
 
-.empty-state i {
-  width: 54px;
-  height: 54px;
-  display: inline-grid;
-  place-items: center;
-  border-radius: var(--radius);
-  background: #e6efe7;
-  color: var(--green);
-  font-size: 1.5rem;
+.empty-state-icon {
+  width: 72px;
+  height: 72px;
+  display: inline-block;
+  border-radius: 18px;
+  object-fit: cover;
+  box-shadow: 0 8px 22px rgba(34, 44, 38, 0.12);
 }
 
 .empty-state h3 {

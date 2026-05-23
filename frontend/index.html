@@ -15,7 +15,7 @@
   <div id="app" class="shell">
     <aside class="rail">
       <div class="brand">
-        <div class="brand-mark">NN</div>
+        <div class="brand-mark">二狗</div>
         <div>
           <h1>NebulaNest</h1>
           <p>Agent Console</p>
@@ -69,7 +69,7 @@
       <section v-show="activeView === 'chat'" class="chat-layout">
         <div class="chat-stream" ref="chatContainer" :aria-busy="isLoading">
           <div v-if="messages.length === 0" class="empty-state">
-            <i class="fas fa-compass"></i>
+            <img class="empty-state-icon" src="assets/chat-empty-icon.png" alt="" aria-hidden="true">
             <h3>从一个问题开始</h3>
             <p>支持流式回答、RAG 过程追踪、人工审核提交和会话状态恢复。</p>
             <div class="empty-actions">
