@@ -4,7 +4,6 @@ from typing import Any, Dict
 from embedding import EmbeddingService
 from milvus_client import MilvusManager
 from ops_store import record_tool_failure
-from query_expansion import generate_hypothetical_document, step_back_expand
 from ragflow_client import retrieve_from_ragflow
 from retrieval_steps import auto_merge_documents, dedupe_retrieved_docs, get_rerank_endpoint, rerank_documents
 from settings import AUTO_MERGE_ENABLED, AUTO_MERGE_THRESHOLD, LEAF_RETRIEVE_LEVEL, RERANK_API_KEY, RERANK_BINDING_HOST, RERANK_MODEL

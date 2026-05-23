@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List, Any, Dict
 
 
@@ -104,6 +104,9 @@ class DocumentUploadResponse(BaseModel):
     filename: str
     chunks_processed: int
     message: str
+    status: Optional[str] = None
+    doc_id: Optional[str] = None
+    sha256: Optional[str] = None
 
 
 class DocumentDeleteResponse(BaseModel):
@@ -157,7 +160,7 @@ class ToolFailureInfo(BaseModel):
     status: str
     tool_name: str
     error: str
-    payload: Dict[str, Any] = {}
+    payload: Dict[str, Any] = Field(default_factory=dict)
     fallback: Optional[str] = ""
     callback_note: Optional[str] = ""
     occurrence_count: Optional[int] = 1

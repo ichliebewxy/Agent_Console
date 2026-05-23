@@ -1,5 +1,6 @@
 from typing import Optional
 import asyncio
+import logging
 
 import requests
 
@@ -11,6 +12,7 @@ except ImportError:
 from ops_store import record_tool_failure
 from settings import AMAP_API_KEY, AMAP_WEATHER_API
 
+logger = logging.getLogger(__name__)
 _LAST_RAG_CONTEXT = None
 _KNOWLEDGE_TOOL_CALLS_THIS_TURN = 0
 _RAG_STEP_QUEUE = None
@@ -55,8 +57,8 @@ def emit_rag_step(icon: str, label: str, detail: str = ""):
     try:
         if not _RAG_STEP_LOOP.is_closed():
             _RAG_STEP_LOOP.call_soon_threadsafe(_RAG_STEP_QUEUE.put_nowait, step)
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.debug("Failed to emit RAG step: %s", exc)
 
 
 @tool
