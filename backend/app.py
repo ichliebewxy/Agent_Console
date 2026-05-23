@@ -1,14 +1,20 @@
+import os
+import sys
+from contextlib import asynccontextmanager
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from pathlib import Path
-import os
-from contextlib import asynccontextmanager
+
+BACKEND_DIR = Path(__file__).resolve().parent
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
 
 import api as api_module
 from agent import init_agent_async
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+BASE_DIR = BACKEND_DIR.parent
 FRONTEND_DIR = BASE_DIR / "frontend"
 
 # 1. 在这里定义 lifespan 上下文管理器
@@ -27,7 +33,7 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     # 2. 将 lifespan 传入原有的 FastAPI 初始化逻辑中
-    app = FastAPI(title="Cute Cat Bot API", lifespan=lifespan)
+    app = FastAPI(title="NebulaNest Agent Console API", lifespan=lifespan)
 
     app.add_middleware(
         CORSMiddleware,
@@ -63,5 +69,6 @@ app = create_app()
 if __name__ == "__main__":
     import uvicorn
     # 4. 直接运行这个 app 即可，不要再重新实例化 FastAPI
-    uvicorn.run("app:app", host=os.getenv("HOST", "0.0.0.0"), port=int(os.getenv("PORT", 8080)), reload=False) 
+    app_ref = "backend.app:app" if __package__ else "app:app"
+    uvicorn.run(app_ref, host=os.getenv("HOST", "127.0.0.1"), port=int(os.getenv("PORT", 8000)), reload=False)
     # 注意：建议使用字符串形式 "app:app" 启动 uvicorn，这是生产环境和正确触发 lifespan 的推荐方式

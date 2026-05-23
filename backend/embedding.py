@@ -60,7 +60,8 @@ class EmbeddingService:
                 response = requests.post(
                     f"{self.base_url}/embeddings", 
                     headers=headers, 
-                    json=data
+                    json=data,
+                    timeout=30,
                 )
                 
                 # 如果不是 200，抛出包含 API 真实返回信息的错误

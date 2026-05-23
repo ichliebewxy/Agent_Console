@@ -1,9 +1,26 @@
 """Persistent chat session storage."""
 import json
+import logging
 import os
 from datetime import datetime
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, message_to_dict, messages_from_dict
+
+logger = logging.getLogger(__name__)
+
+
+def _display_content(content) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+            elif isinstance(item, dict):
+                parts.append(str(item.get("text") or item.get("content") or ""))
+        return "".join(parts)
+    return str(content)
 
 
 class ConversationStorage:
@@ -22,8 +39,10 @@ class ConversationStorage:
         serialized = []
         for idx, msg in enumerate(messages):
             record = {
+                "schema_version": 2,
                 "type": msg.type,
-                "content": msg.content,
+                "content": _display_content(msg.content),
+                "message": message_to_dict(msg),
                 "timestamp": datetime.now().isoformat(),
             }
             if extra_message_data and idx < len(extra_message_data):
@@ -46,6 +65,13 @@ class ConversationStorage:
             return []
         messages = []
         for item in data[user_id][session_id].get("messages", []):
+            if item.get("message"):
+                try:
+                    messages.extend(messages_from_dict([item["message"]]))
+                    continue
+                except Exception as exc:
+                    logger.warning("Failed to deserialize stored chat message, falling back to legacy format: %s", exc)
+
             if item.get("type") == "human":
                 messages.append(HumanMessage(content=item.get("content", "")))
             elif item.get("type") == "ai":
