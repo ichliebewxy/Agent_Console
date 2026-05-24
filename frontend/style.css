@@ -1,7 +1,8 @@
-@import url("css/base.css");
-@import url("css/workspace.css");
-@import url("css/chat.css");
-@import url("css/trace-composer.css");
-@import url("css/panels.css");
-@import url("css/overlays.css");
-@import url("css/responsive.css");
+@import url("css/base.css?v=20260523-3");
+@import url("css/auth.css?v=20260523-3");
+@import url("css/workspace.css?v=20260523-3");
+@import url("css/chat.css?v=20260523-3");
+@import url("css/trace-composer.css?v=20260523-3");
+@import url("css/panels.css?v=20260523-3");
+@import url("css/overlays.css?v=20260523-3");
+@import url("css/responsive.css?v=20260523-3");

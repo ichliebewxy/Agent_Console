@@ -21,6 +21,10 @@ window.NebulaNestApp = {
       showHistorySidebar: false,
       isComposing: false,
       toast: "",
+      hasEntered: false,
+      showEntry: true,
+      entryLeaving: false,
+      entryTouchStartY: 0,
     };
   },
 
@@ -52,9 +56,6 @@ window.NebulaNestApp = {
     this.configureMarked();
     this.restoreIdentity();
     this.restoreState();
-    this.loadReviews();
-    this.loadFailures();
-    this.$nextTick(() => this.scrollToBottom());
   },
 
   methods: {
@@ -77,6 +78,39 @@ window.NebulaNestApp = {
       } else {
         localStorage.setItem("nebulanest-user-id", this.userId);
       }
+    },
+
+    enterWorkspace() {
+      if (this.entryLeaving) return;
+      this.hasEntered = true;
+      this.entryLeaving = true;
+      this.loadReviews();
+      this.loadFailures();
+      window.setTimeout(() => {
+        this.showEntry = false;
+        this.entryLeaving = false;
+        this.$nextTick(() => this.scrollToBottom());
+      }, 720);
+    },
+
+    returnToEntry() {
+      this.showHistorySidebar = false;
+      this.hasEntered = false;
+      this.showEntry = true;
+      this.entryLeaving = false;
+    },
+
+    handleEntryWheel(event) {
+      if (event.deltaY > 28) this.enterWorkspace();
+    },
+
+    handleEntryTouchStart(event) {
+      this.entryTouchStartY = event.changedTouches?.[0]?.clientY || 0;
+    },
+
+    handleEntryTouchEnd(event) {
+      const endY = event.changedTouches?.[0]?.clientY || 0;
+      if (this.entryTouchStartY - endY > 36) this.enterWorkspace();
     },
 
     restoreState() {

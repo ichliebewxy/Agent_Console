@@ -7,13 +7,18 @@
   overflow: hidden;
   display: grid;
   grid-template-rows: 76px 1fr;
-  background: var(--surface-soft);
+  background:
+    linear-gradient(135deg, color-mix(in oklch, var(--green) 7%, transparent), transparent 34%),
+    linear-gradient(45deg, transparent 54%, color-mix(in oklch, var(--blue) 6%, transparent)),
+    repeating-linear-gradient(90deg, color-mix(in oklch, var(--ink) 4%, transparent) 0 1px, transparent 1px 56px),
+    repeating-linear-gradient(0deg, color-mix(in oklch, var(--ink) 3%, transparent) 0 1px, transparent 1px 56px),
+    var(--surface-soft);
 }
 
 .topbar {
   padding: 16px 28px;
   border-bottom: 1px solid var(--line);
-  background: color-mix(in oklch, var(--surface-raised) 88%, transparent);
+  background: color-mix(in oklch, var(--surface-raised) 90%, transparent);
   backdrop-filter: blur(12px);
   display: flex;
   align-items: center;

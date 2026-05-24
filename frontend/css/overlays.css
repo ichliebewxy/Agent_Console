@@ -104,6 +104,21 @@
   border-radius: 999px;
 }
 
+.composer textarea {
+  overflow: hidden !important;
+  scrollbar-width: none !important;
+}
+
+.composer textarea::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+.composer textarea::-webkit-scrollbar-thumb {
+  background: transparent;
+}
+
 .skeleton-stack {
   padding: var(--space-md);
   display: grid;

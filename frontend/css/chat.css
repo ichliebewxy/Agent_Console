@@ -19,9 +19,15 @@
 
 .empty-state {
   max-width: 460px;
+  padding: 28px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in oklch, var(--surface-raised) 84%, transparent);
+  backdrop-filter: blur(10px);
   margin: auto;
   text-align: center;
   color: var(--muted);
+  box-shadow: 0 16px 44px color-mix(in oklch, var(--ink) 8%, transparent);
 }
 
 .empty-state p {
@@ -54,16 +60,21 @@
 }
 
 .empty-state-icon {
-  width: 72px;
-  height: 72px;
+  width: 96px;
+  height: 96px;
+  border: 1px solid color-mix(in oklch, var(--blue) 28%, var(--line));
+  border-radius: 24px;
   display: inline-block;
-  border-radius: 18px;
   object-fit: cover;
-  box-shadow: 0 8px 22px rgba(34, 44, 38, 0.12);
+  object-position: center;
+  background: var(--surface-soft);
+  box-shadow:
+    0 12px 30px rgba(34, 44, 38, 0.14),
+    0 0 0 8px color-mix(in oklch, var(--blue) 7%, transparent);
 }
 
 .empty-state h3 {
-  margin: 16px 0 8px;
+  margin: 8px 0;
   color: var(--ink);
 }
 
@@ -94,6 +105,16 @@
   justify-content: flex-end;
 }
 
+.agent-role-avatar {
+  width: 26px;
+  height: 26px;
+  border: 1px solid color-mix(in oklch, var(--blue) 22%, var(--line));
+  border-radius: 8px;
+  object-fit: cover;
+  object-position: center;
+  box-shadow: 0 4px 12px color-mix(in oklch, var(--ink) 10%, transparent);
+}
+
 .message-role button,
 .icon-danger,
 .history-drawer header button {
@@ -109,10 +130,11 @@
   padding: 14px 16px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  background: var(--surface);
+  background: color-mix(in oklch, var(--surface) 94%, transparent);
   line-height: 1.65;
   overflow-wrap: anywhere;
   box-shadow: 0 3px 16px rgba(34, 44, 38, 0.05);
+  backdrop-filter: blur(8px);
 }
 
 .from-user .message-bubble {

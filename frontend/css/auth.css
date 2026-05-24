@@ -1,0 +1,227 @@
+.entry-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 64% 24%, color-mix(in oklch, var(--blue) 46%, transparent), transparent 28%),
+    radial-gradient(circle at 20% 78%, color-mix(in oklch, var(--green) 34%, transparent), transparent 34%),
+    linear-gradient(135deg, oklch(14% 0.04 232), oklch(18% 0.05 178) 48%, oklch(11% 0.038 250));
+  color: oklch(96% 0.018 190);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 390px);
+  gap: clamp(24px, 5vw, 76px);
+  align-items: end;
+  padding: clamp(24px, 6vw, 78px);
+  transition: transform 0.72s cubic-bezier(0.74, 0, 0.2, 1), opacity 0.72s ease;
+}
+
+.entry-screen.leaving {
+  transform: translateY(-102%);
+  opacity: 0.42;
+}
+
+.entry-grid,
+.entry-scan,
+.entry-orbit,
+.entry-particles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.entry-grid {
+  background:
+    linear-gradient(color-mix(in oklch, white 7%, transparent) 1px, transparent 1px),
+    linear-gradient(90deg, color-mix(in oklch, white 7%, transparent) 1px, transparent 1px);
+  background-size: 72px 72px;
+  mask-image: radial-gradient(circle at 58% 46%, black, transparent 76%);
+}
+
+.entry-scan {
+  width: 42%;
+  background: linear-gradient(90deg, transparent, color-mix(in oklch, var(--blue) 24%, transparent), transparent);
+  animation: scan-drift 5.6s linear infinite;
+  opacity: 0.68;
+}
+
+.entry-orbit {
+  inset: 7% 12% 10% auto;
+  width: min(58vw, 720px);
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 1px solid color-mix(in oklch, white 13%, transparent);
+  animation: orbit-spin 18s linear infinite;
+}
+
+.entry-orbit::before,
+.entry-orbit::after,
+.entry-orbit span {
+  content: "";
+  position: absolute;
+  inset: 9%;
+  border: 1px solid color-mix(in oklch, var(--green) 16%, transparent);
+  border-radius: 50%;
+}
+
+.entry-orbit::after {
+  inset: 22%;
+  border-color: color-mix(in oklch, var(--blue) 20%, transparent);
+}
+
+.entry-orbit span {
+  width: 9px;
+  height: 9px;
+  inset: 17% auto auto 68%;
+  border: 0;
+  background: oklch(87% 0.1 186);
+  box-shadow: 0 0 24px color-mix(in oklch, var(--blue) 72%, transparent);
+}
+
+.entry-orbit span:nth-child(2) {
+  inset: 58% auto auto 18%;
+  background: oklch(86% 0.11 154);
+}
+
+.entry-orbit span:nth-child(3) {
+  inset: 76% auto auto 72%;
+  background: oklch(92% 0.08 74);
+}
+
+.entry-particles span {
+  position: absolute;
+  width: 2px;
+  height: 44px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, transparent, color-mix(in oklch, white 58%, transparent));
+  animation: particle-rise 4.6s linear infinite;
+  opacity: 0.55;
+}
+
+.entry-particles span:nth-child(1) { left: 12%; top: 82%; animation-delay: -1.1s; }
+.entry-particles span:nth-child(2) { left: 26%; top: 66%; animation-delay: -2.4s; }
+.entry-particles span:nth-child(3) { left: 39%; top: 76%; animation-delay: -0.6s; }
+.entry-particles span:nth-child(4) { left: 50%; top: 84%; animation-delay: -3.2s; }
+.entry-particles span:nth-child(5) { left: 64%; top: 70%; animation-delay: -1.8s; }
+.entry-particles span:nth-child(6) { left: 78%; top: 80%; animation-delay: -2.8s; }
+.entry-particles span:nth-child(7) { left: 88%; top: 58%; animation-delay: -0.3s; }
+.entry-particles span:nth-child(8) { left: 18%; top: 44%; animation-delay: -3.8s; }
+.entry-particles span:nth-child(9) { left: 72%; top: 36%; animation-delay: -1.5s; }
+.entry-particles span:nth-child(10) { left: 92%; top: 72%; animation-delay: -4.2s; }
+
+.entry-copy,
+.entry-hud,
+.entry-lift {
+  position: relative;
+  z-index: 1;
+}
+
+.entry-copy {
+  max-width: 760px;
+  align-self: center;
+}
+
+.entry-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.entry-brand span {
+  color: color-mix(in oklch, white 72%, transparent);
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.entry-copy h1 {
+  max-width: 850px;
+  margin: 10px 0 18px;
+  font-size: clamp(3.2rem, 8vw, 8rem);
+  line-height: 0.92;
+  letter-spacing: 0;
+}
+
+.entry-lead {
+  max-width: 58ch;
+  margin: 0;
+  color: color-mix(in oklch, white 70%, transparent);
+  font-size: 1.02rem;
+  line-height: 1.8;
+}
+
+.entry-hud {
+  align-self: center;
+  border: 1px solid color-mix(in oklch, white 18%, transparent);
+  border-radius: var(--radius);
+  background: color-mix(in oklch, oklch(12% 0.04 236) 72%, transparent);
+  backdrop-filter: blur(18px);
+  box-shadow: 0 26px 90px color-mix(in oklch, black 38%, transparent);
+  overflow: hidden;
+}
+
+.entry-hud div {
+  padding: 18px;
+  border-top: 1px solid color-mix(in oklch, white 12%, transparent);
+}
+
+.entry-hud div:first-child {
+  border-top: 0;
+}
+
+.entry-hud span {
+  color: color-mix(in oklch, white 56%, transparent);
+  font-size: 0.76rem;
+}
+
+.entry-hud strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 1.05rem;
+}
+
+.entry-lift {
+  position: absolute;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  min-width: 154px;
+  min-height: 48px;
+  border: 1px solid color-mix(in oklch, white 24%, transparent);
+  border-radius: 999px;
+  background: color-mix(in oklch, white 10%, transparent);
+  color: oklch(96% 0.018 190);
+  backdrop-filter: blur(16px);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  box-shadow: 0 14px 42px color-mix(in oklch, black 24%, transparent);
+  animation: lift-pulse 1.6s ease-in-out infinite;
+}
+
+.entry-lift:hover {
+  border-color: color-mix(in oklch, var(--blue) 54%, white 14%);
+  background: color-mix(in oklch, var(--blue) 22%, transparent);
+}
+
+@keyframes scan-drift {
+  from { transform: translateX(-55vw) skewX(-16deg); }
+  to { transform: translateX(122vw) skewX(-16deg); }
+}
+
+@keyframes orbit-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes particle-rise {
+  from { transform: translateY(60px); opacity: 0; }
+  20% { opacity: 0.58; }
+  to { transform: translateY(-180px); opacity: 0; }
+}
+
+@keyframes lift-pulse {
+  0%, 100% { transform: translateX(-50%) translateY(0); }
+  50% { transform: translateX(-50%) translateY(-7px); }
+}
