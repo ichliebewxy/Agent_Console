@@ -135,7 +135,7 @@
             <article v-for="(msg, index) in messages" :key="msg.id || index" :class="['message', msg.isUser ? 'from-user' : 'from-agent']">
               <div class="message-role">
                 <img v-if="!msg.isUser" class="agent-role-avatar" src="assets/ergou-avatar.png" alt="二狗">
-                <span>{{ msg.isUser ? 'User' : 'Agent' }}</span>
+                <span>{{ msg.isUser ? 'User' : '二狗' }}</span>
                 <button v-if="!msg.isUser && msg.text" @click="submitForReview(msg, index)" title="提交人工审核" aria-label="提交人工审核">
                   <i class="fas fa-user-check"></i>
                 </button>
