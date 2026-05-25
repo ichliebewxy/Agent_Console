@@ -53,19 +53,22 @@
   background: var(--surface-soft);
 }
 
-.empty-state i {
-  width: 54px;
-  height: 54px;
-  display: inline-grid;
-  place-items: center;
-  border-radius: var(--radius);
-  background: #e6efe7;
-  color: var(--green);
-  font-size: 1.5rem;
+.empty-mascot {
+  width: clamp(132px, 18vw, 220px);
+  aspect-ratio: 1;
+  display: block;
+  margin: 0 auto 22px;
+  border: 1px solid rgba(130, 218, 255, 0.25);
+  border-radius: 24px;
+  object-fit: cover;
+  box-shadow:
+    0 0 0 8px rgba(0, 243, 255, 0.04),
+    0 24px 52px rgba(0, 0, 0, 0.24),
+    0 0 48px rgba(0, 243, 255, 0.16);
 }
 
 .empty-state h3 {
-  margin: 16px 0 8px;
+  margin: 0 0 8px;
   color: var(--ink);
 }
 

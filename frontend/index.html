@@ -13,9 +13,88 @@
 </head>
 <body>
   <div id="app" class="shell">
+    <section
+      v-if="showEntry"
+      :class="['entry-screen', { leaving: entryLeaving }]"
+      aria-label="NebulaNest 入口"
+      @wheel="handleEntryWheel"
+      @touchstart="handleEntryTouchStart"
+      @touchend="handleEntryTouchEnd"
+    >
+      <div class="entry-bg-layer" aria-hidden="true">
+        <div class="entry-grid"></div>
+        <div class="entry-orbit">
+          <span class="ring-1"></span>
+          <span class="ring-2"></span>
+          <span class="ring-3"></span>
+        </div>
+        <div class="entry-scan"></div>
+        <div class="entry-particles">
+          <span></span><span></span><span></span><span></span><span></span>
+          <span></span><span></span><span></span><span></span><span></span>
+          <span></span><span></span>
+        </div>
+      </div>
+
+      <div class="entry-content-layer">
+        <div class="entry-copy">
+          <p class="entry-kicker">agent entry</p>
+          <div class="entry-brand" data-text="NebulaNest">
+            <div class="brand-mark">二狗</div>
+            <span>NebulaNest</span>
+          </div>
+          <h1 class="glow-text">智能体对话</h1>
+          <p class="entry-lead">RAGFlow 风格召回、本地 Milvus 混合检索、Human-in-the-loop 审核与工具失败回调，被整理成一个安静、可靠的 Agent 控制台。</p>
+          <div class="entry-badges" aria-hidden="true">
+            <span>Hybrid RAG</span>
+            <span>Traceable Review</span>
+            <span>Ops Callback</span>
+          </div>
+        </div>
+
+        <aside class="entry-login-card" aria-label="NebulaNest 进入面板">
+          <div class="login-card-head">
+            <img class="entry-avatar" src="assets/ergou-avatar.png" alt="二狗助手">
+            <div>
+              <span class="hud-label">Agent Keeper</span>
+              <strong>二狗已就绪</strong>
+            </div>
+            <i class="fas fa-circle entry-online" aria-hidden="true"></i>
+          </div>
+
+          <div class="entry-agent-plan" aria-hidden="true">
+            <div class="plan-row active">
+              <span><i class="fas fa-magnifying-glass-chart"></i> Query Expansion</span>
+              <b>Step-back / HyDE</b>
+            </div>
+            <div class="plan-row active">
+              <span><i class="fas fa-layer-group"></i> Retrieval Mesh</span>
+              <b>Dense + BM25 + RRF</b>
+            </div>
+            <div class="plan-row">
+              <span><i class="fas fa-user-check"></i> Review Gate</span>
+              <b>{{ pendingReviewCount }} pending</b>
+            </div>
+            <div class="plan-row">
+              <span><i class="fas fa-satellite-dish"></i> Ops Watch</span>
+              <b>{{ openFailureCount }} open</b>
+            </div>
+          </div>
+
+          <button class="entry-lift" type="button" @click="enterWorkspace" aria-label="上滑进入控制台">
+            <span class="lift-text">向上滑动进入控制台</span>
+            <span class="lift-track">
+              <i class="fas fa-chevron-up a1"></i>
+              <i class="fas fa-chevron-up a2"></i>
+            </span>
+          </button>
+        </aside>
+      </div>
+    </section>
+
     <aside class="rail">
       <div class="brand">
-        <div class="brand-mark">NN</div>
+        <div class="brand-mark">二狗</div>
         <div>
           <h1>NebulaNest</h1>
           <p>Agent Console</p>
@@ -69,7 +148,7 @@
       <section v-show="activeView === 'chat'" class="chat-layout">
         <div class="chat-stream" ref="chatContainer" :aria-busy="isLoading">
           <div v-if="messages.length === 0" class="empty-state">
-            <i class="fas fa-compass"></i>
+            <img class="empty-mascot" src="assets/ergou-avatar.png" alt="二狗助手">
             <h3>从一个问题开始</h3>
             <p>支持流式回答、RAG 过程追踪、人工审核提交和会话状态恢复。</p>
             <div class="empty-actions">

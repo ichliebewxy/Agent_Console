@@ -21,6 +21,11 @@ window.NebulaNestApp = {
       showHistorySidebar: false,
       isComposing: false,
       toast: "",
+      showEntry: true,
+      entryLeaving: false,
+      entryTouchStartX: 0,
+      entryTouchStartY: 0,
+      _entryTimer: null,
     };
   },
 
@@ -174,6 +179,40 @@ window.NebulaNestApp = {
       if (!confirm("确定清空当前会话吗？")) return;
       this.messages = [];
       this.persistState();
+    },
+
+    enterWorkspace() {
+      if (!this.showEntry || this.entryLeaving) return;
+      this.entryLeaving = true;
+      window.clearTimeout(this._entryTimer);
+      this._entryTimer = window.setTimeout(() => {
+        this.showEntry = false;
+        this.entryLeaving = false;
+        this.$nextTick(() => {
+          if (this.$refs.textarea) this.$refs.textarea.focus();
+        });
+      }, 820);
+    },
+
+    handleEntryWheel(event) {
+      if (Math.abs(event.deltaY) < 24) return;
+      event.preventDefault();
+      this.enterWorkspace();
+    },
+
+    handleEntryTouchStart(event) {
+      const touch = event.changedTouches && event.changedTouches[0];
+      if (!touch) return;
+      this.entryTouchStartX = touch.clientX;
+      this.entryTouchStartY = touch.clientY;
+    },
+
+    handleEntryTouchEnd(event) {
+      const touch = event.changedTouches && event.changedTouches[0];
+      if (!touch) return;
+      const deltaX = Math.abs(touch.clientX - this.entryTouchStartX);
+      const deltaY = this.entryTouchStartY - touch.clientY;
+      if (deltaY > 46 && deltaX < 90) this.enterWorkspace();
     },
   },
 
