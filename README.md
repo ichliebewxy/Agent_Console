@@ -1,8 +1,8 @@
-# NebulaNest Agent Console
+# Agent Console
 
-NebulaNest（星巢智能体控制台）是一个本地运行的 Agent + RAG 工作台。它把文档入库、混合检索、查询改写、工具调用、运行回调和人工审核放在同一个控制台里，适合做企业知识库问答、课程资料检索、客服辅助和可追踪的智能体实验。
+Agent Console（智能体控制台）是一个本地运行的 Agent + RAG 工作台。它把文档入库、混合检索、查询改写、工具调用、运行回调和人工审核放在同一个控制台里，适合做企业知识库问答、课程资料检索、客服辅助和可追踪的智能体实验。
 
-![NebulaNest workflow](docs/assets/nebulanest-flow.png)
+![ workflow](docs/assets/nebulanest-flow.png)
 
 ## 项目亮点
 
