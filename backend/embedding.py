@@ -1,194 +1,218 @@
-"""文本向量化服务 - 支持密集向量和稀疏向量（BM25）"""
-import re
+"""文本向量化服务 - BGE dense embeddings + BM25 sparse embeddings."""
+import json
 import math
-import requests
+import re
+import threading
 from collections import Counter
-from settings import DASHSCOPE_BASE_URL, DASHSCOPE_EMBEDDING_API_KEY, DASHSCOPE_EMBEDDING_MODEL
+from pathlib import Path
+from typing import Any
+
+from settings import (
+    BM25_STATE_PATH,
+    EMBEDDING_BATCH_SIZE,
+    EMBEDDING_DEVICE,
+    EMBEDDING_MODEL,
+)
+
+_DEFAULT_STATE_PATH = Path(__file__).resolve().parent.parent / "data" / "bm25_state.json"
 
 
 class EmbeddingService:
-    """文本向量化服务 - 支持密集向量和稀疏向量"""
+    """文本向量化服务 - BGE 本地密集向量 + 持久化 BM25 稀疏向量。"""
 
-    def __init__(self):
-        self.base_url = DASHSCOPE_BASE_URL.rstrip("/")
-        self.embedder = DASHSCOPE_EMBEDDING_MODEL
-        self.api_key = DASHSCOPE_EMBEDDING_API_KEY
-        
-        # BM25 参数
-        self.k1 = 1.5  # 词频饱和参数
-        self.b = 0.75  # 文档长度归一化参数
-        
-        # 词汇表（用于将词映射到稀疏向量索引）
-        self._vocab = {}
+    def __init__(self, state_path: Path | str | None = None):
+        self.model_name = EMBEDDING_MODEL
+        self.device = EMBEDDING_DEVICE
+        self.batch_size = max(1, EMBEDDING_BATCH_SIZE)
+        self._embedder: Any | None = None
+        self._embedder_lock = threading.Lock()
+
+        self._state_path = Path(state_path or BM25_STATE_PATH or _DEFAULT_STATE_PATH)
+        self._state_lock = threading.Lock()
+
+        self.k1 = 1.5
+        self.b = 0.75
+        self._vocab: dict[str, int] = {}
         self._vocab_counter = 0
-        
-        # 文档频率统计（用于 IDF 计算）
-        self._doc_freq = Counter()
+        self._doc_freq: Counter[str] = Counter()
         self._total_docs = 0
-        self._avg_doc_len = 0
+        self._sum_token_len = 0
+        self._avg_doc_len = 1.0
+
+        self._load_state()
+
+    def _get_embedder(self):
+        if self._embedder is not None:
+            return self._embedder
+        with self._embedder_lock:
+            if self._embedder is None:
+                from langchain_huggingface import HuggingFaceEmbeddings
+
+                self._embedder = HuggingFaceEmbeddings(
+                    model_name=self.model_name,
+                    model_kwargs={"device": self.device},
+                    encode_kwargs={
+                        "normalize_embeddings": True,
+                        "batch_size": self.batch_size,
+                    },
+                )
+        return self._embedder
+
+    def _recompute_avg_len(self) -> None:
+        self._avg_doc_len = self._sum_token_len / self._total_docs if self._total_docs > 0 else 1.0
+
+    def _load_state(self) -> None:
+        path = self._state_path
+        if not path.is_file():
+            return
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return
+        if raw.get("version") != 1:
+            return
+        self._vocab = {str(k): int(v) for k, v in raw.get("vocab", {}).items()}
+        self._doc_freq = Counter({str(k): int(v) for k, v in raw.get("doc_freq", {}).items()})
+        self._total_docs = int(raw.get("total_docs", 0))
+        self._sum_token_len = int(raw.get("sum_token_len", 0))
+        self._vocab_counter = max(self._vocab.values()) + 1 if self._vocab else 0
+        self._recompute_avg_len()
+
+    def _persist_unlocked(self) -> None:
+        self._state_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "version": 1,
+            "total_docs": self._total_docs,
+            "sum_token_len": self._sum_token_len,
+            "vocab": self._vocab,
+            "doc_freq": dict(self._doc_freq),
+        }
+        tmp = self._state_path.with_suffix(self._state_path.suffix + ".tmp")
+        tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(self._state_path)
+
+    def increment_add_documents(self, texts: list[str]) -> None:
+        """将每个 chunk 文本作为 BM25 文档，增量更新 N、df 和平均长度。"""
+        valid_texts = [text for text in texts if text and text.strip()]
+        if not valid_texts:
+            return
+        with self._state_lock:
+            for text in valid_texts:
+                tokens = self.tokenize(text)
+                self._sum_token_len += len(tokens)
+                self._total_docs += 1
+                for token in set(tokens):
+                    if token not in self._vocab:
+                        self._vocab[token] = self._vocab_counter
+                        self._vocab_counter += 1
+                    self._doc_freq[token] += 1
+            self._recompute_avg_len()
+            self._persist_unlocked()
+
+    def increment_remove_documents(self, texts: list[str]) -> None:
+        """删除文档时回退 BM25 统计；词表索引不回收，避免已写入稀疏向量错位。"""
+        valid_texts = [text for text in texts if text and text.strip()]
+        if not valid_texts:
+            return
+        with self._state_lock:
+            for text in valid_texts:
+                tokens = self.tokenize(text)
+                self._sum_token_len = max(0, self._sum_token_len - len(tokens))
+                self._total_docs = max(0, self._total_docs - 1)
+                for token in set(tokens):
+                    if token not in self._doc_freq:
+                        continue
+                    self._doc_freq[token] -= 1
+                    if self._doc_freq[token] <= 0:
+                        del self._doc_freq[token]
+            self._recompute_avg_len()
+            self._persist_unlocked()
 
     def get_embeddings(self, texts: list[str]) -> list[list[float]]:
-        """
-        调用嵌入 API 生成密集向量 (加入分批和容错机制)
-        """
-        # 1. 过滤掉空字符串，防止 API 报错
+        """首次调用时懒加载 BGE 模型并生成 dense embeddings。"""
         valid_texts = [text for text in texts if text and text.strip()]
         if not valid_texts:
             return []
+        try:
+            return self._get_embedder().embed_documents(valid_texts)
+        except Exception as exc:
+            raise Exception(f"BGE 嵌入模型调用失败: {exc}") from exc
 
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json"
-        }
+    def get_query_embeddings(self, texts: list[str]) -> list[list[float]]:
+        return self.get_embeddings(texts)
 
-        all_embeddings = []
-        
-        # 2. 设置分批大小（根据报错信息，阿里云此模型单次最大限制为 10）
-        BATCH_SIZE = 10 
-        
-        # 3. 分批调用 API
-        for i in range(0, len(valid_texts), BATCH_SIZE):
-            batch = valid_texts[i:i + BATCH_SIZE]
-            
-            data = {
-                "model": self.embedder,
-                "input": batch,
-                "encoding_format": "float"
-            }
-
-            try:
-                response = requests.post(
-                    f"{self.base_url}/embeddings", 
-                    headers=headers, 
-                    json=data
-                )
-                
-                # 如果不是 200，抛出包含 API 真实返回信息的错误
-                if response.status_code != 200:
-                    error_msg = response.text
-                    raise Exception(f"HTTP {response.status_code}, 详情: {error_msg}")
-                
-                result = response.json()
-                
-                # 获取当前批次的向量并存入总列表
-                batch_embeddings = [item["embedding"] for item in result["data"]]
-                all_embeddings.extend(batch_embeddings)
-                
-            except Exception as e:
-                raise Exception(f"嵌入 API 调用失败 (批次 {i//BATCH_SIZE + 1}): {str(e)}")
-
-        return all_embeddings
+    def get_passage_embeddings(self, texts: list[str]) -> list[list[float]]:
+        return self.get_embeddings(texts)
 
     def tokenize(self, text: str) -> list[str]:
-        """
-        简单分词器 - 支持中英文混合
-        :param text: 输入文本
-        :return: 分词结果
-        """
-        # 中文按字符分割，英文按空格和标点分割
-        # 移除标点和特殊字符
         text = text.lower()
-        
         tokens = []
-        # 匹配中文字符
-        chinese_pattern = re.compile(r'[\u4e00-\u9fff]')
-        # 匹配英文单词
-        english_pattern = re.compile(r'[a-zA-Z]+')
-        
+        chinese_pattern = re.compile(r"[\u4e00-\u9fff]")
+        english_pattern = re.compile(r"[a-zA-Z]+")
         i = 0
         while i < len(text):
             char = text[i]
             if chinese_pattern.match(char):
-                # 中文字符单独作为一个 token
                 tokens.append(char)
                 i += 1
             elif english_pattern.match(char):
-                # 英文单词
                 match = english_pattern.match(text[i:])
                 if match:
                     tokens.append(match.group())
                     i += len(match.group())
             else:
                 i += 1
-        
         return tokens
 
-    def fit_corpus(self, texts: list[str]):
-        """
-        拟合语料库，计算 IDF 和平均文档长度
-        :param texts: 文档列表
-        """
-        self._total_docs = len(texts)
-        total_len = 0
-        
-        for text in texts:
-            tokens = self.tokenize(text)
-            total_len += len(tokens)
-            
-            # 统计文档频率（每个词在多少文档中出现）
-            unique_tokens = set(tokens)
-            for token in unique_tokens:
-                self._doc_freq[token] += 1
-                
-                # 建立词汇表
-                if token not in self._vocab:
-                    self._vocab[token] = self._vocab_counter
-                    self._vocab_counter += 1
-        
-        self._avg_doc_len = total_len / self._total_docs if self._total_docs > 0 else 1
-
-    def get_sparse_embedding(self, text: str) -> dict:
-        """
-        生成 BM25 稀疏向量
-        :param text: 输入文本
-        :return: 稀疏向量 {index: value, ...}
-        """
+    def _sparse_vector_for_text_unlocked(self, text: str) -> tuple[dict[int, float], bool]:
         tokens = self.tokenize(text)
         doc_len = len(tokens)
         tf = Counter(tokens)
-        
-        sparse_vector = {}
-        
+        sparse_vector: dict[int, float] = {}
+        vocab_changed = False
+        n = max(self._total_docs, 0)
+        avg = max(self._avg_doc_len, 1.0)
+
         for token, freq in tf.items():
             if token not in self._vocab:
-                # 新词加入词汇表
                 self._vocab[token] = self._vocab_counter
                 self._vocab_counter += 1
-            
+                vocab_changed = True
             idx = self._vocab[token]
-            
-            # 计算 IDF
             df = self._doc_freq.get(token, 0)
-            if df == 0:
-                # 新词，使用平滑 IDF
-                idf = math.log((self._total_docs + 1) / 1)
-            else:
-                idf = math.log((self._total_docs - df + 0.5) / (df + 0.5) + 1)
-            
-            # 计算 BM25 分数
+            idf = math.log((n + 1) / 1) if df == 0 else math.log((n - df + 0.5) / (df + 0.5) + 1)
             numerator = freq * (self.k1 + 1)
-            denominator = freq + self.k1 * (1 - self.b + self.b * doc_len / max(self._avg_doc_len, 1))
+            denominator = freq + self.k1 * (1 - self.b + self.b * doc_len / avg)
             score = idf * numerator / denominator
-            
             if score > 0:
                 sparse_vector[idx] = float(score)
-        
+        return sparse_vector, vocab_changed
+
+    def get_sparse_embedding(self, text: str) -> dict[int, float]:
+        with self._state_lock:
+            sparse_vector, vocab_changed = self._sparse_vector_for_text_unlocked(text)
+            if vocab_changed:
+                self._persist_unlocked()
         return sparse_vector
 
-    def get_sparse_embeddings(self, texts: list[str]) -> list[dict]:
-        """
-        批量生成 BM25 稀疏向量
-        :param texts: 文本列表
-        :return: 稀疏向量列表
-        """
-        return [self.get_sparse_embedding(text) for text in texts]
+    def get_sparse_embeddings(self, texts: list[str]) -> list[dict[int, float]]:
+        if not texts:
+            return []
+        with self._state_lock:
+            embeddings = []
+            changed = False
+            for text in texts:
+                sparse_vector, vocab_changed = self._sparse_vector_for_text_unlocked(text)
+                embeddings.append(sparse_vector)
+                changed = changed or vocab_changed
+            if changed:
+                self._persist_unlocked()
+        return embeddings
 
-    def get_all_embeddings(self, texts: list[str]) -> tuple[list[list[float]], list[dict]]:
-        """
-        同时生成密集向量和稀疏向量
-        :param texts: 文本列表
-        :return: (密集向量列表, 稀疏向量列表)
-        """
-        dense_embeddings = self.get_embeddings(texts)
+    def get_all_embeddings(self, texts: list[str]) -> tuple[list[list[float]], list[dict[int, float]]]:
+        dense_embeddings = self.get_passage_embeddings(texts)
         sparse_embeddings = self.get_sparse_embeddings(texts)
         return dense_embeddings, sparse_embeddings
+
+
+embedding_service = EmbeddingService()

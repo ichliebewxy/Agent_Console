@@ -18,6 +18,7 @@ dependencies = [
     "langchain-community>=0.2.12",
     "langchain-text-splitters>=0.2.2",
     "langchain-openai>=0.1.22",
+    "langchain-huggingface>=0.1.0",
     "langchain-mcp-adapters>=0.1.0",
     "langgraph>=0.2.31",
     "pypdf>=4.3.1",
@@ -27,6 +28,7 @@ dependencies = [
     "python-pptx",
     "python-docx",
     "langchain_deepseek",
+    "sentence-transformers>=3.0.0",
 ]
 
 [project.optional-dependencies]

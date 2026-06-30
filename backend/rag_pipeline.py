@@ -66,14 +66,16 @@ def retrieve_initial(state: RAGState) -> RAGState:
         "rerank_enabled", "rerank_applied", "rerank_model", "rerank_endpoint", "rerank_error",
         "retrieval_mode", "candidate_k", "leaf_retrieve_level", "auto_merge_enabled",
         "auto_merge_applied", "auto_merge_threshold", "auto_merge_replaced_chunks",
-        "auto_merge_steps", "ragflow_enabled", "ragflow_applied", "ragflow_endpoint",
-        "ragflow_dataset_ids", "ragflow_error",
+        "auto_merge_steps", "candidate_count",
     ]:
         rag_trace[key] = meta.get(key)
     return {"query": query, "docs": results, "context": format_docs(results), "rag_trace": rag_trace}
 
 
 def grade_documents_node(state: RAGState) -> RAGState:
+    if not state.get("docs"):
+        emit_rag_step("⚠️", "未检索到片段，准备改写查询")
+        return _grade_update(state, "no_docs", "rewrite_question")
     emit_rag_step("📊", "正在评估文档相关性...")
     grader = _get_grader_model()
     if not grader:

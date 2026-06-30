@@ -5,6 +5,10 @@ from pathlib import Path
 import os
 from contextlib import asynccontextmanager
 
+from encoding_utils import configure_stdio_encoding
+
+configure_stdio_encoding()
+
 import api as api_module
 from agent import init_agent_async
 

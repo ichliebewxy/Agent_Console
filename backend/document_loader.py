@@ -12,6 +12,8 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.chat_models.tongyi import ChatTongyi
 from langchain_core.messages import HumanMessage
 
+from encoding_utils import safe_print
+
 
 class DocumentLoader:
     """文档加载和分片服务（支持 PDF/PPTX/Word/Excel/TXT 及图片 OCR 描述）"""
@@ -35,7 +37,9 @@ class DocumentLoader:
         if not os.path.exists(self.image_output_dir):
             os.makedirs(self.image_output_dir)
             
-        self.vlm_image = ChatTongyi(model="qwen-vl-plus-2025-05-07", max_retries=3)
+        self.vlm_image = None
+        if os.getenv("DASHSCOPE_API_KEY"):
+            self.vlm_image = ChatTongyi(model="qwen-vl-plus-2025-05-07", max_retries=3)
 
     def _clean_vlm_output(self, content) -> str:
         """脱壳逻辑：将大模型返回的列表转为纯字符串"""
@@ -45,17 +49,19 @@ class DocumentLoader:
 
     def _image_to_text_summary(self, img_path: str) -> str:
         """调用多模态模型识别图片/扫描件内容"""
+        if self.vlm_image is None:
+            return ""
         try:
             abs_path = str(pathlib.Path(img_path).absolute())
             message = HumanMessage(content=[
                 {"text": "请详细描述这张图片的内容，包括图表数据、文字或核心信息，以便录入知识库被检索。"},
                 {"image": f"file://{abs_path}"}
             ])
-            print(f"--- 正在调用 Qwen-VL-PLUS 分析图片: {os.path.basename(img_path)} ---")
+            safe_print(f"--- 正在调用 Qwen-VL-PLUS 分析图片: {os.path.basename(img_path)} ---")
             response = self.vlm_image.invoke([message])
             return self._clean_vlm_output(response.content)
         except Exception as e:
-            print(f"图片识别失败 {img_path}: {e}")
+            safe_print(f"图片识别失败 {img_path}: {e}")
             return ""
 
     @staticmethod
@@ -210,11 +216,11 @@ class DocumentLoader:
                 continue
             file_path = os.path.join(folder_path, filename)
             try:
-                print(f"开始加载文档: {filename}")
+                safe_print(f"开始加载文档: {filename}")
                 documents = self.load_document(file_path, filename)
                 all_documents.extend(documents)
             except Exception as e:
-                print(f"跳过文件 {filename}, 错误: {e}")
+                safe_print(f"跳过文件 {filename}, 错误: {e}")
                 continue
                 
         return all_documents

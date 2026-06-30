@@ -1,12 +1,13 @@
 """文档向量化并写入 Milvus - 支持密集+稀疏向量"""
-from embedding import EmbeddingService
+from encoding_utils import safe_print
+from embedding import EmbeddingService, embedding_service as default_embedding_service
 from milvus_client import MilvusManager
 
 class MilvusWriter:
     """Milvus 写入管理（适配 Auto-merging 所需的分块 Schema）"""
 
     def __init__(self, embedding_service: EmbeddingService = None, milvus_manager: MilvusManager = None):
-        self.embedding_service = embedding_service or EmbeddingService()
+        self.embedding_service = embedding_service or default_embedding_service
         self.milvus_manager = milvus_manager or MilvusManager()
 
     def write_documents(self, documents: list[dict], batch_size: int = 50):
@@ -20,12 +21,12 @@ class MilvusWriter:
 
         self.milvus_manager.init_collection()
         
-        # 先拟合语料库（用于 BM25 IDF 计算稀疏向量）
+        # 先增量更新 BM25 语料统计（用于生成和查询稀疏向量）
         all_texts = [doc["text"] for doc in documents]
-        self.embedding_service.fit_corpus(all_texts)
+        self.embedding_service.increment_add_documents(all_texts)
 
         total = len(documents)
-        print(f"\n🚀 开始批量写入 Milvus，总计 {total} 个分片...")
+        safe_print(f"\n开始批量写入 Milvus，总计 {total} 个分片...")
         
         for i in range(0, total, batch_size):
             batch = documents[i:i + batch_size]
@@ -55,4 +56,4 @@ class MilvusWriter:
             self.milvus_manager.insert(insert_data)
             
             progress = min(i + batch_size, total)
-            print(f"   -> [写入进度]: 已完成 {progress} / {total} ({progress/total:.1%})")
+            safe_print(f"   -> [写入进度]: 已完成 {progress} / {total} ({progress/total:.1%})")

@@ -40,7 +40,7 @@ window.NebulaNestApp = {
     viewTitle() {
       const titles = {
         chat: { eyebrow: "Chat", title: "可追踪的 Agent 对话" },
-        knowledge: { eyebrow: "Knowledge", title: "知识库与 RAGFlow 接入" },
+        knowledge: { eyebrow: "Knowledge", title: "知识库与混合检索" },
         reviews: { eyebrow: "Human Review", title: "人工审核工作台" },
         ops: { eyebrow: "Callbacks", title: "工具失败与补偿回调" },
       };

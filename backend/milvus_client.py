@@ -1,7 +1,7 @@
 """Milvus 客户端 - 支持密集向量+稀疏向量混合检索"""
 from threading import Lock
 from pymilvus import MilvusClient, DataType, AnnSearchRequest, RRFRanker
-from settings import MILVUS_COLLECTION, MILVUS_HOST, MILVUS_PORT
+from settings import MILVUS_COLLECTION, MILVUS_DENSE_DIM, MILVUS_HOST, MILVUS_PORT
 
 class MilvusManager:
     """Milvus 连接和集合管理 - 支持混合检索"""
@@ -12,10 +12,18 @@ class MilvusManager:
         self.collection_name = MILVUS_COLLECTION
         self._uri = f"http://{self.host}:{self.port}"
         self._client_lock = Lock()
-        self.client = self._new_client()
+        self.client = None
 
     def _new_client(self):
         return MilvusClient(uri=self._uri)
+
+    def _get_client(self):
+        if self.client is not None:
+            return self.client
+        with self._client_lock:
+            if self.client is None:
+                self.client = self._new_client()
+            return self.client
 
     def _reset_client(self):
         with self._client_lock:
@@ -32,20 +40,42 @@ class MilvusManager:
         )
 
     def _call(self, operation):
+        client = self._get_client()
         try:
-            return operation(self.client)
+            return operation(client)
         except Exception as exc:
             if not self._is_closed_channel_error(exc):
                 raise
             client = self._reset_client()
             return operation(client)
 
-    def init_collection(self, dense_dim: int = 1024):
+    def _get_dense_dim(self) -> int | None:
+        description = self._call(lambda client: client.describe_collection(self.collection_name))
+        for field in description.get("fields", []):
+            if field.get("name") != "dense_embedding":
+                continue
+            params = field.get("params") or {}
+            dim = params.get("dim")
+            return int(dim) if dim is not None else None
+        return None
+
+    def _assert_collection_compatible(self, dense_dim: int):
+        existing_dim = self._get_dense_dim()
+        if existing_dim == dense_dim:
+            return
+        raise RuntimeError(
+            f"Milvus 集合 `{self.collection_name}` 的 dense_embedding 维度是 {existing_dim}，"
+            f"当前配置需要 {dense_dim}。请换用新的 MILVUS_COLLECTION，或删除旧集合后重新入库。"
+        )
+
+    def init_collection(self, dense_dim: int = None):
         """
         初始化 Milvus 集合 - 同时支持密集向量和稀疏向量以及三级分块索引字段
         """
+        dense_dim = dense_dim or MILVUS_DENSE_DIM
         if not self._call(lambda client: client.has_collection(self.collection_name)):
-            schema = self.client.create_schema(auto_id=True, enable_dynamic_field=True)
+            client = self._get_client()
+            schema = client.create_schema(auto_id=True, enable_dynamic_field=True)
             
             # 主键
             schema.add_field("id", DataType.INT64, is_primary=True, auto_id=True)
@@ -69,18 +99,18 @@ class MilvusManager:
             schema.add_field("chunk_level", DataType.INT64)
 
             # 创建索引
-            index_params = self.client.prepare_index_params()
+            index_params = client.prepare_index_params()
             index_params.add_index(
                 field_name="dense_embedding",
                 index_type="HNSW",
                 metric_type="IP",
-                params={"M": 16, "efConstruction": 256}
+                params={"M": 32, "efConstruction": 360}
             )
             index_params.add_index(
                 field_name="sparse_embedding",
                 index_type="SPARSE_INVERTED_INDEX",
                 metric_type="IP",
-                params={"drop_ratio_build": 0.2}
+                params={"drop_ratio_build": 0.1}
             )
 
             self._call(
@@ -90,6 +120,8 @@ class MilvusManager:
                     index_params=index_params
                 )
             )
+        else:
+            self._assert_collection_compatible(dense_dim)
 
     def insert(self, data: list[dict]):
         return self._call(lambda client: client.insert(self.collection_name, data))
@@ -138,7 +170,7 @@ class MilvusManager:
         dense_search = AnnSearchRequest(
             data=[dense_embedding],
             anns_field="dense_embedding",
-            param={"metric_type": "IP", "params": {"ef": 64}},
+            param={"metric_type": "IP", "params": {"ef": 128}},
             limit=top_k * 2,
             expr=filter_expr,
         )
@@ -146,7 +178,7 @@ class MilvusManager:
         sparse_search = AnnSearchRequest(
             data=[sparse_embedding],
             anns_field="sparse_embedding",
-            param={"metric_type": "IP", "params": {"drop_ratio_search": 0.2}},
+            param={"metric_type": "IP", "params": {"drop_ratio_search": 0.1}},
             limit=top_k * 2,
             expr=filter_expr,
         )
@@ -175,7 +207,7 @@ class MilvusManager:
                 collection_name=self.collection_name,
                 data=[dense_embedding],
                 anns_field="dense_embedding",
-                search_params={"metric_type": "IP", "params": {"ef": 64}},
+                search_params={"metric_type": "IP", "params": {"ef": 128}},
                 limit=top_k,
                 filter=filter_expr,
                 output_fields=output_fields,

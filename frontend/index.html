@@ -112,8 +112,6 @@
                 <span>工具</span><b>{{ msg.ragTrace.tool_name || '未使用' }}</b>
                 <span>召回模式</span><b>{{ msg.ragTrace.retrieval_mode || '未知' }}</b>
                 <span>评分路由</span><b>{{ msg.ragTrace.grade_score || '-' }} / {{ msg.ragTrace.grade_route || '-' }}</b>
-                <span>RAGFlow</span><b>{{ msg.ragTrace.ragflow_applied ? '已参与召回' : (msg.ragTrace.ragflow_enabled ? '已启用未命中' : '未启用') }}</b>
-                <span v-if="msg.ragTrace.ragflow_error">RAGFlow 错误</span><b v-if="msg.ragTrace.ragflow_error">{{ msg.ragTrace.ragflow_error }}</b>
               </div>
               <div v-if="sourceChunks(msg).length" class="sources">
                 <h4>引用片段</h4>
@@ -151,7 +149,7 @@
         <div class="section-head">
           <div>
             <h3>文档管理</h3>
-            <p>本地 Milvus 仍是默认知识库；配置 RAGFLOW_* 后会额外接入 RAGFlow 召回。</p>
+            <p>本地 Milvus 使用 BGE 稠密向量和 BM25 稀疏向量做混合召回。</p>
           </div>
           <button class="secondary-action inline" @click="loadDocuments"><i class="fas fa-rotate"></i>刷新</button>
         </div>
@@ -215,7 +213,7 @@
         <div class="section-head">
           <div>
             <h3>工具失败回调</h3>
-            <p>工具、RAGFlow 或本地检索失败会落盘，方便人工补偿、重试或关闭。</p>
+            <p>工具或本地检索失败会落盘，方便人工补偿、重试或关闭。</p>
           </div>
           <button class="secondary-action inline" @click="loadFailures"><i class="fas fa-rotate"></i>刷新</button>
         </div>

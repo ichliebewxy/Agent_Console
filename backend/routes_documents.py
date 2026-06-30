@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from document_loader import DocumentLoader
-from embedding import EmbeddingService
+from embedding import embedding_service
 from milvus_client import MilvusManager
 from milvus_writer import MilvusWriter
 from parent_chunk_store import ParentChunkStore
@@ -19,7 +19,6 @@ router = APIRouter()
 loader = DocumentLoader()
 parent_chunk_store = ParentChunkStore()
 milvus_manager = MilvusManager()
-embedding_service = EmbeddingService()
 milvus_writer = MilvusWriter(embedding_service=embedding_service, milvus_manager=milvus_manager)
 
 
@@ -77,23 +76,32 @@ async def upload_document(file: UploadFile = File(...)):
 async def delete_document(filename: str):
     try:
         milvus_manager.init_collection()
-        result = milvus_manager.delete(f'filename == "{filename}"')
-        parent_chunk_store.delete_by_filename(filename)
-        count = result.get("delete_count", 0) if isinstance(result, dict) else 0
+        count = _delete_existing(filename)
         return DocumentDeleteResponse(filename=filename, chunks_deleted=count, message=f"成功删除文档 {filename} 的向量数据")
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"删除文档失败: {exc}")
 
 
-def _delete_existing(filename: str):
+def _filename_filter(filename: str) -> str:
+    escaped = filename.replace("\\", "\\\\").replace('"', '\\"')
+    return f'filename == "{escaped}"'
+
+
+def _delete_existing(filename: str) -> int:
+    filter_expr = _filename_filter(filename)
+    delete_count = 0
     try:
-        milvus_manager.delete(f'filename == "{filename}"')
+        rows = milvus_manager.query(filter_expr=filter_expr, output_fields=["text"], limit=10000)
+        embedding_service.increment_remove_documents([row.get("text", "") for row in rows])
+        result = milvus_manager.delete(filter_expr)
+        delete_count = result.get("delete_count", 0) if isinstance(result, dict) else 0
     except Exception:
         pass
     try:
         parent_chunk_store.delete_by_filename(filename)
     except Exception:
         pass
+    return delete_count
 
 
 async def _save_upload(file: UploadFile, filename: str) -> Path:
