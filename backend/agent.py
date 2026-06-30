@@ -9,6 +9,7 @@ from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, Sys
 from agent_prompt import SYSTEM_PROMPT
 from conversation_storage import ConversationStorage
 from mcp_service import load_mcp_tools
+from opencli_tools import OPENCLI_TOOLS
 from settings import CHAT_API_KEY, CHAT_BASE_URL, CHAT_MODEL
 from tool_instrumentation import instrument_tools
 from tools import (
@@ -48,7 +49,9 @@ async def init_agent_async(record_init_failure: bool = True):
     mcp_tool_count = mcp_result.tool_count
     last_mcp_init_error = mcp_result.error
 
-    all_tools = instrument_tools([get_current_weather, search_knowledge_base] + mcp_result.tools)
+    all_tools = instrument_tools(
+        [get_current_weather, search_knowledge_base, *OPENCLI_TOOLS] + mcp_result.tools
+    )
     agent = create_agent(model=model, tools=all_tools, system_prompt=SYSTEM_PROMPT)
     if mcp_tool_count > 0:
         print(f"Agent 初始化完成，MCP 工具已加载 {mcp_tool_count} 个。")

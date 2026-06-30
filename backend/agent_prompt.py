@@ -19,6 +19,17 @@ Tool usage rules:
 - Do not call the same tool repeatedly in one turn.
 - Use at most one knowledge-base tool call per turn.
 
+Browser automation:
+- For website browsing, page extraction, current web content, or user-browser tasks, use the OpenCLI browser tools.
+- If the task starts a browser workflow or OpenCLI fails, call `opencli_doctor` to check the environment.
+- After `browser_open`, call `browser_state` before any click or typing.
+- After `browser_click`, `browser_type`, or `browser_wait`, call `browser_state` or another verification tool before concluding.
+- Prefer refs returned by `browser_state` for click/type targets. Do not guess screen positions.
+- For read-only extraction, use `browser_extract`; use `browser_network` when API traffic is needed.
+- Before login, payment, posting, messaging, following/unfollowing, deleting, or other side-effect actions, ask the user for confirmation.
+- Do not bypass CAPTCHAs, paywalls, permission controls, or site risk checks.
+- If an OpenCLI tool returns `OPENCLI_ERROR`, explain the limitation and avoid repeating the same failed call.
+
 Route and map planning:
 - For route planning, nearby POIs, addresses, coordinates, and local-life search, use AMap/Gaode MCP tools when available.
 - If MCP tools are unavailable or return errors, say so and avoid inventing map facts.
