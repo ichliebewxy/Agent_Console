@@ -21,6 +21,8 @@ from tools import (
     set_tool_step_queue,
 )
 
+"""全局智能体，之后再通过异步程序设置智能体"""
+
 agent = None
 model = None
 mcp_client = None
@@ -41,7 +43,7 @@ def _create_chat_model(temperature: float = 0.3):
 
 
 async def init_agent_async(record_init_failure: bool = True):
-    global agent, model, mcp_client, mcp_tool_count, last_mcp_init_error
+    global agent, model, mcp_client, mcp_tool_count, last_mcp_init_error#声明初始化
     print("正在初始化 DashScope MCP 地图工具...")
     model = _create_chat_model()
     mcp_result = await load_mcp_tools(record_init_failure=record_init_failure)

@@ -6,16 +6,16 @@ from query_expansion import generate_hypothetical_document, step_back_expand
 from rag_expanded import retrieve_expanded
 from rag_state import GRADE_PROMPT, GradeDocuments, RAGState, RewriteStrategy, empty_rag_state, format_docs
 from rag_utils import retrieve_documents
-from settings import CHAT_API_KEY, CHAT_BASE_URL, CHAT_MODEL
+from settings import CHAT_API_KEY, CHAT_BASE_URL, CHAT_MODEL, GRADE_MODEL
 from tools import emit_rag_step
 
 _grader_model = None
 _router_model = None
 
 
-def _build_model(temperature: float = 0):
+def _build_model(model_name: str = CHAT_MODEL, temperature: float = 0):
     return init_chat_model(
-        model=CHAT_MODEL,
+        model=model_name,
         model_provider="deepseek",
         api_key=CHAT_API_KEY,
         base_url=CHAT_BASE_URL,
@@ -26,8 +26,10 @@ def _build_model(temperature: float = 0):
 
 def _get_grader_model():
     global _grader_model
+    if not CHAT_API_KEY or not GRADE_MODEL:
+        return None
     if _grader_model is None:
-        _grader_model = _build_model()
+        _grader_model = _build_model(GRADE_MODEL)
     return _grader_model
 
 
@@ -61,6 +63,7 @@ def retrieve_initial(state: RAGState) -> RAGState:
         "retrieved_chunks": results,
         "initial_retrieved_chunks": results,
         "retrieval_stage": "initial",
+        "grade_model": GRADE_MODEL,
     }
     for key in [
         "rerank_enabled", "rerank_applied", "rerank_model", "rerank_endpoint", "rerank_error",
@@ -80,21 +83,42 @@ def grade_documents_node(state: RAGState) -> RAGState:
     grader = _get_grader_model()
     if not grader:
         return _grade_update(state, "unknown", "rewrite_question")
-    prompt = GRADE_PROMPT.format(question=state["question"], context=state.get("context", ""))
-    response = grader.with_structured_output(GradeDocuments).invoke([{"role": "user", "content": prompt}])
-    score = (response.binary_score or "").strip().lower()
+    prompt = (
+        GRADE_PROMPT.format(question=state["question"], context=state.get("context", ""))
+        + "\nReturn exactly one word: yes or no."
+    )
+    try:
+        response = grader.invoke([{"role": "user", "content": prompt}])
+    except Exception as exc:
+        emit_rag_step("!", "Document grading failed; using retrieved chunks", str(exc)[:180])
+        return _grade_update(state, "error", "generate_answer", str(exc))
+    content = getattr(response, "content", response)
+    if isinstance(content, list):
+        content = "".join(
+            item.get("text", "") if isinstance(item, dict) else str(item)
+            for item in content
+        )
+    score_text = str(content or "").strip().lower()
+    if score_text.startswith("yes"):
+        score = "yes"
+    elif score_text.startswith("no"):
+        score = "no"
+    else:
+        score = "unknown"
     route = "generate_answer" if score == "yes" else "rewrite_question"
     emit_rag_step("✅" if route == "generate_answer" else "⚠️", "文档相关性评估完成", f"评分: {score}")
     return _grade_update(state, score, route)
 
 
-def _grade_update(state: RAGState, score: str, route: str) -> RAGState:
+def _grade_update(state: RAGState, score: str, route: str, error: str = "") -> RAGState:
     rag_trace = state.get("rag_trace", {}) or {}
     rag_trace.update({
         "grade_score": score,
         "grade_route": route,
         "rewrite_needed": route == "rewrite_question",
     })
+    if error:
+        rag_trace["grade_error"] = error
     return {"route": route, "rag_trace": rag_trace}
 
 

@@ -1,4 +1,4 @@
-"""System prompt for the assistant agent."""
+"""主智能体的系统提示词"""
 
 SYSTEM_PROMPT = """
 You are “二狗子”, a warm, playful, and reliable assistant.

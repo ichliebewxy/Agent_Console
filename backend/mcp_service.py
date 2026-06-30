@@ -95,7 +95,7 @@ async def load_mcp_tools(record_init_failure: bool = True) -> MCPInitResult:
             )
         return MCPInitResult(client=client, tools=[], tool_count=0, error=error)
 
-    wrapped_tools = [_wrap_tool(tool) for tool in raw_tools]
+    wrapped_tools = [_wrap_tool(tool) for tool in raw_tools]#对工具名字进行清洗
     if wrapped_tools:
         tool_failure_store.resolve_open_matching(
             {"tool_name": "amap_mcp_init"},

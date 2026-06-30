@@ -1,7 +1,7 @@
 """Milvus 客户端 - 支持密集向量+稀疏向量混合检索"""
 from threading import Lock
 from pymilvus import MilvusClient, DataType, AnnSearchRequest, RRFRanker
-from settings import MILVUS_COLLECTION, MILVUS_DENSE_DIM, MILVUS_HOST, MILVUS_PORT
+from settings import MILVUS_COLLECTION, MILVUS_DENSE_DIM, MILVUS_HOST, MILVUS_PORT, MILVUS_TIMEOUT
 
 class MilvusManager:
     """Milvus 连接和集合管理 - 支持混合检索"""
@@ -10,12 +10,13 @@ class MilvusManager:
         self.host = MILVUS_HOST
         self.port = MILVUS_PORT
         self.collection_name = MILVUS_COLLECTION
+        self.timeout = MILVUS_TIMEOUT
         self._uri = f"http://{self.host}:{self.port}"
         self._client_lock = Lock()
         self.client = None
 
     def _new_client(self):
-        return MilvusClient(uri=self._uri)
+        return MilvusClient(uri=self._uri, timeout=self.timeout)
 
     def _get_client(self):
         if self.client is not None:
@@ -50,7 +51,7 @@ class MilvusManager:
             return operation(client)
 
     def _get_dense_dim(self) -> int | None:
-        description = self._call(lambda client: client.describe_collection(self.collection_name))
+        description = self._call(lambda client: client.describe_collection(self.collection_name, timeout=self.timeout))
         for field in description.get("fields", []):
             if field.get("name") != "dense_embedding":
                 continue
@@ -73,7 +74,7 @@ class MilvusManager:
         初始化 Milvus 集合 - 同时支持密集向量和稀疏向量以及三级分块索引字段
         """
         dense_dim = dense_dim or MILVUS_DENSE_DIM
-        if not self._call(lambda client: client.has_collection(self.collection_name)):
+        if not self._call(lambda client: client.has_collection(self.collection_name, timeout=self.timeout)):
             client = self._get_client()
             schema = client.create_schema(auto_id=True, enable_dynamic_field=True)
             
@@ -117,14 +118,15 @@ class MilvusManager:
                 lambda client: client.create_collection(
                     collection_name=self.collection_name,
                     schema=schema,
-                    index_params=index_params
+                    index_params=index_params,
+                    timeout=self.timeout,
                 )
             )
         else:
             self._assert_collection_compatible(dense_dim)
 
     def insert(self, data: list[dict]):
-        return self._call(lambda client: client.insert(self.collection_name, data))
+        return self._call(lambda client: client.insert(self.collection_name, data, timeout=self.timeout))
 
     def query(self, filter_expr: str = "", output_fields: list[str] = None, limit: int = 10000):
         return self._call(
@@ -132,7 +134,8 @@ class MilvusManager:
                 collection_name=self.collection_name,
                 filter=filter_expr,
                 output_fields=output_fields or ["filename", "file_type"],
-                limit=limit
+                limit=limit,
+                timeout=self.timeout,
             )
         )
 
@@ -141,6 +144,7 @@ class MilvusManager:
             lambda client: client.delete(
                 collection_name=self.collection_name,
                 filter=filter_expr,
+                timeout=self.timeout,
             )
         )
 
@@ -190,7 +194,8 @@ class MilvusManager:
                 reqs=[dense_search, sparse_search],
                 ranker=reranker,
                 limit=top_k,
-                output_fields=output_fields
+                output_fields=output_fields,
+                timeout=self.timeout,
             )
         )
 
@@ -211,6 +216,7 @@ class MilvusManager:
                 limit=top_k,
                 filter=filter_expr,
                 output_fields=output_fields,
+                timeout=self.timeout,
             )
         )
 

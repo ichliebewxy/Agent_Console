@@ -2,8 +2,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
+import asyncio
 import os
+import sys
 from contextlib import asynccontextmanager
+
+BACKEND_DIR = Path(__file__).resolve().parent
+BASE_DIR = BACKEND_DIR.parent
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
 
 from encoding_utils import configure_stdio_encoding
 
@@ -11,13 +18,27 @@ configure_stdio_encoding()
 
 import api as api_module
 from agent import init_agent_async
+from embedding import embedding_service
+from settings import MILVUS_DENSE_DIM
 
-BASE_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = BASE_DIR / "frontend"
 
 # 1. 在这里定义 lifespan 上下文管理器
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    print("Warming up embedding model...")
+    embedding_info = await asyncio.to_thread(embedding_service.warm_up)
+    if embedding_info["dim"] != MILVUS_DENSE_DIM:
+        raise RuntimeError(
+            "Embedding dimension mismatch: "
+            f"{embedding_info['model']} produced {embedding_info['dim']} dims, "
+            f"but MILVUS_DENSE_DIM is {MILVUS_DENSE_DIM}."
+        )
+    print(
+        "Embedding model ready: "
+        f"{embedding_info['model']} on {embedding_info['device']} "
+        f"({embedding_info['dim']} dims)."
+    )
     # 启动时执行：初始化全局 Agent 和 MCP 工具
     print("正在初始化 Agent 和 MCP 工具...")
     await init_agent_async()

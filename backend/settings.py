@@ -26,6 +26,7 @@ def env_int(name: str, default: int) -> int:
 CHAT_MODEL = env("CHAT_MODEL", "deepseek-v4-flash")
 CHAT_API_KEY = env("CHAT_API_KEY")
 CHAT_BASE_URL = env("CHAT_BASE_URL", "https://api.deepseek.com")
+GRADE_MODEL = env("GRADE_MODEL", "deepseek-v4-flash")
 
 DASHSCOPE_MCP_API_KEY = env("DASHSCOPE_MCP_API_KEY")
 QUERY_EXPANSION_MODEL = env("QUERY_EXPANSION_MODEL", CHAT_MODEL)
@@ -37,6 +38,7 @@ AMAP_API_KEY = env("AMAP_API_KEY")
 MILVUS_HOST = env("MILVUS_HOST", "127.0.0.1")
 MILVUS_PORT = env("MILVUS_PORT", "19530")
 MILVUS_COLLECTION = env("MILVUS_COLLECTION", "embeddings_bge_m3")
+MILVUS_TIMEOUT = env_int("MILVUS_TIMEOUT", 8)
 
 RERANK_MODEL = env("RERANK_MODEL")
 RERANK_BINDING_HOST = env("RERANK_BINDING_HOST")

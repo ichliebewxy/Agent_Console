@@ -59,8 +59,12 @@ async def upload_document(file: UploadFile = File(...)):
         leaf_docs = [doc for doc in new_docs if int(doc.get("chunk_level", 0) or 0) == 3]
         if not leaf_docs:
             raise HTTPException(status_code=500, detail="文档处理失败，未生成可检索叶子分块")
+        try:
+            milvus_writer.write_documents(leaf_docs)
+        except Exception:
+            _delete_existing(filename)
+            raise
         parent_chunk_store.upsert_documents(parent_docs)
-        milvus_writer.write_documents(leaf_docs)
         return DocumentUploadResponse(
             filename=filename,
             chunks_processed=len(leaf_docs),

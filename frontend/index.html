@@ -111,7 +111,13 @@
               <div class="trace-grid">
                 <span>工具</span><b>{{ msg.ragTrace.tool_name || '未使用' }}</b>
                 <span>召回模式</span><b>{{ msg.ragTrace.retrieval_mode || '未知' }}</b>
+                <span>评分模型</span><b>{{ msg.ragTrace.grade_model || '-' }}</b>
                 <span>评分路由</span><b>{{ msg.ragTrace.grade_score || '-' }} / {{ msg.ragTrace.grade_route || '-' }}</b>
+                <span>重排模型</span><b>{{ msg.ragTrace.rerank_model || (msg.ragTrace.rerank_enabled ? '已配置' : '未启用') }}</b>
+                <span>重排状态</span><b>{{ msg.ragTrace.rerank_applied ? '已应用' : '未应用' }}{{ msg.ragTrace.rerank_error ? ` / ${msg.ragTrace.rerank_error}` : '' }}</b>
+                <span>候选数</span><b>{{ msg.ragTrace.candidate_count || '-' }} / {{ msg.ragTrace.candidate_k || '-' }}</b>
+                <span>叶子层级</span><b>{{ msg.ragTrace.leaf_retrieve_level || '-' }}</b>
+                <span>Auto-merge</span><b>{{ msg.ragTrace.auto_merge_applied ? '已应用' : '未应用' }}{{ msg.ragTrace.auto_merge_replaced_chunks ? ` / ${msg.ragTrace.auto_merge_replaced_chunks}` : '' }}</b>
               </div>
               <div v-if="sourceChunks(msg).length" class="sources">
                 <h4>引用片段</h4>

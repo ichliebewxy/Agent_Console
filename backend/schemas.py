@@ -30,8 +30,10 @@ class RagTrace(BaseModel):
     expansion_type: Optional[str] = None
     hypothetical_doc: Optional[str] = None
     retrieval_stage: Optional[str] = None
+    grade_model: Optional[str] = None
     grade_score: Optional[str] = None
     grade_route: Optional[str] = None
+    grade_error: Optional[str] = None
     rewrite_needed: Optional[bool] = None
     rewrite_strategy: Optional[str] = None
     rewrite_query: Optional[str] = None

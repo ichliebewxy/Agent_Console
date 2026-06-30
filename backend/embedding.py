@@ -141,6 +141,15 @@ class EmbeddingService:
     def get_query_embeddings(self, texts: list[str]) -> list[list[float]]:
         return self.get_embeddings(texts)
 
+    def warm_up(self) -> dict[str, Any]:
+        embedder = self._get_embedder()
+        vector = embedder.embed_query("warmup")
+        return {
+            "model": self.model_name,
+            "device": self.device,
+            "dim": len(vector),
+        }
+
     def get_passage_embeddings(self, texts: list[str]) -> list[list[float]]:
         return self.get_embeddings(texts)
 
