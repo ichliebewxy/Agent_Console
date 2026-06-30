@@ -166,19 +166,61 @@
 
 .trace-steps {
   display: grid;
-  gap: 6px;
+  gap: 8px;
 }
 
-.trace-steps div {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
+.trace-steps > div {
+  display: grid;
+  grid-template-columns: 24px 34px minmax(0, 1fr);
+  align-items: start;
   gap: 8px;
   color: var(--muted);
   font-size: 0.86rem;
+}
+
+.step-index {
+  width: 24px;
+  height: 24px;
+  display: inline-grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-raised);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.step-icon {
+  min-width: 34px;
+  font-weight: 800;
+  color: var(--green-dark);
+}
+
+.step-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
 }
 
 .trace-steps b {
   color: var(--ink);
 }
 
+.trace-steps small {
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.step-result {
+  max-height: 150px;
+  margin: 4px 0 0;
+  padding: 8px 10px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in oklch, var(--surface-raised) 68%, transparent);
+  color: var(--ink);
+  white-space: pre-wrap;
+  font: 0.78rem/1.45 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+}

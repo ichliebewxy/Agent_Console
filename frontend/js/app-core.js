@@ -138,10 +138,20 @@ window.NebulaNestApp = {
     },
 
     activeThinkingLabel(msg) {
-      if (msg.ragSteps && msg.ragSteps.length) {
-        return msg.ragSteps[msg.ragSteps.length - 1].label;
+      const steps = this.agentFlowSteps(msg);
+      if (steps.length) {
+        return steps[steps.length - 1].label;
       }
       return msg.thinkingText || "正在规划与检索...";
+    },
+
+    agentFlowSteps(msg) {
+      if (!msg) return [];
+      if (Array.isArray(msg.flowSteps) && msg.flowSteps.length) return msg.flowSteps;
+      return [
+        ...(Array.isArray(msg.ragSteps) ? msg.ragSteps : []),
+        ...(Array.isArray(msg.toolSteps) ? msg.toolSteps : []),
+      ];
     },
 
     autoResize(event) {

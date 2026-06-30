@@ -86,21 +86,25 @@
               </button>
             </div>
 
-            <div v-if="!msg.isUser && msg.isThinking && !msg.text" class="message-bubble thinking">
-              <div class="thinking-line">
+            <div v-if="!msg.isUser && (msg.isThinking || agentFlowSteps(msg).length)" class="message-bubble thinking">
+              <div v-if="msg.isThinking && !msg.text" class="thinking-line">
                 <span class="loader"></span>
                 <strong>{{ activeThinkingLabel(msg) }}</strong>
               </div>
-              <div v-if="msg.ragSteps && msg.ragSteps.length" class="trace-steps">
-                <div v-for="(step, sIdx) in msg.ragSteps" :key="sIdx">
-                  <span>{{ step.icon || '•' }}</span>
-                  <b>{{ step.label }}</b>
-                  <small v-if="step.detail">{{ step.detail }}</small>
+              <div v-if="agentFlowSteps(msg).length" class="trace-steps">
+                <div v-for="(step, sIdx) in agentFlowSteps(msg)" :key="step.call_id ? `${step.call_id}-${step.phase}` : sIdx">
+                  <span class="step-index">{{ sIdx + 1 }}</span>
+                  <span class="step-icon">{{ step.icon || '•' }}</span>
+                  <div class="step-copy">
+                    <b>{{ step.label }}</b>
+                    <small v-if="step.detail">{{ step.detail }}</small>
+                    <pre v-if="step.result" class="step-result">{{ step.result }}</pre>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div v-else class="message-bubble" v-html="msg.isUser ? escapeHtml(msg.text) : parseMarkdown(msg.text)"></div>
+            <div v-if="msg.isUser || msg.text" class="message-bubble" v-html="msg.isUser ? escapeHtml(msg.text) : parseMarkdown(msg.text)"></div>
 
             <details v-if="!msg.isUser && msg.ragTrace" class="trace-panel">
               <summary>检索与调用轨迹</summary>

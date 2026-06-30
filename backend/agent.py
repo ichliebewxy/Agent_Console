@@ -10,12 +10,14 @@ from agent_prompt import SYSTEM_PROMPT
 from conversation_storage import ConversationStorage
 from mcp_service import load_mcp_tools
 from settings import CHAT_API_KEY, CHAT_BASE_URL, CHAT_MODEL
+from tool_instrumentation import instrument_tools
 from tools import (
     get_current_weather,
     get_last_rag_context,
     reset_tool_call_guards,
     search_knowledge_base,
     set_rag_step_queue,
+    set_tool_step_queue,
 )
 
 agent = None
@@ -46,7 +48,7 @@ async def init_agent_async(record_init_failure: bool = True):
     mcp_tool_count = mcp_result.tool_count
     last_mcp_init_error = mcp_result.error
 
-    all_tools = [get_current_weather, search_knowledge_base] + mcp_result.tools
+    all_tools = instrument_tools([get_current_weather, search_knowledge_base] + mcp_result.tools)
     agent = create_agent(model=model, tools=all_tools, system_prompt=SYSTEM_PROMPT)
     if mcp_tool_count > 0:
         print(f"Agent 初始化完成，MCP 工具已加载 {mcp_tool_count} 个。")
@@ -142,6 +144,10 @@ async def chat_with_agent_stream(user_text: str, user_id: str = "default_user", 
         def put_nowait(self, step):
             output_queue.put_nowait({"type": "rag_step", "step": step})
 
+    class _ToolStepProxy:
+        def put_nowait(self, step):
+            output_queue.put_nowait({"type": "tool_step", "step": step})
+
     async def _agent_worker():
         nonlocal full_response
         try:
@@ -161,6 +167,7 @@ async def chat_with_agent_stream(user_text: str, user_id: str = "default_user", 
             await output_queue.put(None)
 
     set_rag_step_queue(_RagStepProxy())
+    set_tool_step_queue(_ToolStepProxy())
     agent_task = asyncio.create_task(_agent_worker())
     try:
         while True:
@@ -177,6 +184,7 @@ async def chat_with_agent_stream(user_text: str, user_id: str = "default_user", 
         raise
     finally:
         set_rag_step_queue(None)
+        set_tool_step_queue(None)
         if not agent_task.done():
             agent_task.cancel()
 

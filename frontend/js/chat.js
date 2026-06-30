@@ -31,6 +31,8 @@ Object.assign(window.NebulaNestApp.methods, {
       thinkingText: "正在调用 Agent、检查工具与知识库...",
       ragTrace: null,
       ragSteps: [],
+      toolSteps: [],
+      flowSteps: [],
     });
     const botMsgIdx = this.messages.length - 1;
     this.abortController = new AbortController();
@@ -90,6 +92,13 @@ Object.assign(window.NebulaNestApp.methods, {
         botMessage.ragTrace = data.rag_trace;
       } else if (data.type === "rag_step") {
         botMessage.ragSteps.push(data.step);
+        botMessage.flowSteps = botMessage.flowSteps || [];
+        botMessage.flowSteps.push(data.step);
+      } else if (data.type === "tool_step") {
+        botMessage.toolSteps = botMessage.toolSteps || [];
+        botMessage.flowSteps = botMessage.flowSteps || [];
+        botMessage.toolSteps.push(data.step);
+        botMessage.flowSteps.push(data.step);
       } else if (data.type === "error") {
         botMessage.isThinking = false;
         botMessage.text += `\n\n工具或模型返回错误：${data.content}`;
@@ -127,6 +136,8 @@ Object.assign(window.NebulaNestApp.methods, {
         isUser: msg.type === "human",
         ragTrace: msg.rag_trace || null,
         ragSteps: [],
+        toolSteps: [],
+        flowSteps: [],
       }));
       this.persistState();
       this.$nextTick(() => this.scrollToBottom());

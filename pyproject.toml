@@ -1,5 +1,5 @@
 [project]
-name = "nebulanest-agent-console"
+name = "agent-console"
 version = "0.1.0"
 description = "A local Agent and RAG console with hybrid retrieval, tool callbacks, and human review."
 readme = "README.md"
@@ -23,6 +23,10 @@ dependencies = [
     "pypdf>=4.3.1",
     "docx2txt>=0.8",
     "websockets>=16.0",
+    "PyMuPDF",
+    "python-pptx",
+    "python-docx",
+    "langchain_deepseek",
 ]
 
 [project.optional-dependencies]
