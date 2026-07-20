@@ -1,7 +1,7 @@
 [project]
 name = "agent-console"
 version = "0.1.0"
-description = "A local Agent and RAG console with hybrid retrieval, tool callbacks, and human review."
+description = "A local LangGraph supervisor console with lazy specialist agents, hybrid RAG, and read-only runtime records."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -13,6 +13,7 @@ dependencies = [
     "pymilvus>=2.5.0",
     "python-multipart>=0.0.9",
     "pydantic>=2.8.0",
+    "pyyaml>=6.0.2",
     "langchain>=0.2.14",
     "langchain-core>=0.2.37",
     "langchain-community>=0.2.12",

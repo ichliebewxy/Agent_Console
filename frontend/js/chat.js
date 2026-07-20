@@ -28,11 +28,12 @@ Object.assign(window.NebulaNestApp.methods, {
       text: "",
       isUser: false,
       isThinking: true,
-      thinkingText: "正在调用 Agent、检查工具与知识库...",
+      thinkingText: "主 Agent 正在规划并选择小 Agent...",
       ragTrace: null,
       ragSteps: [],
       toolSteps: [],
       flowSteps: [],
+      artifacts: [],
     });
     const botMsgIdx = this.messages.length - 1;
     this.abortController = new AbortController();
@@ -99,6 +100,8 @@ Object.assign(window.NebulaNestApp.methods, {
         botMessage.flowSteps = botMessage.flowSteps || [];
         botMessage.toolSteps.push(data.step);
         botMessage.flowSteps.push(data.step);
+      } else if (data.type === "artifacts") {
+        botMessage.artifacts = data.artifacts || [];
       } else if (data.type === "error") {
         botMessage.isThinking = false;
         botMessage.text += `\n\n工具或模型返回错误：${data.content}`;
@@ -138,6 +141,7 @@ Object.assign(window.NebulaNestApp.methods, {
         ragSteps: [],
         toolSteps: [],
         flowSteps: [],
+        artifacts: msg.artifacts || [],
       }));
       this.persistState();
       this.$nextTick(() => this.scrollToBottom());

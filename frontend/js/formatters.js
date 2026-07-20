@@ -25,18 +25,16 @@ Object.assign(window.NebulaNestApp.methods, {
     return "fas fa-file file-default";
   },
 
-  reviewStatusLabel(status) {
-    return {
-      pending: "待审核",
-      approved: "已批准",
-      rejected: "已驳回",
-      needs_revision: "需修订",
-    }[status] || status;
+  formatFileSize(bytes) {
+    const value = Number(bytes || 0);
+    if (value < 1024) return `${value} B`;
+    if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+    return `${(value / (1024 * 1024)).toFixed(1)} MB`;
   },
 
   failureStatusLabel(status) {
     return {
-      open: "待回调",
+      open: "已记录",
       retry_requested: "请求重试",
       resolved: "已处理",
       ignored: "已忽略",

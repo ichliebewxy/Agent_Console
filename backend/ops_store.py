@@ -38,17 +38,11 @@ class JsonListStore:
         rows.sort(key=lambda row: row.get("updated_at") or row.get("created_at") or "", reverse=True)
         return rows[:limit]
 
-    def get(self, item_id: str) -> Optional[Dict[str, Any]]:
-        for row in self._load():
-            if row.get("id") == item_id:
-                return row
-        return None
-
     def create(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         now = datetime.now().isoformat()
         row = {
             "id": payload.get("id") or uuid4().hex,
-            "status": payload.get("status") or "pending",
+            "status": payload.get("status") or "open",
             "created_at": now,
             "updated_at": now,
             **payload,
@@ -57,21 +51,6 @@ class JsonListStore:
         rows.append(row)
         self._save(rows)
         return row
-
-    def update(self, item_id: str, patch: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        rows = self._load()
-        for idx, row in enumerate(rows):
-            if row.get("id") != item_id:
-                continue
-            updated = {
-                **row,
-                **{k: v for k, v in patch.items() if v is not None},
-                "updated_at": datetime.now().isoformat(),
-            }
-            rows[idx] = updated
-            self._save(rows)
-            return updated
-        return None
 
     def upsert_open(self, payload: Dict[str, Any], match_keys: List[str]) -> Dict[str, Any]:
         rows = self._load()
@@ -92,28 +71,6 @@ class JsonListStore:
                 return updated
         return self.create({**payload, "occurrence_count": 1})
 
-    def resolve_open_matching(self, match: Dict[str, Any], note: str = "") -> int:
-        rows = self._load()
-        changed = 0
-        now = datetime.now().isoformat()
-        for idx, row in enumerate(rows):
-            if row.get("status") not in {"open", "retry_requested"}:
-                continue
-            if not all(row.get(key) == value for key, value in match.items()):
-                continue
-            rows[idx] = {
-                **row,
-                "status": "resolved",
-                "callback_note": note or row.get("callback_note", ""),
-                "updated_at": now,
-            }
-            changed += 1
-        if changed:
-            self._save(rows)
-        return changed
-
-
-review_store = JsonListStore("human_reviews.json")
 tool_failure_store = JsonListStore("tool_failures.json")
 
 

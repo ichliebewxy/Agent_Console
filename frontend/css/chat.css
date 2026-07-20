@@ -169,6 +169,70 @@
   gap: 8px;
 }
 
+.artifact-panel {
+  padding: 13px 14px;
+  border: 1px solid color-mix(in oklch, var(--green) 36%, var(--line));
+  border-radius: var(--radius);
+  background: color-mix(in oklch, var(--surface) 86%, var(--success-bg));
+  display: grid;
+  gap: 10px;
+}
+
+.artifact-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--green-dark);
+  font-size: 0.84rem;
+}
+
+.artifact-list {
+  display: grid;
+  gap: 7px;
+}
+
+.artifact-link {
+  min-width: 0;
+  padding: 10px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface-raised);
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 24px;
+  align-items: center;
+  gap: 9px;
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.artifact-link:hover {
+  border-color: var(--green);
+  background: var(--surface-soft);
+}
+
+.artifact-link > i {
+  color: var(--green-dark);
+  text-align: center;
+}
+
+.artifact-link span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.artifact-link b,
+.artifact-link small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artifact-link small {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
 .trace-steps > div {
   display: grid;
   grid-template-columns: 24px 34px minmax(0, 1fr);

@@ -1,11 +1,22 @@
-from pydantic import BaseModel
-from typing import Optional, List, Any, Dict
+from pydantic import BaseModel, Field, StringConstraints
+from typing import Annotated, Optional, List, Any, Dict
+
+
+RuntimeId = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+    ),
+]
 
 
 class ChatRequest(BaseModel):
     message: str
-    user_id: Optional[str] = "default_user"
-    session_id: Optional[str] = "default_session"
+    user_id: RuntimeId = "default_user"
+    session_id: RuntimeId = "default_session"
 
 
 class RetrievedChunk(BaseModel):
@@ -56,9 +67,23 @@ class RagTrace(BaseModel):
     expanded_retrieved_chunks: Optional[List[RetrievedChunk]] = None
 
 
+class ArtifactInfo(BaseModel):
+    path: str
+    name: str
+    size: int
+    updated_at: str
+    mime_type: str
+    download_url: str
+
+
+class ArtifactListResponse(BaseModel):
+    artifacts: List[ArtifactInfo] = Field(default_factory=list)
+
+
 class ChatResponse(BaseModel):
     response: str
     rag_trace: Optional[RagTrace] = None
+    artifacts: List[ArtifactInfo] = Field(default_factory=list)
 
 
 class MessageInfo(BaseModel):
@@ -66,6 +91,7 @@ class MessageInfo(BaseModel):
     content: str
     timestamp: str
     rag_trace: Optional[RagTrace] = None
+    artifacts: List[ArtifactInfo] = Field(default_factory=list)
 
 
 class SessionMessagesResponse(BaseModel):
@@ -108,46 +134,6 @@ class DocumentDeleteResponse(BaseModel):
     filename: str
     chunks_deleted: int
     message: str
-
-
-class HumanReviewCreateRequest(BaseModel):
-    user_id: Optional[str] = "default_user"
-    session_id: Optional[str] = "default_session"
-    question: Optional[str] = ""
-    answer: str
-    message_index: Optional[int] = None
-    rag_trace: Optional[Dict[str, Any]] = None
-    reviewer_note: Optional[str] = ""
-
-
-class HumanReviewUpdateRequest(BaseModel):
-    status: str
-    reviewer_note: Optional[str] = ""
-    revised_answer: Optional[str] = None
-
-
-class HumanReviewInfo(BaseModel):
-    id: str
-    status: str
-    user_id: Optional[str] = None
-    session_id: Optional[str] = None
-    question: Optional[str] = None
-    answer: str
-    message_index: Optional[int] = None
-    rag_trace: Optional[Dict[str, Any]] = None
-    reviewer_note: Optional[str] = ""
-    revised_answer: Optional[str] = None
-    created_at: str
-    updated_at: str
-
-
-class HumanReviewListResponse(BaseModel):
-    reviews: List[HumanReviewInfo]
-
-
-class ToolFailureUpdateRequest(BaseModel):
-    status: str
-    callback_note: Optional[str] = ""
 
 
 class ToolFailureInfo(BaseModel):

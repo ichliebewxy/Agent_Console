@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from langchain_core.tools import StructuredTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
-from ops_store import record_tool_failure, tool_failure_store
+from ops_store import record_tool_failure
 from settings import AMAP_MCP_ENDPOINT, DASHSCOPE_MCP_API_KEY
 
 
@@ -90,15 +90,10 @@ async def load_mcp_tools(record_init_failure: bool = True) -> MCPInitResult:
                 "amap_mcp_init",
                 error,
                 {"endpoint": AMAP_MCP_ENDPOINT},
-                "Continue startup with local tools only.",
+                "Return the unavailable status to the MCP specialist.",
                 dedupe=True,
             )
         return MCPInitResult(client=client, tools=[], tool_count=0, error=error)
 
-    wrapped_tools = [_wrap_tool(tool) for tool in raw_tools]#对工具名字进行清洗
-    if wrapped_tools:
-        tool_failure_store.resolve_open_matching(
-            {"tool_name": "amap_mcp_init"},
-            f"MCP 初始化成功，已加载 {len(wrapped_tools)} 个工具。",
-        )
+    wrapped_tools = [_wrap_tool(tool) for tool in raw_tools]
     return MCPInitResult(client=client, tools=wrapped_tools, tool_count=len(wrapped_tools))

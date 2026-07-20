@@ -39,10 +39,10 @@ async def lifespan(app: FastAPI):
         f"{embedding_info['model']} on {embedding_info['device']} "
         f"({embedding_info['dim']} dims)."
     )
-    # 启动时执行：初始化全局 Agent 和 MCP 工具
-    print("正在初始化 Agent 和 MCP 工具...")
+    # 启动时只初始化 supervisor；小 Agent 和外部工具保持懒加载。
+    print("正在初始化主 Agent...")
     await init_agent_async()
-    print("Agent 初始化完成，应用启动！")
+    print("主 Agent 初始化完成，应用启动！")
     
     yield
     
