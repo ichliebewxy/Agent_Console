@@ -44,7 +44,15 @@ def _tool_step(phase: str, tool_name: str, call_id: str, args=None, result=None)
 
 
 def _result_phase(result) -> str:
-    if isinstance(result, str) and result.startswith("TOOL_ERROR:"):
+    error_prefixes = (
+        "TOOL_ERROR:",
+        "OPENCLI_ERROR:",
+        "SPECIALIST_ERROR:",
+        "SKILL_ERROR:",
+        "WORKSPACE_ERROR:",
+        "SANDBOX_ERROR:",
+    )
+    if isinstance(result, str) and result.startswith(error_prefixes):
         return "error"
     return "result"
 

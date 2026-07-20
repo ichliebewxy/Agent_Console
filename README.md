@@ -1,13 +1,16 @@
 # Agent Console
 
-Agent Console 是一个本地运行的 Agent + RAG 工作台。它把文档入库、混合检索、查询改写、工具调用、浏览器自动化、运行回调和人工审核放在同一个控制台里，适合做企业知识库问答、课程资料检索、客服辅助和可追踪的智能体实验。
-
-![workflow](docs/assets/nebulanest-flow.png)
+Agent Console 是一个本地运行的 LangGraph 多 Agent + RAG 工作台。主 Agent 只负责理解请求、选择专用小 Agent 和汇总结果；知识库、天气、MCP、OpenCLI 与 Skills 的底层工具只在任务真正委派后交给对应小 Agent。控制台同时提供文档入库、混合检索、技能渐进加载、安全工作区、浏览器自动化、工具步骤追踪和只读运行记录。
 
 ## 核心能力
 
 - 流式对话：`/chat/stream` 通过 SSE 返回增量回答、RAG 步骤、工具调用步骤和最终 trace。
-- 可视化工具流程：普通工具、MCP 工具、RAG 检索都会在前端展示调用参数、当前阶段和返回摘要。
+- Supervisor 委派：主 Agent 只看到一个宽泛的 `delegate_to_specialist` 能力入口，不直接持有业务工具。
+- 按需工具暴露：知识库、天气、MCP、OpenCLI、Skills 分属五个隔离的小 Agent；MCP 工具在首次委派时才连接和发现。
+- 技能渐进披露：主 Agent 不看到技能 catalog；Skills 小 Agent 先看到受预算限制的名称/描述，选中后才加载完整 `SKILL.md` 和引用资源。
+- Docker 执行沙箱：Agent 生成的命令、脚本、程序、转换器和测试只能在禁网、限资源、临时 Docker 容器中运行。
+- 会话文件下载：每个对话拥有独立文件目录，生成文件通过 SSE 进入回答卡片并可直接点击下载。
+- 可视化工具流程：委派、小 Agent 的实际工具和 RAG 检索都会在前端展示调用参数、当前阶段和返回摘要。
 - 本地知识库：支持上传 PDF、Word、PPT、Excel、CSV、TXT，解析后写入 Milvus。
 - 分层 RAG：L1/L2 父块保存在本地 DocStore，L3 叶子块进入向量库，回答时支持 auto-merging 上卷上下文。
 - 混合检索：BGE-M3 dense embedding + BM25 sparse embedding + Milvus Hybrid Search，并用 RRF 融合。
@@ -15,8 +18,7 @@ Agent Console 是一个本地运行的 Agent + RAG 工作台。它把文档入�
 - 可选重排：支持接入 SiliconFlow rerank。
 - 地图与天气工具：DashScope AMap MCP 用于路线、POI、地址与坐标；高德 REST API 用于实时天气。
 - OpenCLI 浏览器工具：可通过用户浏览器打开网页、读取页面状态、点击、输入、抽取内容和查看网络请求。
-- 运行回调：MCP、OpenCLI、天气、Milvus 等失败会记录到 `data/tool_failures.json`，前端可重试或标记解决。
-- 人工审核：可把回答提交到审核队列，支持批准、驳回和修订。
+- 只读运行记录：MCP、OpenCLI、天气、Milvus 等失败会记录到 `data/tool_failures.json`；前端只能查看和刷新，不介入 Agent 流程。
 
 ## 技术栈
 
@@ -31,11 +33,11 @@ Agent Console 是一个本地运行的 Agent + RAG 工作台。它把文档入�
 
 [OpenCLI](https://github.com/jackwener/OpenCLI) 是一个面向网站和浏览器自动化的 CLI 工具层。它可以把网站、已登录的 Chrome/Chromium 浏览器会话、Electron 应用和本地 CLI 包装成可调用接口，让人或 AI Agent 用稳定命令完成打开页面、读取 DOM、点击、输入、等待、抽取内容和查看网络请求等操作。
 
-本项目没有直接把浏览器自动化逻辑写进 Agent，而是通过 `backend/opencli_tools.py` 把 OpenCLI 封装成 LangChain tools：
+本项目没有直接把浏览器自动化逻辑写进主 Agent，而是通过 `backend/opencli_tools.py` 把 OpenCLI 封装成 LangChain tools，再只交给 OpenCLI 小 Agent：
 
-- Agent 需要访问网页或读取实时网页内容时，可以调用 `browser_open`、`browser_state`、`browser_extract` 等工具。
+- 主 Agent 需要访问网页或读取实时网页内容时，只会委派完整任务；OpenCLI 小 Agent 再选择 `browser_open`、`browser_state`、`browser_extract` 等实际工具。
 - OpenCLI 复用用户自己的浏览器登录态，适合查询 Bilibili 热门、网页列表、后台页面等需要真实浏览器上下文的任务。
-- 工具执行失败会进入 `tool_failures.json` 和前端“运行回调”，不会让一次浏览器失败静默丢失。
+- 工具执行失败会进入 `tool_failures.json` 和前端只读“运行回调”，不会让一次浏览器失败静默丢失。
 - 每一次 OpenCLI 工具调用都会通过 SSE 展示在对话流程里，用户能看到调用参数、执行阶段和返回摘要。
 
 ## 架构流程
@@ -43,18 +45,31 @@ Agent Console 是一个本地运行的 Agent + RAG 工作台。它把文档入�
 ```mermaid
 flowchart LR
   U["用户 / 前端控制台"] --> API["FastAPI 路由"]
-  API --> Agent["LangChain Agent"]
-  Agent --> KB["search_knowledge_base"]
-  Agent --> Weather["get_current_weather"]
-  Agent --> AMap["DashScope AMap MCP"]
-  Agent --> Browser["OpenCLI Browser Tools"]
+  API --> Supervisor["LangGraph 主 Agent / Supervisor"]
+  Supervisor --> Gateway["delegate_to_specialist"]
+  Gateway --> Knowledge["知识库小 Agent"]
+  Gateway --> Weather["天气小 Agent"]
+  Gateway --> MCP["MCP 小 Agent（按需发现工具）"]
+  Gateway --> Browser["OpenCLI 小 Agent"]
+  Gateway --> Skills["Skills 小 Agent（自行选技能）"]
+  Knowledge --> KB["search_knowledge_base"]
+  Weather --> WeatherTool["get_current_weather"]
+  MCP --> AMap["DashScope AMap MCP"]
+  Browser --> BrowserTools["OpenCLI Browser Tools"]
+  Skills --> Catalog["名称 + 描述 catalog"]
+  Catalog --> SkillBody["按需 load_skill / 资源读取"]
+  Skills --> Workspace["受限 agent_workspace/files"]
+  Workspace --> Sandbox["临时 Docker 沙箱 /workspace"]
+  Sandbox --> Artifacts["会话文件清单 + 下载 API"]
+  Artifacts --> SSE
   KB --> RAG["LangGraph RAG Pipeline"]
   RAG --> Milvus["Milvus Hybrid Search"]
   RAG --> Parent["Parent Chunk Store"]
   RAG --> Rerank["可选 Rerank"]
-  Agent --> SSE["SSE: content / rag_step / tool_step / trace"]
+  Supervisor --> SSE["SSE: content / rag_step / tool_step / trace"]
   SSE --> U
-  Agent --> Ops["失败回调 / 人工审核"]
+  AMap --> Ops["只读失败记录"]
+  BrowserTools --> Ops
 ```
 
 ## 目录结构
@@ -63,9 +78,16 @@ flowchart LR
 backend/
   app.py                  FastAPI 应用入口，挂载前端静态文件
   api.py                  总路由聚合
-  routes_*.py             聊天、会话、文档、审核、回调路由
-  agent.py                Agent 初始化和同步/流式对话
-  agent_prompt.py         Agent 系统提示词
+  routes_*.py             聊天、会话、文档、只读运行记录路由
+  agent.py                主 Agent 初始化和同步/流式对话
+  subagents.py            小 Agent 懒加载、隔离工具与统一委派入口
+  agent_prompt.py         主 Agent 与各小 Agent 的系统提示词
+  skill_service.py        技能元数据注册表、按名称加载和资源路径隔离
+  workspace_tools.py      Skills 小 Agent 的受限文本工作区工具
+  runtime_context.py      当前 user/session 上下文和隔离目录键
+  sandbox_service.py      Docker 沙箱执行、限额、超时和容器回收
+  artifact_service.py     会话产物枚举与安全下载路径解析
+  routes_artifacts.py     产物列表和下载 API
   tools.py                本地天气、知识库检索和步骤事件队列
   tool_instrumentation.py 工具调用步骤包装器
   mcp_service.py          DashScope AMap MCP 加载与工具封装
@@ -83,11 +105,14 @@ backend/
 frontend/
   index.html              单页控制台
   script.js               Vue 挂载入口
-  js/*.js                 前端状态、聊天、知识库、审核、格式化逻辑
+  js/*.js                 前端状态、聊天、知识库、运行记录、格式化逻辑
   style.css               样式入口
   css/*.css               拆分后的样式模块
-docs/assets/
-  nebulanest-flow.png     README 逻辑总览图
+agent_workspace/
+  skills/                 迁移后的技能包和关联 resources/scripts
+  files/<session-key>/    每个会话独立的工作文件与下载产物（Git 忽略）
+sandbox/
+  Dockerfile              Python/Node/Poppler/PDF 依赖的只读运行镜像
 data/
   documents/              上传文件，本地运行数据，默认不提交
   parent_chunks.json      L1/L2 父块存储，默认不提交
@@ -175,6 +200,31 @@ OPENCLI_BIN=
 OPENCLI_SESSION=lcagent
 OPENCLI_TIMEOUT=75
 OPENCLI_OUTPUT_MAX_CHARS=12000
+
+# Skills specialist workspace
+AGENT_WORKSPACE_DIR=agent_workspace
+AGENT_SKILLS_DIR=agent_workspace/skills
+SKILL_CATALOG_MAX_CHARS=8000
+SKILL_CONTENT_MAX_CHARS=60000
+WORKSPACE_FILE_MAX_CHARS=50000
+ARTIFACT_SIGNING_KEY=请替换为生产环境长随机值
+
+# Ephemeral Docker sandbox
+SANDBOX_ENABLED=true
+SANDBOX_DOCKER_BIN=docker
+SANDBOX_IMAGE=agent-console-sandbox:py312
+SANDBOX_TIMEOUT=120
+SANDBOX_MEMORY_MB=512
+SANDBOX_CPUS=1.0
+SANDBOX_PIDS_LIMIT=128
+SANDBOX_OUTPUT_MAX_CHARS=20000
+SANDBOX_COMMAND_MAX_CHARS=8000
+SANDBOX_WORKSPACE_MAX_MB=256
+SANDBOX_FILE_MAX_MB=64
+SANDBOX_MAX_FILES=1000
+SANDBOX_DOCKER_CLEANUP_TIMEOUT=10
+SANDBOX_UID=
+SANDBOX_GID=
 ```
 
 ### Key 职责
@@ -189,6 +239,13 @@ OPENCLI_OUTPUT_MAX_CHARS=12000
 | `AMAP_API_KEY` | 高德天气 REST API，不等于 MCP Key。 |
 | `OPENCLI_BIN` | 可选，显式指定 OpenCLI 可执行文件，例如 `C:\Users\wangy\AppData\Roaming\npm\opencli.cmd`。 |
 | `OPENCLI_SESSION` | OpenCLI 浏览器会话名，默认 `lcagent`。 |
+| `AGENT_WORKSPACE_DIR` | Skills 小 Agent 的隔离工作区，默认 `agent_workspace`。 |
+| `AGENT_SKILLS_DIR` | `SKILL.md` 技能包根目录，默认 `agent_workspace/skills`。 |
+| `SKILL_*_MAX_CHARS` | catalog 与单次完整技能内容的上下文预算。 |
+| `WORKSPACE_FILE_MAX_CHARS` | 工作区文本文件单次读写上限。 |
+| `ARTIFACT_SIGNING_KEY` | 文件下载 capability URL 的 HMAC 密钥；生产环境必须设置长随机值。 |
+| `SANDBOX_IMAGE` | Agent 程序执行使用的本地 Docker 镜像；运行时不会自动拉取。 |
+| `SANDBOX_*` | 沙箱开关、Docker 路径、UID/GID、清理超时、CPU、内存、PID、文件数、磁盘、命令和输出上限。 |
 
 ## 启动应用
 
@@ -220,10 +277,9 @@ http://127.0.0.1:8000
 
 ## 主要页面
 
-- 对话：流式回答、工具步骤、RAG trace、引用片段、提交人工审核。
+- 对话：流式回答、主 Agent 委派、小 Agent 工具步骤、RAG trace 和引用片段。
 - 知识库：上传文档、入库、查看文档块数量、删除文档。
-- 人工审核：查看待审回答，批准、驳回或填写修订稿。
-- 运行回调：查看工具失败记录，标记重试、已处理或忽略。
+- 运行回调：只读查看工具失败记录和调用参数；不提供重试、审批或状态修改。
 - 历史会话：按用户和 session 读取历史消息。
 
 ## 主要 API
@@ -237,10 +293,9 @@ http://127.0.0.1:8000
 | `POST` | `/documents/upload` | 上传文档并入库。 |
 | `GET` | `/documents` | 查看已入库文档。 |
 | `DELETE` | `/documents/{filename}` | 删除文档。 |
-| `GET` | `/reviews` | 查看人工审核列表。 |
-| `POST` | `/reviews` | 提交回答到人工审核。 |
-| `GET` | `/tool-failures` | 查看工具失败回调。 |
-| `PATCH` | `/tool-failures/{failure_id}` | 更新失败回调状态。 |
+| `GET` | `/tool-failures` | 只读查看工具失败运行记录。 |
+| `GET` | `/sessions/{user_id}/{session_id}/artifacts` | 查看当前会话生成的文件。 |
+| `GET` | `/sessions/{user_id}/{session_id}/artifacts/{path}` | 下载会话文件。 |
 
 ## 运行流程
 
@@ -248,21 +303,67 @@ http://127.0.0.1:8000
 
 用户在知识库页上传文件，后端先保存原始文件，再由 `DocumentLoader` 解析文本。解析结果会生成 L1/L2/L3 三层块：父块保存在 `parent_chunks.json`，叶子块生成 BGE dense embedding 和 BM25 sparse embedding 后写入 Milvus。BGE 模型和 Milvus client 都采用懒加载，应用启动时不会预加载向量模型。
 
-### 2. 对话与工具选择
+### 2. 主 Agent 委派与按需工具选择
 
-前端把问题提交到 `/chat/stream`，`agent.py` 调用 LangChain Agent。Agent 根据问题选择本地知识库、天气、AMap MCP、OpenCLI 浏览器工具或其他工具。每次工具调用都会被 `tool_instrumentation.py` 包装为用户可见的步骤事件。
+前端把问题提交到 `/chat/stream`，`agent.py` 调用 LangGraph 主 Agent。主 Agent 起初只看到 `delegate_to_specialist` 这一个最大能力描述，并根据任务选择 `knowledge`、`weather`、`mcp`、`opencli` 或 `skills` 小 Agent。小 Agent 接到完整任务后才获得本领域实际工具；其中 MCP 连接和工具发现延迟到首次 MCP 委派，技能 catalog 也只在首次 Skills 委派时扫描。委派和实际工具调用都会被 `tool_instrumentation.py` 包装成用户可见步骤。
 
 ### 3. RAG 检索与生成
 
 知识库检索会先走 Milvus Hybrid Search：BGE dense 向量和 BM25 sparse 向量分别召回候选，再用 RRF 融合。候选返回后先做 auto-merging 上卷，再用可选 rerank 重新打分排序。如果没有搜到片段，或相关性评估不通过，LangGraph 才会触发查询改写，再用 Step-back、HyDE 或复杂查询策略补召回。最终检索结果会交给模型生成回答。
 
-### 4. 质量闭环
+### 4. 运行记录
 
-回答可以提交人工审核；工具或外部服务失败会进入运行回调队列。管理员可在前端把失败项标记为重试、已解决或忽略，避免静默失败。
+工具或外部服务失败会写入运行记录，避免静默失败。运行回调页面和 `GET /tool-failures` 只负责展示，不是审批节点，也不会重试或改变执行状态。
+
+## Skills 加载与工作区
+
+实现参考 [shareAI-lab/learn-claude-code](https://github.com/shareAI-lab/learn-claude-code) 的 s07 Skill Loading，并针对当前 supervisor 架构调整为由小 Agent 决策：
+
+1. 主 Agent 只知道可以委派 `skills`，看不到具体技能名和正文。
+2. Skills 小 Agent 创建时只注入 `name + description` catalog，默认最多 8000 字符。
+3. 小 Agent 根据任务自行选择精确技能名，再调用 `load_skill` 读取完整 `SKILL.md`。
+4. `references/`、`scripts/` 等资源必须通过 `read_skill_resource` 相对 skill root 读取，调用方不能传入任意技能路径。
+5. 工作文件按 user/session 哈希隔离在 `agent_workspace/files/<session-key>/`；小 Agent 可列举、读取和显式写入文本。
+6. 任何命令、脚本、生成程序、转换器和测试必须调用 `run_in_sandbox`。小 Agent 没有宿主机 shell，也不能继续委派。
+
+已从 `D:\learn_claude_code\skills` 原样迁移四个技能：`agent-builder`、`code-review`、`mcp-builder`、`pdf`，包括 `agent-builder` 的 references 和 scripts。新增技能时，在 `agent_workspace/skills/<name>/SKILL.md` 中提供 YAML frontmatter：
+
+```yaml
+---
+name: example-skill
+description: What the skill does and when the small agent should use it.
+---
+```
+
+技能目录在进程内首次导入时建立注册表；新增或修改技能后重启服务即可刷新。完整技能正文不会进入主 Agent system prompt。
+
+## Docker 执行沙箱与文件下载
+
+首次使用前构建固定镜像：
+
+```powershell
+docker build -t agent-console-sandbox:py312 sandbox
+```
+
+每次 `run_in_sandbox` 都启动新容器并在结束后删除。固定边界包括：
+
+- `--network none`，运行程序不能访问网络。
+- 根文件系统只读，仅把当前会话目录挂载为 `/workspace:rw`。
+- `cap-drop ALL`、`no-new-privileges`、非 root 用户。
+- 默认 1 CPU、512 MB 内存、128 PID、120 秒超时、文件描述符上限。
+- 默认每个会话最多 256 MB、1000 个文件、单文件 64 MB；执行期间持续监控并设置 `fsize` ulimit。
+- 不挂载 Docker socket、项目源码、`.env`、用户目录或其他会话文件。
+- 镜像必须预先存在，聊天运行时使用 `--pull never`，不会临时联网下载。
+
+容器内包含 Python 3.12、Node.js、Poppler、PyMuPDF、pypdf 和 ReportLab，可运行常见代码并生成 PDF 等文件。回答结束后，后端发送 `artifacts` SSE 事件；前端在对应 Agent 消息下显示文件名、路径、大小和下载按钮。下载 URL 带有服务端 HMAC capability token；删除会话时对应文件目录也会删除。若没有配置 `ARTIFACT_SIGNING_KEY`，首次运行会在 `agent_workspace/.artifact_signing_key` 生成本地密钥。历史消息会保存当时的文件清单。
+
+当前项目没有账号登录系统。签名下载链接可防止仅凭 `user_id/session_id` 枚举文件，但正式公网多用户部署仍应在 FastAPI 前增加 SSO、反向代理认证或其他统一身份层，并限制 `/sessions` 与 `/tool-failures` 的访问。
+
+MCP 和 OpenCLI 是外部服务连接器，不执行 Agent 生成的代码；后端自身、Milvus 和模型客户端也不通过任务沙箱运行。
 
 ## OpenCLI 浏览器自动化
 
-OpenCLI 工具适合处理需要访问网页、读取当前页面、抽取热门内容或分析网络请求的任务。它的工作方式是：本地 `opencli` 命令连接 OpenCLI daemon，再通过 Browser Bridge 扩展控制 Chrome/Chromium 页面。本项目中的 Agent 只调用后端封装好的工具，不直接拼接浏览器脚本。
+OpenCLI 工具适合处理需要访问网页、读取当前页面、抽取热门内容或分析网络请求的任务。它的工作方式是：本地 `opencli` 命令连接 OpenCLI daemon，再通过 Browser Bridge 扩展控制 Chrome/Chromium 页面。本项目中的 OpenCLI 小 Agent 只调用后端封装好的工具，不直接拼接浏览器脚本；主 Agent 看不到这些底层工具名。
 
 本项目封装的 OpenCLI 工具：
 
@@ -306,15 +407,15 @@ Windows 注意事项：
 
 安全边界：
 
-- 登录、付款、发布、发消息、关注/取关、删除等有副作用操作需要先获得用户确认。
+- 登录、付款、发布、发消息、关注/取关、删除等有副作用操作，仅在用户请求已明确包含该动作时执行；不新增人工审核节点。
 - 不绕过验证码、付费墙、权限控制或网站风控。
 - 浏览器工具失败时，Agent 应说明限制，并避免用同一参数反复重试。
 
 ## 常见问题
 
-### 终端显示 Agent 初始化完成，但前端仍有 `amap_mcp_init`
+### 首次地图委派出现 `amap_mcp_init`
 
-先看终端是否显示 MCP 工具已加载。如果显示 MCP 未加载到工具，说明 Agent 本体启动成功，但 DashScope MCP 没拿到工具。重点检查：
+应用启动时不会连接 MCP。只有主 Agent 首次把地图任务委派给 MCP 小 Agent 时，系统才加载工具；若失败会记录 `amap_mcp_init`。重点检查：
 
 - `DASHSCOPE_MCP_API_KEY` 是否是开通 MCP 的 Key。
 - `AMAP_MCP_ENDPOINT` 是否正确。
@@ -375,7 +476,7 @@ $env:PYTHONIOENCODING="utf-8"
 - 后端单文件尽量保持在 250 行以内。
 - 前端 JS/CSS 已按功能拆分，`script.js` 和 `style.css` 只保留入口。
 - 不要在业务代码中硬编码真实 Key，只通过 `.env` 读取。
-- 工具失败不要静默丢弃，统一记录到 `tool_failures.json`。
+- 工具失败不要静默丢弃，统一记录到 `tool_failures.json`；对外只开放读取接口。
 - `data/`、`volumes/`、`.env`、`.venv/` 默认不提交，避免泄露运行数据和凭据。
 - 手动改代码后至少运行：
 

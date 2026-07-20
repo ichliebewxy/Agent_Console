@@ -11,7 +11,6 @@ window.NebulaNestApp = {
       userId: "user_" + Math.random().toString(36).slice(2, 11),
       sessionId: "session_" + Date.now(),
       sessions: [],
-      reviews: [],
       failures: [],
       documents: [],
       documentsLoading: false,
@@ -28,21 +27,14 @@ window.NebulaNestApp = {
     stateKey() {
       return `nebulanest-state-${this.userId}`;
     },
-    pendingReviewCount() {
-      return this.reviews.filter((item) => item.status === "pending").length;
-    },
-    openFailureCount() {
-      return this.activeFailures.length;
-    },
-    activeFailures() {
-      return this.failures.filter((item) => ["open", "retry_requested"].includes(item.status));
+    failureCount() {
+      return this.failures.length;
     },
     viewTitle() {
       const titles = {
         chat: { eyebrow: "Chat", title: "可追踪的 Agent 对话" },
         knowledge: { eyebrow: "Knowledge", title: "知识库与混合检索" },
-        reviews: { eyebrow: "Human Review", title: "人工审核工作台" },
-        ops: { eyebrow: "Callbacks", title: "工具失败与补偿回调" },
+        ops: { eyebrow: "Runtime Records", title: "工具失败记录（只读）" },
       };
       return titles[this.activeView] || titles.chat;
     },
@@ -52,7 +44,6 @@ window.NebulaNestApp = {
     this.configureMarked();
     this.restoreIdentity();
     this.restoreState();
-    this.loadReviews();
     this.loadFailures();
     this.$nextTick(() => this.scrollToBottom());
   },
@@ -85,7 +76,10 @@ window.NebulaNestApp = {
       try {
         const saved = JSON.parse(raw);
         this.sessionId = saved.sessionId || this.sessionId;
-        this.activeView = saved.activeView || "chat";
+        const restoredView = saved.activeView || "chat";
+        this.activeView = ["chat", "knowledge", "ops"].includes(restoredView)
+          ? restoredView
+          : "chat";
         this.userInput = saved.userInput || "";
         this.messages = Array.isArray(saved.messages) ? saved.messages : [];
       } catch (error) {
@@ -115,7 +109,6 @@ window.NebulaNestApp = {
       this.activeView = view;
       this.showHistorySidebar = false;
       if (view === "knowledge") this.loadDocuments();
-      if (view === "reviews") this.loadReviews();
       if (view === "ops") this.loadFailures();
       this.persistState();
     },

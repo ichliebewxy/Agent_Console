@@ -1,7 +1,10 @@
 """Session history routes."""
+import asyncio
+
 from fastapi import APIRouter, HTTPException
 
 from agent import storage
+from runtime_context import delete_session_files, session_async_lock
 from schemas import MessageInfo, SessionDeleteResponse, SessionInfo, SessionListResponse, SessionMessagesResponse
 
 router = APIRouter()
@@ -18,6 +21,7 @@ async def get_session_messages(user_id: str, session_id: str):
                 content=item["content"],
                 timestamp=item["timestamp"],
                 rag_trace=item.get("rag_trace"),
+                artifacts=item.get("artifacts") or [],
             )
             for item in session_data.get("messages", [])
         ]
@@ -47,8 +51,12 @@ async def list_sessions(user_id: str):
 @router.delete("/sessions/{user_id}/{session_id}", response_model=SessionDeleteResponse)
 async def delete_session(user_id: str, session_id: str):
     try:
-        if not storage.delete_session(user_id, session_id):
-            raise HTTPException(status_code=404, detail="会话不存在")
+        async with session_async_lock(user_id, session_id):
+            if session_id not in storage.list_sessions(user_id):
+                raise HTTPException(status_code=404, detail="会话不存在")
+            await asyncio.to_thread(delete_session_files, user_id, session_id)
+            if not storage.delete_session(user_id, session_id):
+                raise HTTPException(status_code=404, detail="会话不存在")
         return SessionDeleteResponse(session_id=session_id, message="成功删除会话")
     except HTTPException:
         raise

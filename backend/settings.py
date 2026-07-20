@@ -1,8 +1,11 @@
 """Centralized runtime configuration."""
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 def env(name: str, default: str = "") -> str:
@@ -21,6 +24,21 @@ def env_int(name: str, default: int) -> int:
         return int(env(name, str(default)))
     except ValueError:
         return default
+
+
+def env_float(name: str, default: float) -> float:
+    try:
+        return float(env(name, str(default)))
+    except ValueError:
+        return default
+
+
+def env_path(name: str, default: Path) -> Path:
+    configured = env(name)
+    path = Path(configured).expanduser() if configured else default
+    if not path.is_absolute():
+        path = PROJECT_ROOT / path
+    return path.resolve()
 
 
 CHAT_MODEL = env("CHAT_MODEL", "deepseek-v4-flash")
@@ -59,3 +77,28 @@ OPENCLI_BIN = env("OPENCLI_BIN")
 OPENCLI_SESSION = env("OPENCLI_SESSION", "lcagent")
 OPENCLI_TIMEOUT = env_int("OPENCLI_TIMEOUT", 75)
 OPENCLI_OUTPUT_MAX_CHARS = env_int("OPENCLI_OUTPUT_MAX_CHARS", 12000)
+
+AGENT_WORKSPACE_DIR = env_path("AGENT_WORKSPACE_DIR", PROJECT_ROOT / "agent_workspace")
+AGENT_SKILLS_DIR = env_path("AGENT_SKILLS_DIR", AGENT_WORKSPACE_DIR / "skills")
+SKILL_CATALOG_MAX_CHARS = env_int("SKILL_CATALOG_MAX_CHARS", 8000)
+SKILL_CONTENT_MAX_CHARS = env_int("SKILL_CONTENT_MAX_CHARS", 60000)
+WORKSPACE_FILE_MAX_CHARS = env_int("WORKSPACE_FILE_MAX_CHARS", 50000)
+ARTIFACT_SIGNING_KEY = env("ARTIFACT_SIGNING_KEY")
+
+SANDBOX_ENABLED = env_bool("SANDBOX_ENABLED", True)
+SANDBOX_DOCKER_BIN = env("SANDBOX_DOCKER_BIN", "docker")
+SANDBOX_IMAGE = env("SANDBOX_IMAGE", "agent-console-sandbox:py312")
+SANDBOX_TIMEOUT = env_int("SANDBOX_TIMEOUT", 120)
+SANDBOX_MEMORY_MB = env_int("SANDBOX_MEMORY_MB", 512)
+SANDBOX_CPUS = env_float("SANDBOX_CPUS", 1.0)
+SANDBOX_PIDS_LIMIT = env_int("SANDBOX_PIDS_LIMIT", 128)
+SANDBOX_OUTPUT_MAX_CHARS = env_int("SANDBOX_OUTPUT_MAX_CHARS", 20000)
+SANDBOX_COMMAND_MAX_CHARS = env_int("SANDBOX_COMMAND_MAX_CHARS", 8000)
+SANDBOX_WORKSPACE_MAX_MB = env_int("SANDBOX_WORKSPACE_MAX_MB", 256)
+SANDBOX_FILE_MAX_MB = env_int("SANDBOX_FILE_MAX_MB", 64)
+SANDBOX_MAX_FILES = env_int("SANDBOX_MAX_FILES", 1000)
+SANDBOX_DOCKER_CLEANUP_TIMEOUT = env_int("SANDBOX_DOCKER_CLEANUP_TIMEOUT", 10)
+_HOST_UID = os.getuid() if hasattr(os, "getuid") else 65534
+_HOST_GID = os.getgid() if hasattr(os, "getgid") else 65534
+SANDBOX_UID = env_int("SANDBOX_UID", _HOST_UID if _HOST_UID > 0 else 65534)
+SANDBOX_GID = env_int("SANDBOX_GID", _HOST_GID if _HOST_UID > 0 else 65534)

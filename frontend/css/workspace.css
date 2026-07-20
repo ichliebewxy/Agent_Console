@@ -67,10 +67,6 @@
   font-size: 0.54rem;
 }
 
-.review-indicator i {
-  color: var(--blue);
-}
-
 .failure-indicator i {
   color: var(--amber);
 }
