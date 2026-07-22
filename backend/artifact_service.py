@@ -12,7 +12,9 @@ from pathlib import Path
 from urllib.parse import quote
 
 from runtime_context import session_files_dir
-from settings import AGENT_WORKSPACE_DIR, ARTIFACT_SIGNING_KEY
+from settings import ARTIFACT_SIGNING_KEY, BACKEND_TMP_DIR
+
+_INTERNAL_DIRS = {".cache", ".npm-cache", ".pycache", "__pycache__"}
 
 
 @lru_cache(maxsize=1)
@@ -20,7 +22,7 @@ def _signing_key() -> bytes:
     """Load the configured capability key or create one local persistent key."""
     if ARTIFACT_SIGNING_KEY:
         return ARTIFACT_SIGNING_KEY.encode("utf-8")
-    key_path = AGENT_WORKSPACE_DIR / ".artifact_signing_key"
+    key_path = BACKEND_TMP_DIR / ".artifact_signing_key"
     key_path.parent.mkdir(parents=True, exist_ok=True)
     try:
         value = key_path.read_text(encoding="utf-8").strip()
@@ -91,6 +93,8 @@ def list_session_artifacts(user_id: str, session_id: str, limit: int = 200) -> l
                     if entry.is_symlink():
                         continue
                     if entry.is_dir(follow_symlinks=False):
+                        if entry.name in _INTERNAL_DIRS:
+                            continue
                         stack.append(Path(entry.path))
                         continue
                     if not entry.is_file(follow_symlinks=False):

@@ -12,6 +12,25 @@ window.NebulaNestApp = {
       sessionId: "session_" + Date.now(),
       sessions: [],
       failures: [],
+      bashAudits: [],
+      runtimeConfig: null,
+      configLoading: false,
+      mcpForm: {
+        name: "",
+        transport: "streamable_http",
+        url: "",
+        command: "",
+        args: "",
+        headers: "{}",
+        env: "{}",
+        enabled: true,
+      },
+      skillForm: {
+        name: "",
+        description: "",
+        instructions: "",
+        overwrite: false,
+      },
       documents: [],
       documentsLoading: false,
       selectedFile: null,
@@ -34,6 +53,7 @@ window.NebulaNestApp = {
       const titles = {
         chat: { eyebrow: "Chat", title: "可追踪的 Agent 对话" },
         knowledge: { eyebrow: "Knowledge", title: "知识库与混合检索" },
+        config: { eyebrow: "Runtime Config", title: "MCP、Skills 与 Bash 权限" },
         ops: { eyebrow: "Runtime Records", title: "工具失败记录（只读）" },
       };
       return titles[this.activeView] || titles.chat;
@@ -77,7 +97,7 @@ window.NebulaNestApp = {
         const saved = JSON.parse(raw);
         this.sessionId = saved.sessionId || this.sessionId;
         const restoredView = saved.activeView || "chat";
-        this.activeView = ["chat", "knowledge", "ops"].includes(restoredView)
+        this.activeView = ["chat", "knowledge", "config", "ops"].includes(restoredView)
           ? restoredView
           : "chat";
         this.userInput = saved.userInput || "";
@@ -109,6 +129,7 @@ window.NebulaNestApp = {
       this.activeView = view;
       this.showHistorySidebar = false;
       if (view === "knowledge") this.loadDocuments();
+      if (view === "config") this.loadRuntimeConfig();
       if (view === "ops") this.loadFailures();
       this.persistState();
     },

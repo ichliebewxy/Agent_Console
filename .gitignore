@@ -21,7 +21,6 @@ extracted_images/
 .DS_Store
 data/
 
-# Agent workspace runtime artifacts (skill packages remain tracked)
-agent_workspace/files/*
-!agent_workspace/files/.gitkeep
-agent_workspace/.artifact_signing_key
+# Local Agent runtime artifacts (skill packages remain tracked)
+backend/tmp/*
+!backend/tmp/.gitkeep

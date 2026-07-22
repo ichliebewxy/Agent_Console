@@ -50,7 +50,8 @@ def _result_phase(result) -> str:
         "SPECIALIST_ERROR:",
         "SKILL_ERROR:",
         "WORKSPACE_ERROR:",
-        "SANDBOX_ERROR:",
+        "LOCAL_RUNTIME_ERROR:",
+        "PERMISSION_DENIED:",
     )
     if isinstance(result, str) and result.startswith(error_prefixes):
         return "error"

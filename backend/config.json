@@ -2,7 +2,522 @@
   "mcpServers": {
     "map": {
       "url": "https://dashscope.aliyuncs.com/api/v1/mcps/amap-maps/mcp",
-      "type": "streamableHttp"
+      "transport": "streamable_http",
+      "enabled": true,
+      "headers": {
+        "Authorization": "Bearer ${DASHSCOPE_MCP_API_KEY}"
+      },
+      "tools": [
+        {
+          "name": "maps_direction_bicycling",
+          "runtime_name": "mcp_map_maps_direction_bicycling",
+          "description": "骑行路径规划用于规划骑行通勤方案，规划时会考虑天桥、单行线、封路等情况。最大支持 500km 的骑行路线规划",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "origin": {
+                "type": "string",
+                "description": "出发点经纬度，坐标格式为：经度，纬度"
+              },
+              "destination": {
+                "type": "string",
+                "description": "目的地经纬度，坐标格式为：经度，纬度"
+              }
+            },
+            "required": [
+              "origin",
+              "destination"
+            ]
+          }
+        },
+        {
+          "name": "maps_direction_driving",
+          "runtime_name": "mcp_map_maps_direction_driving",
+          "description": "驾车路径规划 API 可以根据用户起终点经纬度坐标规划以小客车、轿车通勤出行的方案，并且返回通勤方案的数据。",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "origin": {
+                "type": "string",
+                "description": "出发点经纬度，坐标格式为：经度，纬度"
+              },
+              "destination": {
+                "type": "string",
+                "description": "目的地经纬度，坐标格式为：经度，纬度"
+              }
+            },
+            "required": [
+              "origin",
+              "destination"
+            ]
+          }
+        },
+        {
+          "name": "maps_direction_transit_integrated",
+          "runtime_name": "mcp_map_maps_direction_transit_integrated",
+          "description": "根据用户起终点经纬度坐标规划综合各类公共（火车、公交、地铁）交通方式的通勤方案，并且返回通勤方案的数据，跨城场景下必须传起点城市与终点城市",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "origin": {
+                "type": "string",
+                "description": "出发点经纬度，坐标格式为：经度，纬度"
+              },
+              "destination": {
+                "type": "string",
+                "description": "目的地经纬度，坐标格式为：经度，纬度"
+              },
+              "city": {
+                "type": "string",
+                "description": "公共交通规划起点城市"
+              },
+              "cityd": {
+                "type": "string",
+                "description": "公共交通规划终点城市"
+              }
+            },
+            "required": [
+              "origin",
+              "destination",
+              "city",
+              "cityd"
+            ]
+          }
+        },
+        {
+          "name": "maps_direction_walking",
+          "runtime_name": "mcp_map_maps_direction_walking",
+          "description": "根据输入起点终点经纬度坐标规划100km 以内的步行通勤方案，并且返回通勤方案的数据",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "origin": {
+                "type": "string",
+                "description": "出发点经度，纬度，坐标格式为：经度，纬度"
+              },
+              "destination": {
+                "type": "string",
+                "description": "目的地经度，纬度，坐标格式为：经度，纬度"
+              }
+            },
+            "required": [
+              "origin",
+              "destination"
+            ]
+          }
+        },
+        {
+          "name": "maps_distance",
+          "runtime_name": "mcp_map_maps_distance",
+          "description": "测量两个经纬度坐标之间的距离,支持驾车、步行以及球面距离测量",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "origins": {
+                "type": "string",
+                "description": "起点经度，纬度，可以传多个坐标，使用竖线隔离，比如120,30|120,31，坐标格式为：经度，纬度"
+              },
+              "destination": {
+                "type": "string",
+                "description": "终点经度，纬度，坐标格式为：经度，纬度"
+              },
+              "type": {
+                "type": "string",
+                "description": "距离测量类型,1代表驾车距离测量，0代表直线距离测量，3步行距离测量"
+              }
+            },
+            "required": [
+              "origins",
+              "destination"
+            ]
+          }
+        },
+        {
+          "name": "maps_geo",
+          "runtime_name": "mcp_map_maps_geo",
+          "description": "将详细的结构化地址转换为经纬度坐标。支持对地标性名胜景区、建筑物名称解析为经纬度坐标",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "address": {
+                "type": "string",
+                "description": "待解析的结构化地址信息"
+              },
+              "city": {
+                "type": "string",
+                "description": "指定查询的城市"
+              }
+            },
+            "required": [
+              "address"
+            ]
+          }
+        },
+        {
+          "name": "maps_regeocode",
+          "runtime_name": "mcp_map_maps_regeocode",
+          "description": "将一个高德经纬度坐标转换为行政区划地址信息",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "location": {
+                "type": "string",
+                "description": "经纬度"
+              }
+            },
+            "required": [
+              "location"
+            ]
+          }
+        },
+        {
+          "name": "maps_ip_location",
+          "runtime_name": "mcp_map_maps_ip_location",
+          "description": "IP 定位根据用户输入的 IP 地址，定位 IP 的所在位置",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "ip": {
+                "type": "string",
+                "description": "IP地址"
+              }
+            },
+            "required": [
+              "ip"
+            ]
+          }
+        },
+        {
+          "name": "maps_schema_personal_map",
+          "runtime_name": "mcp_map_maps_schema_personal_map",
+          "description": "用于行程规划结果在高德地图展示。将行程规划位置点按照行程顺序填入lineList，返回结果为高德地图打开的URI链接，该结果不需总结，直接返回！",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "orgName": {
+                "type": "string",
+                "description": "行程规划地图小程序名称"
+              },
+              "lineList": {
+                "type": "array",
+                "description": "行程列表",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "title": {
+                      "type": "string",
+                      "description": "行程名称描述（按行程顺序）"
+                    },
+                    "pointInfoList": {
+                      "type": "array",
+                      "description": "行程目标位置点描述",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "description": "行程目标位置点名称"
+                          },
+                          "lon": {
+                            "type": "number",
+                            "description": "行程目标位置点经度"
+                          },
+                          "lat": {
+                            "type": "number",
+                            "description": "行程目标位置点纬度"
+                          },
+                          "poiId": {
+                            "type": "string",
+                            "description": "行程目标位置点POIID"
+                          }
+                        },
+                        "required": [
+                          "name",
+                          "lon",
+                          "lat",
+                          "poiId"
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "title",
+                    "pointInfoList"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "orgName",
+              "lineList"
+            ]
+          }
+        },
+        {
+          "name": "maps_around_search",
+          "runtime_name": "mcp_map_maps_around_search",
+          "description": "周边搜，根据用户传入关键词以及坐标location，搜索出radius半径范围的POI",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "keywords": {
+                "type": "string",
+                "description": "搜索关键词"
+              },
+              "location": {
+                "type": "string",
+                "description": "中心点经度纬度"
+              },
+              "radius": {
+                "type": "string",
+                "description": "搜索半径"
+              },
+              "strategy": {
+                "type": "integer",
+                "description": "召回策略，0=默认召回策略，1=优先召回扫街榜POI",
+                "default": 0
+              }
+            },
+            "required": [
+              "keywords",
+              "location"
+            ]
+          }
+        },
+        {
+          "name": "maps_search_detail",
+          "runtime_name": "mcp_map_maps_search_detail",
+          "description": "查询关键词搜或者周边搜获取到的POI ID的详细信息",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "关键词搜或者周边搜获取到的POI ID"
+              }
+            },
+            "required": [
+              "id"
+            ]
+          }
+        },
+        {
+          "name": "maps_text_search",
+          "runtime_name": "mcp_map_maps_text_search",
+          "description": "关键字搜索 API 根据用户输入的关键字进行 POI 搜索，并返回相关的信息",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "keywords": {
+                "type": "string",
+                "description": "查询关键字"
+              },
+              "city": {
+                "type": "string",
+                "description": "查询城市"
+              },
+              "citylimit": {
+                "type": "boolean",
+                "default": false,
+                "description": "是否限制城市范围内搜索，默认不限制"
+              }
+            },
+            "required": [
+              "keywords"
+            ]
+          }
+        },
+        {
+          "name": "maps_schema_navi",
+          "runtime_name": "mcp_map_maps_schema_navi",
+          "description": " Schema唤醒客户端-导航页面，用于根据用户输入终点信息，返回一个拼装好的客户端唤醒URI，用户点击该URI即可唤起对应的客户端APP。唤起客户端后，会自动跳转到导航页面。",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "lon": {
+                "type": "string",
+                "description": "终点经度"
+              },
+              "lat": {
+                "type": "string",
+                "description": "终点纬度"
+              }
+            },
+            "required": [
+              "lon",
+              "lat"
+            ]
+          }
+        },
+        {
+          "name": "maps_schema_take_taxi",
+          "runtime_name": "mcp_map_maps_schema_take_taxi",
+          "description": "根据用户输入的起点和终点信息，返回一个拼装好的客户端唤醒URI，直接唤起高德地图进行打车。直接展示生成的链接，不需要总结",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "slon": {
+                "type": "string",
+                "description": "起点经度"
+              },
+              "slat": {
+                "type": "string",
+                "description": "起点纬度"
+              },
+              "sname": {
+                "type": "string",
+                "description": "起点名称"
+              },
+              "dlon": {
+                "type": "string",
+                "description": "终点经度"
+              },
+              "dlat": {
+                "type": "string",
+                "description": "终点纬度"
+              },
+              "dname": {
+                "type": "string",
+                "description": "终点名称"
+              }
+            },
+            "required": [
+              "dlon",
+              "dlat",
+              "dname"
+            ]
+          }
+        },
+        {
+          "name": "maps_weather",
+          "runtime_name": "mcp_map_maps_weather",
+          "description": "根据城市名称或者标准adcode查询指定城市的天气",
+          "input_schema": {
+            "type": "object",
+            "properties": {
+              "city": {
+                "type": "string",
+                "description": "城市名称或者adcode"
+              }
+            },
+            "required": [
+              "city"
+            ]
+          }
+        }
+      ],
+      "error": "",
+      "updated_at": "2026-07-21T15:07:58.570666"
     }
+  },
+  "skills": [
+    {
+      "name": "agent-builder",
+      "description": "Design and build AI agents for any domain. Use when users: (1) ask to \"create an agent\", \"build an assistant\", or \"design an AI system\" (2) want to understand agent architecture, agentic patterns, or autonomous AI (3) need help with capabilities, subagents, planning, or skill mechanisms (4) ask about Claude Code, Cursor, or similar agent internals (5) want to build agents for business, research, creative, or operational tasks Keywords: agent, assistant, autonomous, workflow, tool use, multi-step, orchestration",
+      "path": "skills/agent-builder",
+      "resources": 5
+    },
+    {
+      "name": "code-review",
+      "description": "Perform thorough code reviews with security, performance, and maintainability analysis. Use when user asks to review code, check for bugs, or audit a codebase.",
+      "path": "skills/code-review",
+      "resources": 0
+    },
+    {
+      "name": "mcp-builder",
+      "description": "Build MCP (Model Context Protocol) servers that give Claude new capabilities. Use when user wants to create an MCP server, add tools to Claude, or integrate external services.",
+      "path": "skills/mcp-builder",
+      "resources": 0
+    },
+    {
+      "name": "opencli",
+      "description": "Use OpenCLI for live public queries, browser/page inspection and interaction, downloads/exports, network inspection, and supported desktop-app control. Trigger when a task mentions OpenCLI, browser automation, a live website/app query, downloading remote content, or inspecting browser network traffic.",
+      "path": "skills/opencli",
+      "resources": 9
+    },
+    {
+      "name": "pdf",
+      "description": "Process PDF files - extract text, create PDFs, merge documents. Use when user asks to read PDF, create PDF, or work with PDF files.",
+      "path": "skills/pdf",
+      "resources": 0
+    }
+  ],
+  "permissions": {
+    "bash": {
+      "default": "deny",
+      "deny": [
+        {
+          "id": "deny-system-destructive",
+          "description": "阻止提权、关机、磁盘和系统级破坏命令",
+          "patterns": [
+            "\\b(?:sudo|shutdown|reboot|mkfs(?:\\.\\w+)?|diskpart|bcdedit)\\b",
+            "\\b(?:format|fdisk|parted)\\b",
+            "\\bdd\\s+if=",
+            "rm\\s+-[^\\r\\n]*r[^\\r\\n]*f\\s+(?:/|~|\\*)",
+            "\\b(?:reg|sc)\\s+delete\\b"
+          ]
+        },
+        {
+          "id": "deny-workspace-escape",
+          "description": "阻止命令访问 backend/tmp 会话目录之外的本地路径",
+          "patterns": [
+            "(?:^|[\\s'\\\"])(?:\\.\\.[\\\\/])",
+            "(?:^|[\\s'\\\"])[A-Za-z]:[\\\\/]",
+            "(?:^|[\\s'\\\"])/(?:etc|home|root|usr|var|opt|proc|sys|dev)(?:[\\\\/\\s'\\\"]|$)",
+            "%(?:USERPROFILE|APPDATA|LOCALAPPDATA|SYSTEMROOT|WINDIR)%",
+            "\\$(?:HOME|USERPROFILE|APPDATA|SYSTEMROOT|WINDIR)\\b"
+          ]
+        },
+        {
+          "id": "deny-shell-escalation",
+          "description": "阻止下载后直接执行、策略绕过和危险权限修改",
+          "patterns": [
+            "\\bchmod\\s+777\\b",
+            "\\bset-executionpolicy\\b",
+            "\\b(?:curl|wget|iwr|invoke-webrequest)\\b[^\\r\\n|]*\\|\\s*(?:sh|bash|pwsh|powershell)\\b"
+          ]
+        },
+        {
+          "id": "deny-opencli-high-risk",
+          "description": "阻止 OpenCLI 删除、上传、任意代码执行和插件安装等高风险操作",
+          "patterns": [
+            "^opencli\\b[^\\r\\n]*\\b(?:delete|archive|upload|eval|auto-approve)\\b",
+            "^opencli\\s+(?:plugin|external)\\b[^\\r\\n]*\\b(?:install|register)\\b",
+            "^opencli\\s+daemon\\b[^\\r\\n]*(?:0\\.0\\.0\\.0|--public)\\b",
+            "^opencli\\b[^\\r\\n]*\\b(?:delete|remove|archive|upload|eval|auto-approve|approve)\\b",
+            "^opencli\\s+plugin\\b[^\\r\\n]*\\b(?:install|update|uninstall)\\b",
+            "^opencli\\s+external\\b[^\\r\\n]*\\b(?:install|register)\\b"
+          ]
+        }
+      ],
+      "allow": [
+        {
+          "id": "allow-tmp-development",
+          "description": "允许在当前 backend/tmp 会话目录内进行常见开发、查询和 OpenCLI 操作",
+          "patterns": [
+            "^(?:python|python3|py|node|npm|npx|opencli|git|rg|dir|type|echo|where|pdftotext|pdfinfo)\\b",
+            "^(?:get-childitem|get-content|set-content|test-path|select-string|copy-item|new-item)\\b",
+            "^(?:python|python3|py|node|npm|npx|opencli|git|rg|grep|dir|type|echo|where|mkdir|uv|pytest|ruff|mypy|radon|pip-audit|cargo|pdftotext|pdfinfo|pandoc|wkhtmltopdf|qpdf|mutool|ffmpeg|tesseract)\\b",
+            "^(?:get-childitem|get-content|set-content|test-path|select-string|copy-item|new-item|get-command|measure-object)\\b"
+          ]
+        }
+      ],
+      "authorize": [
+        {
+          "id": "authorize-opencli-external-write",
+          "description": "OpenCLI 登录、发帖、发送和浏览器交互仅在用户明确要求该副作用时执行",
+          "patterns": [
+            "^opencli\\b[^\\r\\n]*\\b(?:login|refresh|post|send|follow|create|purchase)\\b",
+            "^opencli\\s+browser\\b[^\\r\\n]*\\b(?:click|type|fill|press|select|check|uncheck|drag|submit)\\b",
+            "^opencli\\b[^\\r\\n]*\\b(?:login|refresh|post|send|message|follow|unfollow|like|unlike|favorite|unfavorite|subscribe|unsubscribe|comment|create|purchase|pay|order|generate|rename|pin|model)\\b",
+            "^opencli\\s+(?:adapter|profile|daemon)\\b[^\\r\\n]*\\b(?:eject|reset|rename|use|stop|restart)\\b"
+          ]
+        }
+      ]
+    }
+  },
+  "discovery": {
+    "updated_at": "2026-07-21T15:07:58.570666",
+    "skill_errors": []
   }
 }

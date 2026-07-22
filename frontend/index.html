@@ -29,6 +29,9 @@
         <button :class="{active: activeView === 'knowledge'}" @click="switchView('knowledge')" title="知识库" aria-label="打开知识库">
           <i class="fas fa-folder-tree"></i><span>知识库</span>
         </button>
+        <button :class="{active: activeView === 'config'}" @click="switchView('config')" title="运行配置" aria-label="打开运行配置">
+          <i class="fas fa-sliders"></i><span>配置中心</span>
+        </button>
         <button :class="{active: activeView === 'ops'}" @click="switchView('ops')" title="运行记录" aria-label="打开运行记录">
           <i class="fas fa-triangle-exclamation"></i><span>运行回调</span>
           <strong v-if="failureCount">{{ failureCount }}</strong>
@@ -203,6 +206,81 @@
         </div>
       </section>
 
+      <section v-show="activeView === 'config'" class="panel-view config-view">
+        <div class="section-head">
+          <div>
+            <h3>MCP、Skills 与权限配置</h3>
+            <p>内容持久化到 backend/config.json；保存后会重新发现工具并热加载主 Agent。</p>
+          </div>
+          <button class="secondary-action inline" :disabled="configLoading" @click="refreshRuntimeCatalog">
+            <i class="fas fa-arrows-rotate"></i>{{ configLoading ? '刷新中' : '重新解析' }}
+          </button>
+        </div>
+
+        <div v-if="runtimeConfig" class="config-stats">
+          <article><small>MCP Servers</small><strong>{{ Object.keys(runtimeConfig.mcpServers || {}).length }}</strong></article>
+          <article><small>MCP Tools</small><strong>{{ Object.values(runtimeConfig.mcpServers || {}).reduce((sum, item) => sum + ((item.tools || []).length), 0) }}</strong></article>
+          <article><small>Skills</small><strong>{{ (runtimeConfig.skills || []).length }}</strong></article>
+          <article><small>最近解析</small><strong class="config-time">{{ runtimeConfig.discovery && runtimeConfig.discovery.updated_at ? new Date(runtimeConfig.discovery.updated_at).toLocaleString() : '尚未解析' }}</strong></article>
+        </div>
+
+        <div class="config-grid">
+          <section class="config-card">
+            <header><div><h4>MCP Servers</h4><p>启动时解析工具 schema，主 Agent 直接获得已发现工具。</p></div></header>
+            <form class="config-form" @submit.prevent="addMcpServer">
+              <label>名称<input v-model="mcpForm.name" required pattern="[A-Za-z0-9_.-]+" placeholder="github"></label>
+              <label>Transport
+                <select v-model="mcpForm.transport"><option value="streamable_http">streamable_http</option><option value="sse">sse</option><option value="stdio">stdio</option></select>
+              </label>
+              <label v-if="mcpForm.transport !== 'stdio'" class="wide">URL<input v-model="mcpForm.url" required placeholder="https://example.com/mcp"></label>
+              <label v-else>Command<input v-model="mcpForm.command" required placeholder="npx"></label>
+              <label v-if="mcpForm.transport === 'stdio'">Args<input v-model="mcpForm.args" placeholder="-y package-name"></label>
+              <label class="wide">Headers JSON<textarea v-model="mcpForm.headers" rows="3" spellcheck="false"></textarea></label>
+              <label v-if="mcpForm.transport === 'stdio'" class="wide">Env JSON<textarea v-model="mcpForm.env" rows="3" spellcheck="false"></textarea></label>
+              <label class="check-line"><input v-model="mcpForm.enabled" type="checkbox"> 启用并参与发现</label>
+              <button class="primary-action" type="submit">保存并解析</button>
+            </form>
+            <div class="config-items">
+              <article v-for="(server, name) in (runtimeConfig && runtimeConfig.mcpServers || {})" :key="name" class="config-item">
+                <header><div><strong>{{ name }}</strong><small>{{ server.transport }} · {{ server.enabled ? 'enabled' : 'disabled' }}</small></div><button class="icon-danger" @click="deleteMcpServer(name)" title="删除"><i class="fas fa-trash"></i></button></header>
+                <p>{{ formatMcpEndpoint(server) }}</p>
+                <p v-if="server.error" class="config-error">发现失败：{{ server.error }}</p>
+                <div v-else class="tool-chips"><span v-for="tool in (server.tools || [])" :key="tool.runtime_name" :title="tool.description">{{ tool.runtime_name }}</span><em v-if="!(server.tools || []).length">暂无工具</em></div>
+              </article>
+            </div>
+          </section>
+
+          <section class="config-card">
+            <header><div><h4>Skills Catalog</h4><p>Skills 小 Agent 读取 catalog 后自行选择并按需加载正文。</p></div></header>
+            <form class="config-form" @submit.prevent="addSkill">
+              <label>名称<input v-model="skillForm.name" required pattern="[a-z0-9-]+" placeholder="my-skill"></label>
+              <label class="wide">描述<input v-model="skillForm.description" required placeholder="说明功能以及何时使用"></label>
+              <label class="wide">SKILL.md 指令<textarea v-model="skillForm.instructions" required rows="8" placeholder="# Workflow&#10;&#10;Use imperative instructions..."></textarea></label>
+              <label class="check-line"><input v-model="skillForm.overwrite" type="checkbox"> 覆盖同名 Skill</label>
+              <button class="primary-action" type="submit">添加 Skill</button>
+            </form>
+            <div class="config-items">
+              <article v-for="skill in (runtimeConfig && runtimeConfig.skills || [])" :key="skill.name" class="config-item">
+                <header><div><strong>{{ skill.name }}</strong><small>{{ skill.path }} · {{ skill.resources }} resources</small></div><button class="icon-danger" @click="deleteSkill(skill.name)" title="删除"><i class="fas fa-trash"></i></button></header>
+                <p>{{ skill.description }}</p>
+              </article>
+            </div>
+            <div v-if="runtimeConfig && runtimeConfig.discovery && runtimeConfig.discovery.skill_errors && runtimeConfig.discovery.skill_errors.length" class="config-items">
+              <article v-for="item in runtimeConfig.discovery.skill_errors" :key="item.path" class="config-item config-error"><strong>Skill 解析失败</strong><p>{{ item.path }}：{{ item.error }}</p></article>
+            </div>
+          </section>
+        </div>
+
+        <section v-if="runtimeConfig && runtimeConfig.permissions" class="config-card permission-card">
+          <header><div><h4>Bash 自动审查</h4><p>优先级固定为 deny → allow → default deny；所有决策写入 Bash audit。</p></div></header>
+          <div class="permission-columns">
+            <div><strong>拒绝规则</strong><span v-for="rule in runtimeConfig.permissions.bash.deny" :key="rule.id"><b>{{ rule.id }}</b>{{ rule.description }}</span></div>
+            <div><strong>需明确授权</strong><span v-for="rule in (runtimeConfig.permissions.bash.authorize || [])" :key="rule.id"><b>{{ rule.id }}</b>{{ rule.description }}</span></div>
+            <div><strong>允许规则</strong><span v-for="rule in runtimeConfig.permissions.bash.allow" :key="rule.id"><b>{{ rule.id }}</b>{{ rule.description }}</span></div>
+          </div>
+        </section>
+      </section>
+
       <section v-show="activeView === 'ops'" class="panel-view">
         <div class="section-head">
           <div>
@@ -232,6 +310,22 @@
             </details>
           </article>
         </div>
+
+        <div class="section-head audit-head">
+          <div>
+            <h3>Bash 权限审查</h3>
+            <p>执行前自动应用 deny → allow → default deny，并记录命中规则。</p>
+          </div>
+        </div>
+        <div class="ops-list">
+          <article v-if="bashAudits.length === 0" class="muted-row">暂无 Bash 审查记录</article>
+          <article v-for="audit in bashAudits" :key="audit.id" class="ops-item">
+            <header><span :class="['badge', audit.behavior]">{{ audit.behavior }}</span><small>{{ new Date(audit.updated_at).toLocaleString() }}</small></header>
+            <h4>{{ audit.rule_id }}</h4>
+            <p>{{ audit.reason }}</p>
+            <details class="payload-details"><summary>查看命令</summary><pre>{{ audit.command }}</pre></details>
+          </article>
+        </div>
       </section>
 
       <aside v-if="showHistorySidebar" class="history-drawer">
@@ -255,6 +349,7 @@
   <script src="js/app-core.js"></script>
   <script src="js/chat.js"></script>
   <script src="js/knowledge.js"></script>
+  <script src="js/config.js"></script>
   <script src="js/ops.js"></script>
   <script src="js/formatters.js"></script>
   <script src="script.js"></script>

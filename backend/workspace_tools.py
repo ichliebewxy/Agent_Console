@@ -14,7 +14,7 @@ def _safe_path(relative_path: str, root: Path | None = None) -> Path:
     workspace = (root or session_files_dir(create=True)).resolve()
     target = (workspace / relative_path).resolve()
     if not target.is_relative_to(workspace):
-        raise ValueError("Path escapes the workspace files area.")
+        raise ValueError("Path escapes the current session workspace.")
     return target
 
 
@@ -36,7 +36,7 @@ def _list_workspace_files(pattern: str, workspace: Path) -> str:
 
 @tool
 async def list_workspace_files(pattern: str = "**/*") -> str:
-    """List up to 200 files in workspace files/ using a relative glob pattern."""
+    """List up to 200 files in the current backend/tmp session using a relative glob."""
     context = current_runtime_context()
     async with session_async_lock(context.user_id, context.session_id):
         workspace = session_files_dir(create=True)
@@ -65,7 +65,7 @@ def _read_workspace_file(path: str, workspace: Path) -> str:
 
 @tool
 async def read_workspace_file(path: str) -> str:
-    """Read a UTF-8 text file from workspace files/ by relative path."""
+    """Read a UTF-8 text file from the current backend/tmp session by relative path."""
     context = current_runtime_context()
     async with session_async_lock(context.user_id, context.session_id):
         workspace = session_files_dir(create=True)
@@ -100,7 +100,7 @@ def _write_workspace_file(
 
 @tool
 async def write_workspace_file(path: str, content: str, overwrite: bool = False) -> str:
-    """Write a UTF-8 text artifact under workspace files/; overwrite must be explicit."""
+    """Write a UTF-8 text artifact under the current backend/tmp session; overwrite must be explicit."""
     context = current_runtime_context()
     async with session_async_lock(context.user_id, context.session_id):
         workspace = session_files_dir(create=True)

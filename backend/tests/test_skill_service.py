@@ -54,10 +54,53 @@ class SkillRegistryTests(unittest.TestCase):
             registry = self._registry(Path(directory))
             self.assertLessEqual(len(registry.catalog(max_chars=24)), 24)
 
+    def test_malformed_skill_is_isolated_and_reported(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            good = root / "good"
+            bad = root / "bad"
+            good.mkdir()
+            bad.mkdir()
+            (good / "SKILL.md").write_text(
+                "---\nname: good\ndescription: Good\n---\nBody\n",
+                encoding="utf-8",
+            )
+            (bad / "SKILL.md").write_text(
+                "---\nname: [broken\ndescription: Bad\n---\nBody\n",
+                encoding="utf-8",
+            )
+            registry = SkillRegistry(root)
+            self.assertEqual(registry.names, ("good",))
+            self.assertEqual(len(registry.errors()), 1)
+
+    def test_unclosed_or_non_mapping_frontmatter_is_isolated(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            unclosed = root / "unclosed"
+            scalar = root / "scalar"
+            unclosed.mkdir()
+            scalar.mkdir()
+            (unclosed / "SKILL.md").write_text(
+                "---\nname: unclosed\ndescription: missing delimiter\n",
+                encoding="utf-8",
+            )
+            (scalar / "SKILL.md").write_text(
+                "---\n- not a mapping\n---\nBody\n",
+                encoding="utf-8",
+            )
+            registry = SkillRegistry(root)
+            self.assertEqual(registry.names, ())
+            self.assertEqual(len(registry.errors()), 2)
+
     def test_migrated_skill_set_is_available(self):
-        self.assertEqual(
-            set(SKILL_REGISTRY.names),
-            {"agent-builder", "code-review", "mcp-builder", "pdf"},
+        self.assertTrue(
+            {
+                "agent-builder",
+                "code-review",
+                "mcp-builder",
+                "pdf",
+                "opencli",
+            }.issubset(set(SKILL_REGISTRY.names))
         )
 
     def test_workspace_escape_is_rejected(self):
@@ -67,7 +110,7 @@ class SkillRegistryTests(unittest.TestCase):
 
     def test_workspace_text_round_trip_and_explicit_overwrite(self):
         async def round_trip(directory: str):
-            with patch("runtime_context.AGENT_WORKSPACE_DIR", Path(directory).resolve()):
+            with patch("runtime_context.BACKEND_TMP_DIR", Path(directory).resolve()):
                 with bind_runtime_context("test-user", "test-session"):
                     first = await write_workspace_file.ainvoke(
                         {

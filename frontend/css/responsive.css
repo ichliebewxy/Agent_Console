@@ -52,4 +52,13 @@
     grid-template-columns: minmax(140px, 1fr) 80px 58px 50px;
     padding: 0 10px;
   }
+
+  .config-grid,
+  .permission-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .config-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }

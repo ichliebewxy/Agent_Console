@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenCLI workflows"
+  short_description: "Live queries, browser, downloads, and apps"
+  default_prompt: "Use $opencli to inspect the live registry and complete a verified OpenCLI workflow."

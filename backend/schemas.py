@@ -151,3 +151,56 @@ class ToolFailureInfo(BaseModel):
 
 class ToolFailureListResponse(BaseModel):
     failures: List[ToolFailureInfo]
+
+
+class MCPServerUpsertRequest(BaseModel):
+    name: RuntimeId
+    transport: str = "streamable_http"
+    url: str = ""
+    command: str = ""
+    args: List[str] = Field(default_factory=list)
+    headers: Dict[str, str] = Field(default_factory=dict)
+    env: Dict[str, str] = Field(default_factory=dict)
+    enabled: bool = True
+
+
+class SkillCreateRequest(BaseModel):
+    name: str
+    description: str
+    instructions: str
+    overwrite: bool = False
+
+
+class RuntimeConfigResponse(BaseModel):
+    config: Dict[str, Any]
+
+
+class RuntimeRefreshResponse(BaseModel):
+    skills: List[Dict[str, Any]] = Field(default_factory=list)
+    skill_errors: List[Dict[str, str]] = Field(default_factory=list)
+    mcp_server_count: int = 0
+    mcp_tool_count: int = 0
+    mcp_errors: Dict[str, str] = Field(default_factory=dict)
+
+
+class MutationResponse(BaseModel):
+    message: str
+
+
+class BashAuditInfo(BaseModel):
+    id: str
+    status: str
+    behavior: str
+    rule_id: str
+    reason: str
+    command: str
+    command_length: int
+    user_id: str
+    session_id: str
+    exit_code: Optional[int] = None
+    created_at: str
+    updated_at: str
+
+
+class BashAuditListResponse(BaseModel):
+    audits: List[BashAuditInfo] = Field(default_factory=list)

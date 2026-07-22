@@ -1,39 +1,21 @@
-"""Lazy specialist agents exposed to the supervisor through one broad tool."""
+"""Lazy skills specialist exposed to the main Agent through one delegation tool."""
 import asyncio
-from typing import Literal
 
 from langchain.agents import create_agent
 from langchain_core.messages import AIMessage
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 
-from agent_prompt import (
-    KNOWLEDGE_AGENT_PROMPT,
-    MCP_AGENT_PROMPT,
-    OPENCLI_AGENT_PROMPT,
-    WEATHER_AGENT_PROMPT,
-    build_skill_agent_prompt,
-)
+from agent_prompt import build_skill_agent_prompt
 from tool_instrumentation import instrument_tools
 
 
-SpecialistName = Literal["knowledge", "weather", "mcp", "opencli", "skills"]
-
-
-class DelegationRequest(BaseModel):
-    specialist: SpecialistName = Field(
-        description=(
-            "Specialist domain: knowledge=uploaded/internal documents; "
-            "weather=current weather; mcp=maps/routes/POIs/addresses/coordinates; "
-            "opencli=web browsing, page extraction, or browser interaction; "
-            "skills=specialized procedures and sandboxed workspace tasks."
-        )
-    )
+class SkillDelegationRequest(BaseModel):
     task: str = Field(
         min_length=1,
         description=(
-            "Self-contained task with all relevant user context, constraints, "
-            "locations, URLs, and desired output."
+            "Self-contained task containing the user outcome, relevant context, "
+            "constraints, URLs, desired output, and requested file changes."
         ),
     )
 
@@ -59,105 +41,60 @@ def _final_agent_text(result) -> str:
             text = _content_text(message.content).strip()
             if text:
                 return text
-    return "SPECIALIST_ERROR: 小 Agent 未返回可用结果。"
+    return "SKILL_AGENT_ERROR: Skills 小 Agent 未返回可用结果。"
 
 
-class SpecialistRegistry:
-    """Builds each LangGraph specialist only when the supervisor delegates to it."""
-
+class SkillAgentRegistry:
     def __init__(self, model):
         self._model = model
-        self._agents = {}
-        self._locks = {
-            name: asyncio.Lock()
-            for name in ("knowledge", "weather", "mcp", "opencli", "skills")
-        }
-        self._mcp_client = None
+        self._agent = None
+        self._lock = asyncio.Lock()
 
-    async def _get_agent(self, specialist: SpecialistName):
-        cached = self._agents.get(specialist)
-        if cached is not None:
-            return cached
+    async def _get_agent(self):
+        if self._agent is not None:
+            return self._agent
+        async with self._lock:
+            if self._agent is not None:
+                return self._agent
+            from bash_tool import BASH_TOOLS
+            from skill_service import SKILL_REGISTRY, SKILL_TOOLS
+            from workspace_tools import WORKSPACE_TOOLS
 
-        async with self._locks[specialist]:
-            cached = self._agents.get(specialist)
-            if cached is not None:
-                return cached
-
-            if specialist == "knowledge":
-                from tools import search_knowledge_base
-
-                tools = [search_knowledge_base]
-                prompt = KNOWLEDGE_AGENT_PROMPT
-            elif specialist == "weather":
-                from tools import get_current_weather
-
-                tools = [get_current_weather]
-                prompt = WEATHER_AGENT_PROMPT
-            elif specialist == "opencli":
-                from opencli_tools import OPENCLI_TOOLS
-
-                tools = OPENCLI_TOOLS
-                prompt = OPENCLI_AGENT_PROMPT
-            elif specialist == "mcp":
-                from mcp_service import load_mcp_tools
-
-                mcp_result = await load_mcp_tools(record_init_failure=True)
-                if not mcp_result.tools:
-                    detail = f"：{mcp_result.error}" if mcp_result.error else ""
-                    raise RuntimeError(f"MCP 当前没有可用工具{detail}")
-                self._mcp_client = mcp_result.client
-                tools = mcp_result.tools
-                prompt = MCP_AGENT_PROMPT
-            elif specialist == "skills":
-                from sandbox_service import SANDBOX_TOOLS
-                from skill_service import SKILL_REGISTRY, SKILL_TOOLS
-                from workspace_tools import WORKSPACE_TOOLS
-
-                tools = [*SKILL_TOOLS, *WORKSPACE_TOOLS, *SANDBOX_TOOLS]
-                prompt = build_skill_agent_prompt(SKILL_REGISTRY.catalog())
-            else:
-                raise ValueError(f"Unknown specialist: {specialist}")
-
-            cached = create_agent(
+            tools = [*SKILL_TOOLS, *WORKSPACE_TOOLS, *BASH_TOOLS]
+            self._agent = create_agent(
                 model=self._model,
                 tools=instrument_tools(tools),
-                system_prompt=prompt,
-                name=f"{specialist}_specialist",
+                system_prompt=build_skill_agent_prompt(SKILL_REGISTRY.catalog()),
+                name="skills_specialist",
             )
-            self._agents[specialist] = cached
-            return cached
+            return self._agent
 
-    async def run(self, specialist: SpecialistName, task: str) -> str:
+    async def run(self, task: str) -> str:
         try:
-            specialist_agent = await self._get_agent(specialist)
-            result = await specialist_agent.ainvoke(
+            skill_agent = await self._get_agent()
+            result = await skill_agent.ainvoke(
                 {"messages": [{"role": "user", "content": task}]},
-                # Keep specialist model tokens private to the subgraph. Tool
-                # instrumentation still emits user-visible execution steps.
-                config={"recursion_limit": 30, "callbacks": []},
+                config={"recursion_limit": 36, "callbacks": []},
             )
             return _final_agent_text(result)
         except Exception as exc:
-            return f"SPECIALIST_ERROR: {specialist} 小 Agent 执行失败：{exc}"
+            return f"SKILL_AGENT_ERROR: Skills 小 Agent 执行失败：{exc}"
 
 
-def build_delegation_tool(model) -> StructuredTool:
-    """Create the supervisor's only broad capability gateway."""
-    registry = SpecialistRegistry(model)
+def build_skill_delegation_tool(model) -> StructuredTool:
+    """Create the main Agent's single gateway to skill selection and execution."""
+    registry = SkillAgentRegistry(model)
 
-    async def delegate_to_specialist(specialist: SpecialistName, task: str) -> str:
-        return await registry.run(specialist, task)
+    async def delegate_to_skill_agent(task: str) -> str:
+        return await registry.run(task)
 
-    delegation_tool = StructuredTool.from_function(
-        coroutine=delegate_to_specialist,
-        name="delegate_to_specialist",
+    return StructuredTool.from_function(
+        coroutine=delegate_to_skill_agent,
+        name="delegate_to_skill_agent",
         description=(
-            "Delegate a self-contained task to one isolated specialist LangGraph agent. "
-            "The specialist receives its domain tools only after delegation and returns "
-            "an evidence report. Use this gateway for knowledge, live weather, MCP map "
-            "capabilities, OpenCLI browser work, or skill-guided workspace work."
+            "Delegate a self-contained specialized workflow to the Skills small Agent. "
+            "It inspects the current skill catalog, loads the best matching skill, may "
+            "use the reviewed Bash and session workspace tools, and returns its result."
         ),
-        args_schema=DelegationRequest,
+        args_schema=SkillDelegationRequest,
     )
-    return delegation_tool
