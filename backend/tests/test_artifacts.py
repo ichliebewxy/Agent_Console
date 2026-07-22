@@ -29,7 +29,7 @@ class ArtifactTests(unittest.TestCase):
     def test_session_isolation_listing_and_download(self):
         with tempfile.TemporaryDirectory() as directory:
             with (
-                patch("runtime_context.AGENT_WORKSPACE_DIR", Path(directory).resolve()),
+                patch("runtime_context.BACKEND_TMP_DIR", Path(directory).resolve()),
                 patch("artifact_service.ARTIFACT_SIGNING_KEY", "unit-test-key"),
             ):
                 _signing_key.cache_clear()
@@ -41,6 +41,8 @@ class ArtifactTests(unittest.TestCase):
                     "download me",
                     encoding="utf-8",
                 )
+                (first_root / ".cache").mkdir()
+                (first_root / ".cache" / "intermediate.bin").write_bytes(b"cache")
 
                 rows = list_session_artifacts("user-a", "session-a")
                 self.assertEqual([row["path"] for row in rows], ["reports/answer.txt"])

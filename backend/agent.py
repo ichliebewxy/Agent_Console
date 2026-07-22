@@ -11,7 +11,7 @@ from agent_prompt import SYSTEM_PROMPT
 from conversation_storage import ConversationStorage
 from runtime_context import bind_runtime_context, session_async_lock
 from settings import CHAT_API_KEY, CHAT_BASE_URL, CHAT_MODEL
-from subagents import build_delegation_tool
+from subagents import build_skill_delegation_tool
 from tool_instrumentation import instrument_tools
 from tools import (
     get_last_rag_context,
@@ -24,6 +24,7 @@ from tools import (
 agent = None
 model = None
 storage = ConversationStorage()
+_INIT_LOCK = asyncio.Lock()
 
 
 def _create_chat_model(temperature: float = 0.3):
@@ -38,17 +39,31 @@ def _create_chat_model(temperature: float = 0.3):
 
 
 async def init_agent_async():
-    """Initialize only the supervisor; specialist tools stay lazy."""
+    """Initialize the main Agent with direct tools and a lazy Skills gateway."""
     global agent, model
-    model = _create_chat_model()
-    delegation_tool = build_delegation_tool(model)
-    agent = create_agent(
-        model=model,
-        tools=instrument_tools([delegation_tool]),
-        system_prompt=SYSTEM_PROMPT,
-        name="supervisor_agent",
-    )
-    print("主 Agent 初始化完成；Skills、MCP、OpenCLI 与其他小 Agent 将在委派时按需加载。")
+    async with _INIT_LOCK:
+        model = _create_chat_model()
+        from bash_tool import BASH_TOOLS
+        from mcp_service import get_discovered_mcp_tools
+        from tools import get_current_weather, search_knowledge_base
+
+        tools = [
+            get_current_weather,
+            search_knowledge_base,
+            *BASH_TOOLS,
+            *get_discovered_mcp_tools(),
+            build_skill_delegation_tool(model),
+        ]
+        agent = create_agent(
+            model=model,
+            tools=instrument_tools(tools),
+            system_prompt=SYSTEM_PROMPT,
+            name="main_agent",
+        )
+        print(
+            "主 Agent 初始化完成；直接工具：天气、知识库、审查 Bash、"
+            f"MCP({len(get_discovered_mcp_tools())})，Skills 通过小 Agent 选择。"
+        )
 
 
 def summarize_old_messages(chat_model, messages: list) -> str:

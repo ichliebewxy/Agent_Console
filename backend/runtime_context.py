@@ -9,7 +9,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
 
-from settings import AGENT_WORKSPACE_DIR
+from settings import BACKEND_TMP_DIR
 
 
 @dataclass(frozen=True)
@@ -71,9 +71,9 @@ def session_files_dir(
         user_id = context.user_id
         session_id = context.session_id
     key = session_workspace_key(user_id, session_id)
-    root = (AGENT_WORKSPACE_DIR / "files" / key).resolve()
-    files_root = (AGENT_WORKSPACE_DIR / "files").resolve()
-    if not root.is_relative_to(files_root):
+    root = (BACKEND_TMP_DIR / key).resolve()
+    tmp_root = BACKEND_TMP_DIR.resolve()
+    if not root.is_relative_to(tmp_root):
         raise RuntimeError("Resolved session workspace escaped its configured root.")
     if create:
         root.mkdir(parents=True, exist_ok=True)
@@ -83,8 +83,8 @@ def session_files_dir(
 def delete_session_files(user_id: str, session_id: str) -> None:
     """Remove only the hashed file directory belonging to one deleted session."""
     root = session_files_dir(user_id, session_id, create=False)
-    files_root = (AGENT_WORKSPACE_DIR / "files").resolve()
-    if root.parent != files_root:
-        raise RuntimeError("Refusing to remove a path outside the files root.")
+    tmp_root = BACKEND_TMP_DIR.resolve()
+    if root.parent != tmp_root:
+        raise RuntimeError("Refusing to remove a path outside backend/tmp.")
     if root.exists():
         shutil.rmtree(root)

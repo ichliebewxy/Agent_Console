@@ -19,6 +19,7 @@ configure_stdio_encoding()
 import api as api_module
 from agent import init_agent_async
 from embedding import embedding_service
+from runtime_catalog_service import refresh_runtime_catalogs
 from settings import MILVUS_DENSE_DIM
 
 FRONTEND_DIR = BASE_DIR / "frontend"
@@ -39,7 +40,13 @@ async def lifespan(app: FastAPI):
         f"{embedding_info['model']} on {embedding_info['device']} "
         f"({embedding_info['dim']} dims)."
     )
-    # 启动时只初始化 supervisor；小 Agent 和外部工具保持懒加载。
+    print("正在解析 MCP 工具和 Skills catalog...")
+    catalog = await refresh_runtime_catalogs()
+    print(
+        "Runtime catalog ready: "
+        f"{len(catalog['skills'])} skills, "
+        f"{catalog['mcp_tool_count']} MCP tools."
+    )
     print("正在初始化主 Agent...")
     await init_agent_async()
     print("主 Agent 初始化完成，应用启动！")
@@ -56,7 +63,8 @@ def create_app() -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=[],
+        allow_origin_regex=r"^https?://(?:localhost|127\.0\.0\.1)(?::\d+)?$",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -88,5 +96,5 @@ app = create_app()
 if __name__ == "__main__":
     import uvicorn
     # 4. 直接运行这个 app 即可，不要再重新实例化 FastAPI
-    uvicorn.run("app:app", host=os.getenv("HOST", "0.0.0.0"), port=int(os.getenv("PORT", 8080)), reload=False) 
+    uvicorn.run("app:app", host=os.getenv("HOST", "127.0.0.1"), port=int(os.getenv("PORT", 8080)), reload=False)
     # 注意：建议使用字符串形式 "app:app" 启动 uvicorn，这是生产环境和正确触发 lifespan 的推荐方式

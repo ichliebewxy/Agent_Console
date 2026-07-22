@@ -72,6 +72,7 @@ class JsonListStore:
         return self.create({**payload, "occurrence_count": 1})
 
 tool_failure_store = JsonListStore("tool_failures.json")
+bash_audit_store = JsonListStore("bash_audit.json")
 
 
 def record_tool_failure(
@@ -92,3 +93,28 @@ def record_tool_failure(
     if dedupe:
         return tool_failure_store.upsert_open(row, ["tool_name", "payload"])
     return tool_failure_store.create(row)
+
+
+def record_bash_audit(
+    *,
+    behavior: str,
+    rule_id: str,
+    reason: str,
+    command: str,
+    user_id: str,
+    session_id: str,
+    exit_code: int | None = None,
+) -> Dict[str, Any]:
+    return bash_audit_store.create(
+        {
+            "status": behavior,
+            "behavior": behavior,
+            "rule_id": rule_id,
+            "reason": reason,
+            "command": command[:2000],
+            "command_length": len(command),
+            "user_id": user_id,
+            "session_id": session_id,
+            "exit_code": exit_code,
+        }
+    )
