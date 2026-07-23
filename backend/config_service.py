@@ -1,4 +1,4 @@
-"""Thread-safe backend/config.json persistence and runtime catalog metadata."""
+"""Thread-safe non-MCP runtime configuration and catalog metadata."""
 import copy
 import json
 import os
@@ -98,7 +98,6 @@ _SENSITIVE_PATH = re.compile(r"(?:token|secret|api[-_]?key|password|credential|a
 
 def _default_config() -> dict[str, Any]:
     return {
-        "mcpServers": {},
         "skills": [],
         "permissions": {"bash": copy.deepcopy(DEFAULT_BASH_PERMISSIONS)},
         "discovery": {"updated_at": "", "skill_errors": []},
@@ -208,6 +207,9 @@ def _public_args(values: Any) -> list[str]:
 class ConfigStore:
     def __init__(self, path: Path = CONFIG_PATH):
         self.path = Path(path).resolve()
+        # Test/embedded callers may still use a standalone ConfigStore with a
+        # co-located MCP list. The running application uses MCP_STORE instead.
+        self._legacy_mcp_mode = self.path != CONFIG_PATH.resolve()
         self._lock = RLock()
         self._data = self._load()
         self._save_locked()
@@ -221,18 +223,31 @@ class ConfigStore:
         if isinstance(parsed, dict):
             data.update(parsed)
         servers = data.get("mcpServers")
-        data["mcpServers"] = servers if isinstance(servers, dict) else {}
-        for name, server in list(data["mcpServers"].items()):
-            if not isinstance(server, dict):
-                del data["mcpServers"][name]
-                continue
-            server["transport"] = _normalize_transport(
-                str(server.get("transport") or server.pop("type", "streamable_http"))
-            )
-            server.setdefault("enabled", True)
-            server.setdefault("headers", {})
-            server.setdefault("tools", [])
-            server.setdefault("error", "")
+        if self._legacy_mcp_mode:
+            data["mcpServers"] = servers if isinstance(servers, dict) else {}
+            for name, server in list(data["mcpServers"].items()):
+                if not isinstance(server, dict):
+                    del data["mcpServers"][name]
+                    continue
+                server["transport"] = _normalize_transport(
+                    str(server.get("transport") or server.pop("type", "streamable_http"))
+                )
+                server.setdefault("enabled", True)
+                server.setdefault("headers", {})
+                server.setdefault("tools", [])
+                server.setdefault("error", "")
+        else:
+            # MCP has its own source of truth in mcp_servers.json. Drop the
+            # legacy embedded list during load. If this is an older checkout,
+            # migrate it once before dropping the embedded copy.
+            if isinstance(servers, dict) and servers:
+                mcp_path = self.path.with_name("mcp_servers.json")
+                if not mcp_path.exists():
+                    mcp_path.write_text(
+                        json.dumps({"mcpServers": servers}, ensure_ascii=False, indent=2) + "\n",
+                        encoding="utf-8",
+                    )
+            data.pop("mcpServers", None)
         if not isinstance(data.get("skills"), list):
             data["skills"] = []
         permissions = data.get("permissions")
@@ -257,53 +272,66 @@ class ConfigStore:
     def snapshot(self, *, public: bool = False) -> dict[str, Any]:
         with self._lock:
             data = copy.deepcopy(self._data)
-        if public:
+        if public and self._legacy_mcp_mode:
             for server in data.get("mcpServers", {}).values():
-                headers = server.get("headers") or {}
                 server["headers"] = {
-                    key: _public_secret(value)
-                    for key, value in headers.items()
+                    key: _public_secret(value) for key, value in (server.get("headers") or {}).items()
                 }
-                environment = server.get("env") or {}
                 server["env"] = {
-                    key: _public_secret(value)
-                    for key, value in environment.items()
+                    key: _public_secret(value) for key, value in (server.get("env") or {}).items()
                 }
                 server["url"] = _public_url(server.get("url"))
                 server["args"] = _public_args(server.get("args"))
         return data
 
     def upsert_mcp_server(self, name: str, server: dict[str, Any]) -> None:
-        clean = copy.deepcopy(server)
-        clean["transport"] = _normalize_transport(str(clean.get("transport") or ""))
-        clean.setdefault("enabled", True)
-        clean.setdefault("headers", {})
-        clean["tools"] = []
-        clean["error"] = ""
-        with self._lock:
-            self._data["mcpServers"][name] = clean
-            self._save_locked()
+        """Compatibility shim; new code should use MCP_STORE directly."""
+        if self._legacy_mcp_mode:
+            clean = copy.deepcopy(server)
+            clean["transport"] = _normalize_transport(str(clean.get("transport") or ""))
+            clean.setdefault("enabled", True)
+            clean.setdefault("headers", {})
+            clean.setdefault("tools", [])
+            clean.setdefault("error", "")
+            with self._lock:
+                self._data.setdefault("mcpServers", {})[name] = clean
+                self._save_locked()
+            return
+        from mcp_config_service import MCP_STORE
+
+        MCP_STORE.upsert(name, server)
 
     def remove_mcp_server(self, name: str) -> bool:
-        with self._lock:
-            if name not in self._data["mcpServers"]:
-                return False
-            del self._data["mcpServers"][name]
-            self._save_locked()
-            return True
+        """Compatibility shim; new code should use MCP_STORE directly."""
+        if self._legacy_mcp_mode:
+            with self._lock:
+                if name not in self._data.get("mcpServers", {}):
+                    return False
+                del self._data["mcpServers"][name]
+                self._save_locked()
+                return True
+        from mcp_config_service import MCP_STORE
+
+        return MCP_STORE.remove(name)
 
     def update_mcp_discovery(self, results: dict[str, dict[str, Any]]) -> None:
-        now = datetime.now().isoformat()
-        with self._lock:
-            for name, result in results.items():
-                server = self._data["mcpServers"].get(name)
-                if server is None:
-                    continue
-                server["tools"] = copy.deepcopy(result.get("tools") or [])
-                server["error"] = str(result.get("error") or "")
-                server["updated_at"] = now
-            self._data["discovery"]["updated_at"] = now
-            self._save_locked()
+        """Compatibility shim; new code should use MCP_STORE directly."""
+        if self._legacy_mcp_mode:
+            now = datetime.now().isoformat()
+            with self._lock:
+                for name, result in results.items():
+                    server = self._data.get("mcpServers", {}).get(name)
+                    if server is None:
+                        continue
+                    server["tools"] = copy.deepcopy(result.get("tools") or [])
+                    server["error"] = str(result.get("error") or "")
+                    server["updated_at"] = now
+                self._data["discovery"]["updated_at"] = now
+                self._save_locked()
+            return
+        from mcp_config_service import MCP_STORE
+
+        MCP_STORE.update_discovery(results)
 
     def sync_skills(
         self,

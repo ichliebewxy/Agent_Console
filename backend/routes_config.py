@@ -2,6 +2,7 @@
 from fastapi import APIRouter, HTTPException, Query
 
 from config_service import CONFIG_STORE
+from mcp_config_service import MCP_STORE
 from mcp_service import discover_configured_mcp_tools
 from ops_store import bash_audit_store
 from runtime_catalog_service import refresh_runtime_catalogs, refresh_skill_catalog
@@ -20,6 +21,18 @@ from skill_service import SKILL_REGISTRY
 router = APIRouter()
 
 
+def _runtime_config_snapshot(*, public: bool = True) -> dict:
+    """Keep the existing API shape while sourcing MCP from its own file."""
+    snapshot = CONFIG_STORE.snapshot(public=public)
+    mcp_snapshot = (
+        CONFIG_STORE.snapshot(public=public)
+        if getattr(CONFIG_STORE, "_legacy_mcp_mode", False)
+        else MCP_STORE.snapshot(public=public)
+    )
+    snapshot["mcpServers"] = mcp_snapshot.get("mcpServers", {})
+    return snapshot
+
+
 async def _reload_main_agent() -> None:
     from agent import init_agent_async
 
@@ -28,7 +41,7 @@ async def _reload_main_agent() -> None:
 
 @router.get("/runtime-config", response_model=RuntimeConfigResponse)
 async def get_runtime_config():
-    return RuntimeConfigResponse(config=CONFIG_STORE.snapshot(public=True))
+    return RuntimeConfigResponse(config=_runtime_config_snapshot())
 
 
 @router.post("/runtime-config/refresh", response_model=RuntimeRefreshResponse)
@@ -47,26 +60,32 @@ async def upsert_mcp_server(request: MCPServerUpsertRequest):
         raise HTTPException(status_code=422, detail="stdio MCP requires command")
     if transport != "stdio" and not request.url.strip():
         raise HTTPException(status_code=422, detail="HTTP MCP requires url")
-    CONFIG_STORE.upsert_mcp_server(
-        request.name,
-        {
-            "transport": transport,
-            "url": request.url.strip(),
-            "command": request.command.strip(),
-            "args": request.args,
-            "headers": request.headers,
-            "env": request.env,
-            "enabled": request.enabled,
-        },
-    )
+    mcp_server = {
+        "transport": transport,
+        "url": request.url.strip(),
+        "command": request.command.strip(),
+        "args": request.args,
+        "headers": request.headers,
+        "env": request.env,
+        "enabled": request.enabled,
+    }
+    if getattr(CONFIG_STORE, "_legacy_mcp_mode", False):
+        CONFIG_STORE.upsert_mcp_server(request.name, mcp_server)
+    else:
+        MCP_STORE.upsert(request.name, mcp_server)
     await discover_configured_mcp_tools()
     await _reload_main_agent()
-    return RuntimeConfigResponse(config=CONFIG_STORE.snapshot(public=True))
+    return RuntimeConfigResponse(config=_runtime_config_snapshot())
 
 
 @router.delete("/runtime-config/mcp/{name}", response_model=MutationResponse)
 async def delete_mcp_server(name: str):
-    if not CONFIG_STORE.remove_mcp_server(name):
+    removed = (
+        CONFIG_STORE.remove_mcp_server(name)
+        if getattr(CONFIG_STORE, "_legacy_mcp_mode", False)
+        else MCP_STORE.remove(name)
+    )
+    if not removed:
         raise HTTPException(status_code=404, detail="MCP server not found")
     await discover_configured_mcp_tools()
     await _reload_main_agent()
@@ -88,7 +107,7 @@ async def create_skill(request: SkillCreateRequest):
         raise HTTPException(status_code=422, detail=str(exc))
     refresh_skill_catalog()
     await _reload_main_agent()
-    return RuntimeConfigResponse(config=CONFIG_STORE.snapshot(public=True))
+    return RuntimeConfigResponse(config=_runtime_config_snapshot())
 
 
 @router.delete("/runtime-config/skills/{name}", response_model=MutationResponse)

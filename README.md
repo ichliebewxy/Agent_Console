@@ -1,13 +1,15 @@
 # Agent Console
 
-Agent Console 是一个本地运行的 LangGraph 多 Agent + RAG 工作台。主 Agent 直接处理天气、知识库、审查 Bash 和启动时发现的 MCP 工具；专业流程、OpenCLI、PDF、代码审查和多步骤文件工作交给 Skills 小 Agent。控制台同时提供文档入库、混合检索、技能渐进加载、会话临时目录、浏览器自动化、工具步骤追踪和只读运行记录。
+Agent Console 是一个本地运行的 LangChain 多 Agent + RAG 工作台。主 Agent 固定持有知识库查询和 `bash/read_file/write_file/edit_file/glob` 五个基础工具，并可调用审查、Skills、subagent 和启动时动态发现的 MCP 工具。专业流程、OpenCLI、PDF、代码审查和多步骤文件工作可交给 Skills subagent。控制台同时提供文档入库、混合检索、技能渐进加载、会话临时目录、浏览器自动化、工具步骤追踪和只读运行记录。
 
 ## 核心能力
 
 - 流式对话：`/chat/stream` 通过 SSE 返回增量回答、RAG 步骤、工具调用步骤和最终 trace。
-- Supervisor 委派：主 Agent 直接持有天气、知识库、审查 Bash 和启动发现的 MCP 工具，只通过 `delegate_to_skill_agent` 调用 Skills 小 Agent。
-- 启动发现：MCP server 和 Skills 在应用启动时解析，结果保存到 `backend/config.json` 并在配置中心展示。
-- 技能渐进披露：主 Agent 不看到技能 catalog；Skills 小 Agent 先看到受预算限制的名称/描述，选中后才加载完整 `SKILL.md` 和引用资源。
+- LangChain Agent：使用 LangChain `create_agent`、标准消息和 `@tool`/`StructuredTool` 统一模型、工具、流式输出与 subagent。
+- 固定工具面：知识库之外的本地基础工具严格为 `bash`、`read_file`、`write_file`、`edit_file`、`glob`；`review` 只返回命令审查结果，不执行命令。
+- Subagent 委派：`load_subagent` 懒加载 `skills_specialist`，`delegate_to_skill_agent` 发送自包含任务。
+- 启动发现：MCP server 只配置在独立的 `backend/mcp_servers.json`；应用启动时读取服务器并动态转换为 LangChain tools，本地代码不写死 MCP 工具列表。
+- 技能渐进披露：可用 `load_skill` 按名称读取技能；Skills subagent 先看到受预算限制的名称/描述，选中后才加载完整 `SKILL.md` 和引用资源。
 - 本地临时运行：Agent 生成的命令、脚本、程序、转换器和测试以当前会话的 `backend/tmp/<session-key>/` 为工作目录运行，中间产物也保存在这里。
 - 会话文件下载：每个对话拥有独立文件目录，生成文件通过 SSE 进入回答卡片并可直接点击下载。
 - 可视化工具流程：委派、小 Agent 的实际工具和 RAG 检索都会在前端展示调用参数、当前阶段和返回摘要。
@@ -16,9 +18,9 @@ Agent Console 是一个本地运行的 LangGraph 多 Agent + RAG 工作台。主
 - 混合检索：BGE-M3 dense embedding + BM25 sparse embedding + Milvus Hybrid Search，并用 RRF 融合。
 - 查询扩展：相关性不足时进入 LangGraph 节点，自动选择 Step-back、HyDE 或复杂组合策略。
 - 可选重排：支持接入 SiliconFlow rerank。
-- 地图与天气工具：DashScope AMap MCP 用于路线、POI、地址与坐标；高德 REST API 用于实时天气。
+- 地图工具：DashScope AMap MCP 用于路线、POI、地址与坐标；项目不再提供本地天气查询工具。
 - OpenCLI 浏览器工具：可通过用户浏览器打开网页、读取页面状态、点击、输入、抽取内容和查看网络请求。
-- 只读运行记录：MCP、OpenCLI、天气、Milvus 等失败会记录到 `data/tool_failures.json`；前端只能查看和刷新，不介入 Agent 流程。
+- 只读运行记录：MCP、OpenCLI、知识库和 Milvus 等失败会记录到 `data/tool_failures.json`；前端只能查看和刷新，不介入 Agent 流程。
 
 ## 技术栈
 
@@ -45,18 +47,19 @@ Agent Console 是一个本地运行的 LangGraph 多 Agent + RAG 工作台。主
 ```mermaid
 flowchart LR
   U["用户 / 前端控制台"] --> API["FastAPI 路由"]
-  API --> Supervisor["LangGraph 主 Agent / Supervisor"]
-  Supervisor --> Gateway["delegate_to_skill_agent"]
+  API --> Supervisor["LangChain 主 Agent"]
+  Supervisor --> Loader["load_subagent"]
+  Loader --> Gateway["delegate_to_skill_agent"]
   Supervisor --> KB["search_knowledge_base"]
-  Supervisor --> WeatherTool["get_current_weather"]
-  Supervisor --> Bash["审查 Bash"]
-  Supervisor --> MCP["启动发现的 MCP tools"]
+  Supervisor --> Core["bash / read_file / write_file / edit_file / glob"]
+  Supervisor --> Review["review（仅审查，不执行）"]
+  Supervisor --> MCP["mcp_servers.json 启动发现"]
   MCP --> AMap["DashScope AMap MCP"]
   Gateway --> Skills["Skills 小 Agent（自行选技能）"]
   Skills --> Catalog["名称 + 描述 catalog"]
   Catalog --> SkillBody["按需 load_skill / 资源读取"]
-  Skills --> Workspace["backend/tmp 会话目录"]
-  Workspace --> LocalRun["本地运行审查 Bash"]
+  Skills --> Workspace["五个基础工具 / backend/tmp 会话目录"]
+  Workspace --> LocalRun["review + 审查 Bash"]
   LocalRun --> Artifacts["会话文件清单 + 下载 API"]
   Artifacts --> SSE
   KB --> RAG["LangGraph RAG Pipeline"]
@@ -66,7 +69,7 @@ flowchart LR
   Supervisor --> SSE["SSE: content / rag_step / tool_step / trace"]
   SSE --> U
   AMap --> Ops["只读失败记录"]
-  Bash --> Audit["Bash 权限审查"]
+  Core --> Audit["Bash 权限审查"]
 ```
 
 ## 目录结构
@@ -75,22 +78,25 @@ flowchart LR
 backend/
   app.py                  FastAPI 应用入口，挂载前端静态文件
   api.py                  总路由聚合
-  config.json             MCP、Skills catalog、Bash 权限和发现结果
-  config_service.py       config.json 原子读写与默认权限规则
+  config.json             Skills catalog、Bash 权限和发现结果
+  mcp_servers.json        独立 MCP server 清单与启动发现结果
+  config_service.py       非 MCP 配置原子读写与默认权限规则
+  mcp_config_service.py   MCP 清单的独立持久化、脱敏与增删
   routes_config.py        MCP/Skills 增删、刷新和 Bash 审查 API
   routes_*.py             聊天、会话、文档、只读运行记录路由
   agent.py                主 Agent 初始化和同步/流式对话
-  subagents.py            Skills 小 Agent 懒加载与统一委派入口
+  subagents.py            LangChain Skills subagent 懒加载与统一委派入口
   agent_prompt.py         主 Agent 与各小 Agent 的系统提示词
   skill_service.py        技能元数据注册表、按名称加载和资源路径隔离
-  workspace_tools.py      Skills 小 Agent 的受限文本工作区工具
+  core_tools.py           五个固定工具与非执行 review 工具
+  workspace_tools.py      旧工作区工具兼容层
   runtime_context.py      当前 user/session 上下文和隔离目录键
   local_runtime_service.py 在 backend/tmp 中运行命令、限制超时与输出
   artifact_service.py     会话产物枚举与安全下载路径解析
   routes_artifacts.py     产物列表和下载 API
-  tools.py                本地天气、知识库检索和步骤事件队列
+  tools.py                知识库检索和步骤事件队列
   tool_instrumentation.py 工具调用步骤包装器
-  mcp_service.py          DashScope AMap MCP 加载与工具封装
+  mcp_service.py          启动读取 MCP server 并动态封装 LangChain tools
   local_runtime_service.py 本地命令执行与会话临时目录环境
   settings.py             统一读取环境变量
   document_loader.py      文档解析和分层切块
@@ -171,7 +177,6 @@ QUERY_EXPANSION_MODEL=deepseek-v4-flash
 # DashScope MCP (AMap/Gaode tools only)
 DASHSCOPE_MCP_API_KEY=...
 MCP_DISCOVERY_TIMEOUT=30
-AMAP_MCP_ENDPOINT=https://dashscope.aliyuncs.com/api/v1/mcps/amap-maps/mcp
 
 # BGE embeddings
 EMBEDDING_MODEL=BAAI/bge-m3
@@ -184,10 +189,6 @@ BM25_STATE_PATH=
 RERANK_MODEL=BAAI/bge-reranker-v2-m3
 RERANK_BINDING_HOST=https://api.siliconflow.cn/v1/rerank
 RERANK_API_KEY=...
-
-# AMap weather REST API
-AMAP_WEATHER_API=https://restapi.amap.com/v3/weather/weatherInfo
-AMAP_API_KEY=...
 
 # Milvus
 MILVUS_HOST=127.0.0.1
@@ -225,7 +226,6 @@ LOCAL_RUN_COMMAND_MAX_CHARS=8000
 | `RERANK_API_KEY` | 重排模型 Key，只用于 rerank。 |
 | `EMBEDDING_*` | BGE embedding 配置，默认模型 `BAAI/bge-m3`，默认维度 `1024`。 |
 | `BM25_STATE_PATH` | 可选，BM25 词表与 df 统计持久化路径；默认 `data/bm25_state.json`。 |
-| `AMAP_API_KEY` | 高德天气 REST API，不等于 MCP Key。 |
 | `OPENCLI_BIN` | 可选，显式指定 OpenCLI 可执行文件，例如 `C:\Users\wangy\AppData\Roaming\npm\opencli.cmd`。 |
 | `OPENCLI_SESSION` | OpenCLI 浏览器会话名，默认 `lcagent`。 |
 | `BACKEND_TMP_DIR` | Skills 小 Agent 的本地临时目录根，默认 `backend/tmp`。 |
@@ -300,7 +300,7 @@ http://127.0.0.1:8000
 
 ### 2. 主 Agent 委派与按需工具选择
 
-前端把问题提交到 `/chat/stream`，`agent.py` 调用 LangGraph 主 Agent。主 Agent 直接持有天气查询、知识库查询、自动审查 Bash 和启动时从 `backend/config.json` 发现的 MCP 工具；专业流程、OpenCLI、PDF、代码审查和多步骤文件工作则委派给 `delegate_to_skill_agent`。Skills 小 Agent 先看 catalog，再自行选择并加载一个或多个 Skill。委派和实际工具调用都会被 `tool_instrumentation.py` 包装成用户可见步骤。
+前端把问题提交到 `/chat/stream`，`agent.py` 调用 LangChain 主 Agent。主 Agent 直接持有知识库查询、五个固定本地工具、`review`、Skills 加载工具和启动时从 `backend/mcp_servers.json` 发现的 MCP 工具；专业流程、OpenCLI、PDF、代码审查和多步骤文件工作则委派给 `delegate_to_skill_agent`。Skills subagent 先看 catalog，再自行选择并加载一个或多个 Skill。委派和实际工具调用都会被 `tool_instrumentation.py` 包装成用户可见步骤。
 
 ### 3. RAG 检索与生成
 
@@ -312,16 +312,16 @@ http://127.0.0.1:8000
 
 ## Skills 加载与工作区
 
-实现参考 [shareAI-lab/learn-claude-code](https://github.com/shareAI-lab/learn-claude-code) 的 s07 Skill Loading，并针对当前 supervisor 架构调整为由小 Agent 决策：
+实现参考 [shareAI-lab/learn-claude-code](https://github.com/shareAI-lab/learn-claude-code) 的工具分发和 Skill Loading，并针对当前 LangChain 架构调整为由 subagent 决策：
 
-1. 主 Agent 只知道可以委派 `skills`，看不到具体技能名和正文。
-2. Skills 小 Agent 创建时只注入 `name + description` catalog，默认最多 8000 字符。
-3. 小 Agent 根据任务自行选择精确技能名，再调用 `load_skill` 读取完整 `SKILL.md`。
+1. 主 Agent 可以调用 `load_skill`，也可以先用 `load_subagent` 再委派完整任务。
+2. Skills subagent 创建时只注入 `name + description` catalog，默认最多 8000 字符。
+3. subagent 根据任务自行选择精确技能名，再调用 `load_skill` 读取完整 `SKILL.md`。
 4. `references/`、`scripts/` 等资源必须通过 `read_skill_resource` 相对 skill root 读取，调用方不能传入任意技能路径。
-5. 工作文件按 user/session 哈希分到 `backend/tmp/<session-key>/`；小 Agent 可列举、读取和显式写入文本。
+5. 工作文件按 user/session 哈希分到 `backend/tmp/<session-key>/`；五个固定工具提供 Glob、读取、写入、单次编辑和审查/执行能力。
 6. 任何命令、脚本、生成程序、转换器和测试都调用经过审查的 `bash`，以对应会话目录为当前目录；源码、缓存、解压文件、预览、日志和最终文件全部留在这里。
 
-7. 用户可以在前端“配置中心”增加 MCP server 和 Skill；保存后后端写入 `backend/config.json`、重新发现 MCP 工具并热加载主 Agent。
+7. 用户可以在前端“配置中心”增加 MCP server 和 Skill；MCP server 保存到 `backend/mcp_servers.json`，Skill catalog 保存到 `backend/config.json`，随后重新发现 MCP 工具并热加载主 Agent。
 
 已从 `D:\learn_claude_code\skills` 原样迁移四个技能：`agent-builder`、`code-review`、`mcp-builder`、`pdf`，包括 `agent-builder` 的 references 和 scripts。新增技能时，在 `agent_workspace/skills/<name>/SKILL.md` 中提供 YAML frontmatter：
 
@@ -344,7 +344,7 @@ stdio MCP 也会先经过相同的命令审查；内联解释器代码（`python
 
 当前项目没有账号登录系统。签名下载链接可防止仅凭 `user_id/session_id` 枚举文件，但正式公网多用户部署仍应在 FastAPI 前增加 SSO、反向代理认证或其他统一身份层，并限制 `/sessions` 与 `/tool-failures` 的访问。
 
-MCP 由主 Agent 直接调用；OpenCLI 由 Skills 小 Agent 通过审查 Bash 调用。
+MCP 由主 Agent 直接调用；OpenCLI 由 Skills subagent 通过审查 Bash 调用。MCP 的完整工具列表只来自启动时的 `get_tools()`，不在本地源代码中维护。
 
 ## OpenCLI 浏览器自动化
 
@@ -386,10 +386,10 @@ Windows 注意事项：
 
 ### 启动时地图 MCP 显示发现失败
 
-应用启动时会读取 `backend/config.json` 并发现启用的 MCP 工具；失败会把 server 和错误写入配置中心。重点检查：
+应用启动时会读取 `backend/mcp_servers.json` 并发现启用的 MCP 工具；失败会把 server 和错误写回该清单并在配置中心展示。重点检查：
 
 - `DASHSCOPE_MCP_API_KEY` 是否是开通 MCP 的 Key。
-- `AMAP_MCP_ENDPOINT` 是否正确。
+- `backend/mcp_servers.json` 中的 `url`、`transport` 和环境变量占位符是否正确。
 - 百炼控制台里的 AMap MCP 是否已开通，或是否需要重新开通升级协议。
 
 ### OpenCLI 返回 `OPENCLI_ERROR`

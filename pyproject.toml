@@ -1,7 +1,7 @@
 [project]
 name = "agent-console"
 version = "0.1.0"
-description = "A local LangGraph supervisor console with lazy specialist agents, hybrid RAG, and read-only runtime records."
+description = "A local LangChain agent console with lazy subagents, hybrid RAG, and startup-discovered MCP tools."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

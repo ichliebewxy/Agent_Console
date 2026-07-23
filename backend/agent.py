@@ -1,4 +1,4 @@
-"""LangGraph supervisor construction, chat execution, and streaming."""
+"""LangChain main-agent construction, chat execution, and streaming."""
 import asyncio
 import json
 
@@ -9,9 +9,10 @@ from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, Sys
 from artifact_service import list_session_artifacts
 from agent_prompt import SYSTEM_PROMPT
 from conversation_storage import ConversationStorage
+from core_tools import TOOLS
 from runtime_context import bind_runtime_context, session_async_lock
 from settings import CHAT_API_KEY, CHAT_BASE_URL, CHAT_MODEL
-from subagents import build_skill_delegation_tool
+from subagents import build_subagent_tools
 from tool_instrumentation import instrument_tools
 from tools import (
     get_last_rag_context,
@@ -39,30 +40,34 @@ def _create_chat_model(temperature: float = 0.3):
 
 
 async def init_agent_async():
-    """Initialize the main Agent with direct tools and a lazy Skills gateway."""
+    """Initialize the LangChain agent and its startup-discovered tool surface."""
     global agent, model
     async with _INIT_LOCK:
         model = _create_chat_model()
-        from bash_tool import BASH_TOOLS
+        from core_tools import REVIEW_TOOLS
         from mcp_service import get_discovered_mcp_tools
-        from tools import get_current_weather, search_knowledge_base
+        from skill_service import SKILL_TOOLS
+        from tools import search_knowledge_base
 
-        tools = [
-            get_current_weather,
+        mcp_tools = get_discovered_mcp_tools()
+        runtime_tools = [
             search_knowledge_base,
-            *BASH_TOOLS,
-            *get_discovered_mcp_tools(),
-            build_skill_delegation_tool(model),
+            *TOOLS,
+            *REVIEW_TOOLS,
+            *SKILL_TOOLS,
+            *build_subagent_tools(model),
+            *mcp_tools,
         ]
         agent = create_agent(
             model=model,
-            tools=instrument_tools(tools),
+            tools=instrument_tools(runtime_tools),
             system_prompt=SYSTEM_PROMPT,
             name="main_agent",
         )
         print(
-            "主 Agent 初始化完成；直接工具：天气、知识库、审查 Bash、"
-            f"MCP({len(get_discovered_mcp_tools())})，Skills 通过小 Agent 选择。"
+            "LangChain 主 Agent 初始化完成；固定工具：知识库、"
+            "bash/read_file/write_file/edit_file/glob、review、Skills/Subagent；"
+            f"启动发现 MCP({len(mcp_tools)})。"
         )
 
 

@@ -1,4 +1,4 @@
-"""Startup discovery and wrapping for MCP servers declared in config.json."""
+"""Startup discovery and LangChain wrapping for independent MCP servers."""
 import asyncio
 import hashlib
 import json
@@ -11,7 +11,7 @@ from typing import Any
 from langchain_core.tools import StructuredTool
 from langchain_mcp_adapters.client import MultiServerMCPClient
 
-from config_service import CONFIG_STORE
+from mcp_config_service import MCP_STORE
 from ops_store import record_tool_failure
 from settings import DASHSCOPE_MCP_API_KEY, MCP_DISCOVERY_TIMEOUT
 
@@ -62,8 +62,8 @@ def _adapter_config(name: str, server: dict) -> dict:
     if transport == "stdio":
         from bash_tool import review_bash_command
 
-        command = str(server.get("command") or "").strip()
-        args = [str(value) for value in server.get("args") or []]
+        command = str(_expand_env(server.get("command") or "")).strip()
+        args = [str(_expand_env(value)) for value in server.get("args") or []]
         executable = os.path.basename(command).lower()
         executable = re.sub(r"\.(?:exe|cmd|bat)$", "", executable)
         lowered_args = [value.lower() for value in args]
@@ -111,7 +111,7 @@ def _adapter_config(name: str, server: dict) -> dict:
         key: str(_expand_env(value))
         for key, value in (server.get("headers") or {}).items()
     }
-    url = str(server.get("url") or "")
+    url = str(_expand_env(server.get("url") or ""))
     if "dashscope.aliyuncs.com" in url and DASHSCOPE_MCP_API_KEY:
         headers.setdefault("Authorization", f"Bearer {DASHSCOPE_MCP_API_KEY}")
     return {
@@ -119,18 +119,6 @@ def _adapter_config(name: str, server: dict) -> dict:
         "url": url,
         "headers": headers,
     }
-
-
-def _tool_schema(tool) -> dict:
-    schema = getattr(tool, "args_schema", None)
-    if schema is None:
-        return {}
-    if isinstance(schema, dict):
-        return schema
-    try:
-        return schema.model_json_schema()
-    except (AttributeError, TypeError):
-        return {}
 
 
 def _runtime_tool_name(server_name: str, tool_name: str, used_names: set[str]) -> str:
@@ -185,10 +173,10 @@ async def discover_configured_mcp_tools(
     *,
     record_init_failure: bool = True,
 ) -> MCPDiscoveryResult:
-    """Discover every enabled server and persist the tool catalog to config.json."""
+    """Discover enabled servers from mcp_servers.json and cache LangChain tools."""
     global _DISCOVERED_TOOLS, _MCP_CLIENTS
     async with _DISCOVERY_LOCK:
-        configured = CONFIG_STORE.snapshot().get("mcpServers", {})
+        configured = MCP_STORE.snapshot().get("mcpServers", {})
         discovered_tools = []
         clients = []
         errors = {}
@@ -208,19 +196,10 @@ async def discover_configured_mcp_tools(
                     timeout=max(1, MCP_DISCOVERY_TIMEOUT),
                 )
                 clients.append(client)
-                rows = []
                 for raw_tool in raw_tools:
                     wrapped = _wrap_tool(raw_tool, name, used_names)
                     discovered_tools.append(wrapped)
-                    rows.append(
-                        {
-                            "name": raw_tool.name,
-                            "runtime_name": wrapped.name,
-                            "description": str(raw_tool.description or "")[:1200],
-                            "input_schema": _tool_schema(raw_tool),
-                        }
-                    )
-                metadata[name] = {"tools": rows, "error": ""}
+                metadata[name] = {"tools": [], "tool_count": len(raw_tools), "error": ""}
             except Exception as exc:
                 error = summarize_exception(exc)
                 errors[name] = error
@@ -234,7 +213,7 @@ async def discover_configured_mcp_tools(
                         dedupe=True,
                     )
 
-        CONFIG_STORE.update_mcp_discovery(metadata)
+        MCP_STORE.update_discovery(metadata)
         _DISCOVERED_TOOLS = discovered_tools
         _MCP_CLIENTS = clients
         return MCPDiscoveryResult(
