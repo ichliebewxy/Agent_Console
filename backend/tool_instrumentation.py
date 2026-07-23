@@ -4,7 +4,8 @@ from uuid import uuid4
 
 from langchain_core.tools import StructuredTool
 
-from tools import emit_tool_step
+from settings import AGENT_TOOL_CALL_LIMIT
+from tools import consume_tool_call_budget, emit_tool_step
 
 
 def _compact_json(value, max_length: int = 520) -> str:
@@ -28,8 +29,9 @@ def _tool_step(phase: str, tool_name: str, call_id: str, args=None, result=None)
         "start": f"调用工具：{tool_name}",
         "result": f"工具返回：{tool_name}",
         "error": f"工具错误：{tool_name}",
+        "limit": f"工具调用已达上限：{tool_name}",
     }
-    icons = {"start": ">", "result": "OK", "error": "!"}
+    icons = {"start": ">", "result": "OK", "error": "!", "limit": "!"}
     step = {
         "icon": icons.get(phase, "•"),
         "phase": phase,
@@ -61,6 +63,18 @@ def _result_phase(result) -> str:
 def instrument_tool(tool_obj):
     async def wrapped_ainvoke(**kwargs):
         call_id = uuid4().hex
+        allowed, _ = consume_tool_call_budget()
+        if not allowed:
+            emit_tool_step(
+                _tool_step(
+                    "limit",
+                    tool_obj.name,
+                    call_id,
+                    args=kwargs,
+                    result=f"本轮工具调用已达到 {AGENT_TOOL_CALL_LIMIT} 次上限",
+                )
+            )
+            return f"TOOL_CALL_LIMIT_REACHED: 本轮工具调用已达到 {AGENT_TOOL_CALL_LIMIT} 次上限，请直接整理已有结果并回答。"
         emit_tool_step(_tool_step("start", tool_obj.name, call_id, args=kwargs))
         try:
             result = await tool_obj.ainvoke(kwargs)
@@ -76,6 +90,18 @@ def instrument_tool(tool_obj):
 
     def wrapped_invoke(**kwargs):
         call_id = uuid4().hex
+        allowed, _ = consume_tool_call_budget()
+        if not allowed:
+            emit_tool_step(
+                _tool_step(
+                    "limit",
+                    tool_obj.name,
+                    call_id,
+                    args=kwargs,
+                    result=f"本轮工具调用已达到 {AGENT_TOOL_CALL_LIMIT} 次上限",
+                )
+            )
+            return f"TOOL_CALL_LIMIT_REACHED: 本轮工具调用已达到 {AGENT_TOOL_CALL_LIMIT} 次上限，请直接整理已有结果并回答。"
         emit_tool_step(_tool_step("start", tool_obj.name, call_id, args=kwargs))
         try:
             result = tool_obj.invoke(kwargs)

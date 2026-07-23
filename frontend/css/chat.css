@@ -288,3 +288,101 @@
   white-space: pre-wrap;
   font: 0.78rem/1.45 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
 }
+
+.rag-steps {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.tool-call-list {
+  display: grid;
+  gap: 8px;
+}
+
+.tool-call-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--green-dark);
+  font-size: 0.82rem;
+}
+
+.tool-call-heading small {
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.tool-call-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: color-mix(in oklch, var(--surface-raised) 78%, transparent);
+  overflow: hidden;
+}
+
+.tool-call-card summary {
+  min-height: 42px;
+  padding: 8px 10px;
+  cursor: pointer;
+  list-style: none;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.tool-call-card summary::-webkit-details-marker {
+  display: none;
+}
+
+.tool-call-card summary strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink);
+  font-size: 0.86rem;
+}
+
+.tool-call-card summary small {
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.tool-call-status {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  background: var(--info-bg);
+  color: var(--blue);
+  font-size: 0.68rem;
+}
+
+.tool-call-status.success {
+  background: var(--success-bg);
+  color: var(--green-dark);
+}
+
+.tool-call-status.error,
+.tool-call-status.limit {
+  background: var(--danger-bg);
+  color: var(--coral);
+}
+
+.tool-call-detail {
+  padding: 9px 11px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.tool-call-card .step-result {
+  max-height: 180px;
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+}

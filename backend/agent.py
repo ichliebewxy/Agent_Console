@@ -11,7 +11,7 @@ from agent_prompt import SYSTEM_PROMPT
 from conversation_storage import ConversationStorage
 from core_tools import TOOLS
 from runtime_context import bind_runtime_context, session_async_lock
-from settings import CHAT_API_KEY, CHAT_BASE_URL, CHAT_MODEL
+from settings import AGENT_TOOL_CALL_LIMIT, CHAT_API_KEY, CHAT_BASE_URL, CHAT_MODEL
 from subagents import build_subagent_tools
 from tool_instrumentation import instrument_tools
 from tools import (
@@ -26,6 +26,7 @@ agent = None
 model = None
 storage = ConversationStorage()
 _INIT_LOCK = asyncio.Lock()
+_AGENT_RECURSION_LIMIT = AGENT_TOOL_CALL_LIMIT * 2 + 8
 
 
 def _create_chat_model(temperature: float = 0.3):
@@ -126,7 +127,10 @@ async def chat_with_agent(
         raise RuntimeError("主 Agent 尚未初始化，请先等待 init_agent_async() 完成。")
     with bind_runtime_context(user_id, session_id):
         messages = _prepare_messages(user_text, user_id, session_id)
-        result = await agent.ainvoke({"messages": messages}, config={"recursion_limit": 50})
+        result = await agent.ainvoke(
+            {"messages": messages},
+            config={"recursion_limit": _AGENT_RECURSION_LIMIT},
+        )
         response = _extract_response(result)
         rag_context = get_last_rag_context(clear=True)
         rag_trace = rag_context.get("rag_trace") if rag_context else None
@@ -141,7 +145,7 @@ async def chat_with_agent(
 
 
 def _chunk_text(msg: AIMessageChunk) -> str:
-    if getattr(msg, "tool_call_chunks", None):
+    if getattr(msg, "tool_call_chunks", None) and not msg.content:
         return ""
     if isinstance(msg.content, str):
         return msg.content
@@ -154,6 +158,15 @@ def _chunk_text(msg: AIMessageChunk) -> str:
         elif isinstance(block, dict) and block.get("type") == "text":
             text += block.get("text", "")
     return text
+
+
+def _message_stream_id(msg: AIMessageChunk, metadata: dict) -> str | None:
+    """Return a stable id for one streamed model message, when available."""
+    message_id = getattr(msg, "id", None)
+    if message_id:
+        return str(message_id)
+    graph_step = (metadata or {}).get("langgraph_step")
+    return f"graph-step:{graph_step}" if graph_step is not None else None
 
 
 async def _chat_with_agent_stream_bound(
@@ -177,11 +190,12 @@ async def _chat_with_agent_stream_bound(
 
     async def _agent_worker():
         nonlocal full_response
+        active_message_id = None
         try:
             async for msg, metadata in agent.astream(
                 {"messages": messages},
                 stream_mode="messages",
-                config={"recursion_limit": 50},
+                config={"recursion_limit": _AGENT_RECURSION_LIMIT},
             ):
                 # Nested specialist model output is implementation detail. Only
                 # stream the supervisor's final model node to the user.
@@ -190,8 +204,23 @@ async def _chat_with_agent_stream_bound(
                 if isinstance(msg, AIMessageChunk):
                     content = _chunk_text(msg)
                     if content:
+                        message_id = _message_stream_id(msg, metadata)
+                        if (
+                            active_message_id
+                            and message_id
+                            and message_id != active_message_id
+                        ):
+                            full_response += "\n\n"
+                            await output_queue.put({"type": "content_boundary"})
+                        active_message_id = message_id or active_message_id
                         full_response += content
-                        await output_queue.put({"type": "content", "content": content})
+                        await output_queue.put(
+                            {
+                                "type": "content",
+                                "content": content,
+                                "message_id": message_id,
+                            }
+                        )
         except Exception as exc:
             await output_queue.put({"type": "error", "content": str(exc)})
         finally:

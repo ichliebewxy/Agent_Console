@@ -4,7 +4,7 @@ Agent Console 是一个本地运行的 LangChain 多 Agent + RAG 工作台。主
 
 ## 核心能力
 
-- 流式对话：`/chat/stream` 通过 SSE 返回增量回答、RAG 步骤、工具调用步骤和最终 trace。
+- 流式对话：`/chat/stream` 通过 SSE 返回增量回答、模型消息分段边界、RAG 步骤、工具调用步骤和最终 trace。
 - LangChain Agent：使用 LangChain `create_agent`、标准消息和 `@tool`/`StructuredTool` 统一模型、工具、流式输出与 subagent。
 - 固定工具面：知识库之外的本地基础工具严格为 `bash`、`read_file`、`write_file`、`edit_file`、`glob`；`review` 只返回命令审查结果，不执行命令。
 - Subagent 委派：`load_subagent` 懒加载 `skills_specialist`，`delegate_to_skill_agent` 发送自包含任务。
@@ -13,6 +13,7 @@ Agent Console 是一个本地运行的 LangChain 多 Agent + RAG 工作台。主
 - 本地临时运行：Agent 生成的命令、脚本、程序、转换器和测试以当前会话的 `backend/tmp/<session-key>/` 为工作目录运行，中间产物也保存在这里。
 - 会话文件下载：每个对话拥有独立文件目录，生成文件通过 SSE 进入回答卡片并可直接点击下载。
 - 可视化工具流程：委派、小 Agent 的实际工具和 RAG 检索都会在前端展示调用参数、当前阶段和返回摘要。
+- 工具调用保护：每轮对话最多执行 250 次工具调用，达到上限后 Agent 会收到明确提示并整理已有结果。
 - 本地知识库：支持上传 PDF、Word（`.docx`/`.doc`）、PPT、Excel、CSV、TXT，解析后写入 Milvus。
 - 分层 RAG：L1/L2 父块保存在本地 DocStore，L3 叶子块进入向量库，回答时支持 auto-merging 上卷上下文。
 - 混合检索：BGE-M3 dense embedding + BM25 sparse embedding + Milvus Hybrid Search，并用 RRF 融合。
@@ -273,7 +274,7 @@ http://127.0.0.1:8000
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| `POST` | `/chat/stream` | SSE 流式对话，返回 `content`、`rag_step`、`tool_step`、`trace`。 |
+| `POST` | `/chat/stream` | SSE 流式对话，返回 `content`、`content_boundary`、`rag_step`、`tool_step`、`trace`。 |
 | `POST` | `/chat` | 非流式对话。 |
 | `GET` | `/sessions/{user_id}` | 获取用户会话列表。 |
 | `GET` | `/sessions/{user_id}/{session_id}` | 获取会话消息。 |
@@ -297,7 +298,7 @@ http://127.0.0.1:8000
 
 ### 2. 主 Agent 委派与按需工具选择
 
-前端把问题提交到 `/chat/stream`，`agent.py` 调用 LangChain 主 Agent。主 Agent 直接持有知识库查询、五个固定本地工具、`review`、Skills 加载工具和启动时从 `backend/mcp_servers.json` 发现的 MCP 工具；专业流程、OpenCLI、PDF、代码审查和多步骤文件工作则委派给 `delegate_to_skill_agent`。Skills subagent 先看 catalog，再自行选择并加载一个或多个 Skill。委派和实际工具调用都会被 `tool_instrumentation.py` 包装成用户可见步骤。
+前端把问题提交到 `/chat/stream`，`agent.py` 调用 LangChain 主 Agent。主 Agent 直接持有知识库查询、五个固定本地工具、`review`、Skills 加载工具和启动时从 `backend/mcp_servers.json` 发现的 MCP 工具；专业流程、OpenCLI、PDF、代码审查和多步骤文件工作则委派给 `delegate_to_skill_agent`。Skills subagent 先看 catalog，再自行选择并加载一个或多个 Skill。委派和实际工具调用都会被 `tool_instrumentation.py` 包装成用户可见步骤，并受每轮 250 次调用上限保护。
 
 ### 3. RAG 检索与生成
 
