@@ -1,4 +1,4 @@
-"""Lazy skills specialist exposed to the main Agent through one delegation tool."""
+"""Lazy LangChain subagents exposed through explicit loading and delegation tools."""
 import asyncio
 
 from langchain.agents import create_agent
@@ -17,6 +17,13 @@ class SkillDelegationRequest(BaseModel):
             "Self-contained task containing the user outcome, relevant context, "
             "constraints, URLs, desired output, and requested file changes."
         ),
+    )
+
+
+class SubagentLoadRequest(BaseModel):
+    name: str = Field(
+        default="skills_specialist",
+        description="Subagent name. Currently available: skills_specialist.",
     )
 
 
@@ -56,11 +63,10 @@ class SkillAgentRegistry:
         async with self._lock:
             if self._agent is not None:
                 return self._agent
-            from bash_tool import BASH_TOOLS
+            from core_tools import CORE_TOOLS, REVIEW_TOOLS
             from skill_service import SKILL_REGISTRY, SKILL_TOOLS
-            from workspace_tools import WORKSPACE_TOOLS
 
-            tools = [*SKILL_TOOLS, *WORKSPACE_TOOLS, *BASH_TOOLS]
+            tools = [*CORE_TOOLS, *SKILL_TOOLS, *REVIEW_TOOLS]
             self._agent = create_agent(
                 model=self._model,
                 tools=instrument_tools(tools),
@@ -80,11 +86,36 @@ class SkillAgentRegistry:
         except Exception as exc:
             return f"SKILL_AGENT_ERROR: Skills 小 Agent 执行失败：{exc}"
 
+    async def load(self, name: str = "skills_specialist") -> str:
+        normalized = (name or "").strip()
+        if normalized != "skills_specialist":
+            return (
+                "SUBAGENT_ERROR: Unknown subagent. "
+                "Available subagents: skills_specialist"
+            )
+        await self._get_agent()
+        return (
+            "Loaded subagent: skills_specialist. It can load skills on demand, "
+            "use the five core tools, review commands, and return a specialist result."
+        )
 
-def build_skill_delegation_tool(model) -> StructuredTool:
-    """Create the main Agent's single gateway to skill selection and execution."""
-    registry = SkillAgentRegistry(model)
 
+def _loader_tool(registry: SkillAgentRegistry) -> StructuredTool:
+    async def load_subagent(name: str = "skills_specialist") -> str:
+        return await registry.load(name)
+
+    return StructuredTool.from_function(
+        coroutine=load_subagent,
+        name="load_subagent",
+        description=(
+            "Load a named LangChain subagent before delegating work. "
+            "Currently available: skills_specialist."
+        ),
+        args_schema=SubagentLoadRequest,
+    )
+
+
+def _delegation_tool(registry: SkillAgentRegistry) -> StructuredTool:
     async def delegate_to_skill_agent(task: str) -> str:
         return await registry.run(task)
 
@@ -92,9 +123,20 @@ def build_skill_delegation_tool(model) -> StructuredTool:
         coroutine=delegate_to_skill_agent,
         name="delegate_to_skill_agent",
         description=(
-            "Delegate a self-contained specialized workflow to the Skills small Agent. "
-            "It inspects the current skill catalog, loads the best matching skill, may "
-            "use the reviewed Bash and session workspace tools, and returns its result."
+            "Delegate a self-contained specialized workflow to the Skills subagent. "
+            "It inspects the current skill catalog, loads matching skills, uses the "
+            "reviewed five-tool workspace, and returns its result."
         ),
         args_schema=SkillDelegationRequest,
     )
+
+
+def build_skill_delegation_tool(model) -> StructuredTool:
+    """Create the main Agent's single gateway to skill selection and execution."""
+    return _delegation_tool(SkillAgentRegistry(model))
+
+
+def build_subagent_tools(model) -> list[StructuredTool]:
+    """Build loader and delegation tools backed by the same lazy registry."""
+    registry = SkillAgentRegistry(model)
+    return [_loader_tool(registry), _delegation_tool(registry)]

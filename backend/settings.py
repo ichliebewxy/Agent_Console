@@ -49,10 +49,6 @@ GRADE_MODEL = env("GRADE_MODEL", "deepseek-v4-flash")
 DASHSCOPE_MCP_API_KEY = env("DASHSCOPE_MCP_API_KEY")
 MCP_DISCOVERY_TIMEOUT = env_int("MCP_DISCOVERY_TIMEOUT", 30)
 QUERY_EXPANSION_MODEL = env("QUERY_EXPANSION_MODEL", CHAT_MODEL)
-AMAP_MCP_ENDPOINT = env("AMAP_MCP_ENDPOINT", "https://dashscope.aliyuncs.com/api/v1/mcps/amap-maps/mcp")
-
-AMAP_WEATHER_API = env("AMAP_WEATHER_API", "https://restapi.amap.com/v3/weather/weatherInfo")
-AMAP_API_KEY = env("AMAP_API_KEY")
 
 MILVUS_HOST = env("MILVUS_HOST", "127.0.0.1")
 MILVUS_PORT = env("MILVUS_PORT", "19530")

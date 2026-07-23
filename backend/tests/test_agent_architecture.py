@@ -13,7 +13,7 @@ from subagents import SkillAgentRegistry
 
 
 class AgentArchitectureTests(unittest.IsolatedAsyncioTestCase):
-    async def test_main_agent_owns_direct_core_tools_and_skill_gateway(self):
+    async def test_main_agent_owns_langchain_core_tools_and_skill_gateway(self):
         captured = {}
 
         def fake_create_agent(**kwargs):
@@ -31,12 +31,20 @@ class AgentArchitectureTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             {tool.name for tool in captured["tools"]},
             {
-                "get_current_weather",
                 "search_knowledge_base",
                 "bash",
+                "read_file",
+                "write_file",
+                "edit_file",
+                "glob",
+                "review",
+                "load_skill",
+                "read_skill_resource",
+                "load_subagent",
                 "delegate_to_skill_agent",
             },
         )
+        self.assertNotIn("get_current_weather", {tool.name for tool in captured["tools"]})
         self.assertIn("OpenCLI", captured["system_prompt"])
 
     async def test_skills_agent_selects_skills_and_uses_same_reviewed_bash(self):
@@ -58,10 +66,12 @@ class AgentArchitectureTests(unittest.IsolatedAsyncioTestCase):
             {
                 "load_skill",
                 "read_skill_resource",
-                "list_workspace_files",
-                "read_workspace_file",
-                "write_workspace_file",
                 "bash",
+                "read_file",
+                "write_file",
+                "edit_file",
+                "glob",
+                "review",
             },
         )
         self.assertIn("opencli", captured["system_prompt"])
