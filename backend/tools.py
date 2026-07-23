@@ -1,12 +1,14 @@
-from typing import Optional
 import asyncio
+from contextvars import ContextVar
+from typing import Optional
 
 from langchain_core.tools import tool
 
 from ops_store import record_tool_failure
+from settings import AGENT_TOOL_CALL_LIMIT
 
 _LAST_RAG_CONTEXT = None
-_KNOWLEDGE_TOOL_CALLS_THIS_TURN = 0
+_TOOL_CALL_STATE: ContextVar[dict | None] = ContextVar("agent_tool_call_state", default=None)
 _RAG_STEP_QUEUE = None
 _RAG_STEP_LOOP = None
 _TOOL_STEP_QUEUE = None
@@ -27,8 +29,26 @@ def get_last_rag_context(clear: bool = True) -> Optional[dict]:
 
 
 def reset_tool_call_guards():
-    global _KNOWLEDGE_TOOL_CALLS_THIS_TURN
-    _KNOWLEDGE_TOOL_CALLS_THIS_TURN = 0
+    _TOOL_CALL_STATE.set({"count": 0, "knowledge_count": 0})
+
+
+def _current_tool_call_state() -> dict:
+    state = _TOOL_CALL_STATE.get()
+    if state is None:
+        state = {"count": 0, "knowledge_count": 0}
+        _TOOL_CALL_STATE.set(state)
+    return state
+
+
+def consume_tool_call_budget() -> tuple[bool, int]:
+    """Reserve one tool call for the current user turn."""
+    state = _current_tool_call_state()
+    count = int(state.get("count", 0))
+    if count >= AGENT_TOOL_CALL_LIMIT:
+        return False, count
+    count += 1
+    state["count"] = count
+    return True, count
 
 
 def set_rag_step_queue(queue):
@@ -125,13 +145,13 @@ def _format_search_status(rag_trace: dict, docs_count: int) -> str:
 @tool("search_knowledge_base")
 def search_knowledge_base(query: str) -> str:
     """Search for information in the knowledge base using hybrid retrieval."""
-    global _KNOWLEDGE_TOOL_CALLS_THIS_TURN
-    if _KNOWLEDGE_TOOL_CALLS_THIS_TURN >= 1:
+    state = _current_tool_call_state()
+    if int(state.get("knowledge_count", 0)) >= 1:
         return (
             "TOOL_CALL_LIMIT_REACHED: search_knowledge_base has already been called once in this turn. "
             "Use the existing retrieval result and provide the final answer directly."
         )
-    _KNOWLEDGE_TOOL_CALLS_THIS_TURN += 1
+    state["knowledge_count"] = 1
 
     from rag_pipeline import run_rag_graph
 

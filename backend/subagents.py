@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from agent_prompt import build_skill_agent_prompt
 from tool_instrumentation import instrument_tools
+from settings import AGENT_TOOL_CALL_LIMIT
 
 
 class SkillDelegationRequest(BaseModel):
@@ -80,7 +81,10 @@ class SkillAgentRegistry:
             skill_agent = await self._get_agent()
             result = await skill_agent.ainvoke(
                 {"messages": [{"role": "user", "content": task}]},
-                config={"recursion_limit": 36, "callbacks": []},
+                config={
+                    "recursion_limit": AGENT_TOOL_CALL_LIMIT * 2 + 8,
+                    "callbacks": [],
+                },
             )
             return _final_agent_text(result)
         except Exception as exc:

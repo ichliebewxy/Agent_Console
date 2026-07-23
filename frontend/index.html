@@ -67,7 +67,7 @@
             <p>支持主 Agent 委派、小 Agent 按需调用、RAG 过程追踪和会话状态恢复。</p>
             <div class="empty-actions">
               <button @click="switchView('knowledge')" type="button">检查知识库</button>
-              <button @click="switchView('ops')" type="button">查看运行记录</button>
+              <button @click="switchView('config')" type="button">配置工具</button>
             </div>
           </div>
 
@@ -76,21 +76,32 @@
               <span>{{ msg.isUser ? 'User' : 'Agent' }}</span>
             </div>
 
-            <div v-if="!msg.isUser && (msg.isThinking || agentFlowSteps(msg).length)" class="message-bubble thinking">
+            <div v-if="!msg.isUser && shouldShowAgentTrace(msg)" class="message-bubble thinking">
               <div v-if="msg.isThinking && !msg.text" class="thinking-line">
                 <span class="loader"></span>
                 <strong>{{ activeThinkingLabel(msg) }}</strong>
               </div>
-              <div v-if="agentFlowSteps(msg).length" class="trace-steps">
-                <div v-for="(step, sIdx) in agentFlowSteps(msg)" :key="step.call_id ? `${step.call_id}-${step.phase}` : sIdx">
+              <div v-if="msg.ragSteps && msg.ragSteps.length" class="trace-steps rag-steps">
+                <div v-for="(step, sIdx) in msg.ragSteps" :key="`rag-${sIdx}`">
                   <span class="step-index">{{ sIdx + 1 }}</span>
                   <span class="step-icon">{{ step.icon || '•' }}</span>
                   <div class="step-copy">
                     <b>{{ step.label }}</b>
                     <small v-if="step.detail">{{ step.detail }}</small>
-                    <pre v-if="step.result" class="step-result">{{ step.result }}</pre>
                   </div>
                 </div>
+              </div>
+              <div v-if="toolCallGroups(msg).length" class="tool-call-list">
+                <div class="tool-call-heading"><i class="fas fa-wand-magic-sparkles"></i><strong>工具调用</strong><small>{{ toolCallGroups(msg).length }} 次</small></div>
+                <details v-for="(call, cIdx) in toolCallGroups(msg)" :key="call.callId" class="tool-call-card" :open="call.status === 'running'">
+                  <summary>
+                    <span :class="['tool-call-status', call.status]"><i :class="call.statusIcon"></i></span>
+                    <strong>{{ call.toolName }}</strong>
+                    <small>#{{ cIdx + 1 }} · {{ call.statusLabel }}</small>
+                  </summary>
+                  <div v-if="call.detail" class="tool-call-detail">{{ call.detail }}</div>
+                  <pre v-if="call.result" class="step-result">{{ call.result }}</pre>
+                </details>
               </div>
             </div>
 
@@ -120,7 +131,7 @@
               </div>
             </div>
 
-            <details v-if="!msg.isUser && msg.ragTrace" class="trace-panel">
+            <details v-if="!msg.isUser && sourceChunks(msg).length" class="trace-panel">
               <summary>检索与调用轨迹</summary>
               <div class="trace-grid">
                 <span>工具</span><b>{{ msg.ragTrace.tool_name || '未使用' }}</b>
