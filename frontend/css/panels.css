@@ -29,8 +29,7 @@
 }
 
 .upload-band,
-.table-list,
-.ops-list {
+.table-list {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
@@ -94,103 +93,6 @@
 .muted-row {
   padding: 18px;
   color: var(--muted);
-}
-
-.ops-list {
-  display: grid;
-  gap: 0;
-}
-
-.ops-item {
-  padding: 16px;
-  border-top: 1px solid var(--line);
-  display: grid;
-  gap: 10px;
-}
-
-.ops-item:first-child {
-  border-top: 0;
-}
-
-.ops-item header {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  color: var(--muted);
-}
-
-.ops-item h4,
-.ops-item p {
-  margin: 0;
-}
-
-.ops-item h4 {
-  font-size: 0.98rem;
-}
-
-.ops-item p {
-  color: var(--muted);
-  line-height: 1.55;
-}
-
-.payload-details pre {
-  margin: 8px 0 0;
-  padding: 12px;
-  overflow-x: auto;
-  border-radius: var(--radius);
-  background: var(--surface-soft);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.badge {
-  min-height: 26px;
-  border-radius: 999px;
-  padding: 3px 10px;
-  display: inline-flex;
-  align-items: center;
-  background: var(--info-bg);
-  color: var(--blue);
-  font-size: 0.78rem;
-  font-weight: 700;
-}
-
-.badge.open {
-  background: var(--warning-bg);
-  color: var(--amber);
-}
-
-.badge.resolved {
-  background: var(--success-bg);
-  color: var(--green-dark);
-}
-
-.badge.ignored {
-  background: var(--danger-bg);
-  color: var(--coral);
-}
-
-.badge.retry_requested {
-  background: var(--info-bg);
-  color: var(--blue);
-}
-
-.muted-text {
-  color: var(--muted);
-}
-
-.badge.allow {
-  background: var(--success-bg);
-  color: var(--green-dark);
-}
-
-.badge.deny {
-  background: var(--danger-bg);
-  color: var(--coral);
-}
-
-.audit-head {
-  margin-top: 8px;
 }
 
 .config-view {

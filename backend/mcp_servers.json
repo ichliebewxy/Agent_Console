@@ -9,7 +9,9 @@
       },
       "args": [],
       "env": {},
-      "error": ""
+      "error": "",
+      "tool_count": 15,
+      "updated_at": "2026-07-23T13:34:12.593160"
     }
   }
 }

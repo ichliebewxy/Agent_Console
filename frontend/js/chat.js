@@ -105,7 +105,6 @@ Object.assign(window.NebulaNestApp.methods, {
       } else if (data.type === "error") {
         botMessage.isThinking = false;
         botMessage.text += `\n\n工具或模型返回错误：${data.content}`;
-        this.loadFailures();
       }
       this.persistState();
     } catch (error) {

@@ -1,6 +1,6 @@
 # Agent Console
 
-Agent Console 是一个本地运行的 LangChain 多 Agent + RAG 工作台。主 Agent 固定持有知识库查询和 `bash/read_file/write_file/edit_file/glob` 五个基础工具，并可调用审查、Skills、subagent 和启动时动态发现的 MCP 工具。专业流程、OpenCLI、PDF、代码审查和多步骤文件工作可交给 Skills subagent。控制台同时提供文档入库、混合检索、技能渐进加载、会话临时目录、浏览器自动化、工具步骤追踪和只读运行记录。
+Agent Console 是一个本地运行的 LangChain 多 Agent + RAG 工作台。主 Agent 固定持有知识库查询和 `bash/read_file/write_file/edit_file/glob` 五个基础工具，并可调用审查、Skills、subagent 和启动时动态发现的 MCP 工具。专业流程、OpenCLI、PDF、代码审查和多步骤文件工作可交给 Skills subagent。控制台同时提供文档入库、混合检索、技能渐进加载、会话临时目录、浏览器自动化和工具步骤追踪。
 
 ## 核心能力
 
@@ -13,14 +13,14 @@ Agent Console 是一个本地运行的 LangChain 多 Agent + RAG 工作台。主
 - 本地临时运行：Agent 生成的命令、脚本、程序、转换器和测试以当前会话的 `backend/tmp/<session-key>/` 为工作目录运行，中间产物也保存在这里。
 - 会话文件下载：每个对话拥有独立文件目录，生成文件通过 SSE 进入回答卡片并可直接点击下载。
 - 可视化工具流程：委派、小 Agent 的实际工具和 RAG 检索都会在前端展示调用参数、当前阶段和返回摘要。
-- 本地知识库：支持上传 PDF、Word、PPT、Excel、CSV、TXT，解析后写入 Milvus。
+- 本地知识库：支持上传 PDF、Word（`.docx`/`.doc`）、PPT、Excel、CSV、TXT，解析后写入 Milvus。
 - 分层 RAG：L1/L2 父块保存在本地 DocStore，L3 叶子块进入向量库，回答时支持 auto-merging 上卷上下文。
 - 混合检索：BGE-M3 dense embedding + BM25 sparse embedding + Milvus Hybrid Search，并用 RRF 融合。
 - 查询扩展：相关性不足时进入 LangGraph 节点，自动选择 Step-back、HyDE 或复杂组合策略。
 - 可选重排：支持接入 SiliconFlow rerank。
 - 地图工具：DashScope AMap MCP 用于路线、POI、地址与坐标；项目不再提供本地天气查询工具。
 - OpenCLI 浏览器工具：可通过用户浏览器打开网页、读取页面状态、点击、输入、抽取内容和查看网络请求。
-- 只读运行记录：MCP、OpenCLI、知识库和 Milvus 等失败会记录到 `data/tool_failures.json`；前端只能查看和刷新，不介入 Agent 流程。
+- 服务端诊断日志：MCP、OpenCLI、知识库和 Milvus 等失败会记录到 `data/tool_failures.json`，不在前端或公开 API 中展示。
 
 ## 技术栈
 
@@ -28,7 +28,7 @@ Agent Console 是一个本地运行的 LangChain 多 Agent + RAG 工作台。主
 - Agent 工具：LangChain tools、langchain-mcp-adapters、DashScope MCP、OpenCLI。
 - 向量库：Milvus standalone、MinIO、etcd。
 - 检索：BGE-M3、Milvus Hybrid Search、BM25 sparse vector、RRF、可选 rerank。
-- 文档解析：PyMuPDF、pypdf、python-docx、python-pptx、docx2txt。
+- 文档解析：PyMuPDF、pypdf、python-docx、python-pptx、docx2txt；旧版 `.doc` 使用 Microsoft Word，并可降级到 LibreOffice 或 antiword。
 - 前端：Vue 3 CDN、SSE、Marked、Highlight.js、Font Awesome。
 
 ## OpenCLI 在本项目中的定位
@@ -39,7 +39,7 @@ Agent Console 是一个本地运行的 LangChain 多 Agent + RAG 工作台。主
 
 - 主 Agent 需要访问网页、下载、查询或浏览器交互时，只委派完整任务；Skills 小 Agent 读取 live registry 和精确 help 后，再经审查 Bash 调用 `opencli`。
 - OpenCLI 复用用户自己的浏览器登录态，适合查询 Bilibili 热门、网页列表、后台页面等需要真实浏览器上下文的任务。
-- 工具执行失败会进入 `tool_failures.json` 和前端只读“运行回调”，不会让一次浏览器失败静默丢失。
+- 工具执行失败会进入服务端 `tool_failures.json`，不会让一次浏览器失败静默丢失。
 - 每一次 OpenCLI 工具调用都会通过 SSE 展示在对话流程里，用户能看到调用参数、执行阶段和返回摘要。
 
 ## 架构流程
@@ -82,8 +82,8 @@ backend/
   mcp_servers.json        独立 MCP server 清单与启动发现结果
   config_service.py       非 MCP 配置原子读写与默认权限规则
   mcp_config_service.py   MCP 清单的独立持久化、脱敏与增删
-  routes_config.py        MCP/Skills 增删、刷新和 Bash 审查 API
-  routes_*.py             聊天、会话、文档、只读运行记录路由
+  routes_config.py        MCP/Skills 增删和刷新 API
+  routes_*.py             聊天、会话和文档路由
   agent.py                主 Agent 初始化和同步/流式对话
   subagents.py            LangChain Skills subagent 懒加载与统一委派入口
   agent_prompt.py         主 Agent 与各小 Agent 的系统提示词
@@ -267,7 +267,6 @@ http://127.0.0.1:8000
 
 - 对话：流式回答、主 Agent 委派、小 Agent 工具步骤、RAG trace 和引用片段。
 - 知识库：上传文档、入库、查看文档块数量、删除文档。
-- 运行回调：只读查看工具失败记录和调用参数；不提供重试、审批或状态修改。
 - 历史会话：按用户和 session 读取历史消息。
 
 ## 主要 API
@@ -281,14 +280,12 @@ http://127.0.0.1:8000
 | `POST` | `/documents/upload` | 上传文档并入库。 |
 | `GET` | `/documents` | 查看已入库文档。 |
 | `DELETE` | `/documents/{filename}` | 删除文档。 |
-| `GET` | `/tool-failures` | 只读查看工具失败运行记录。 |
 | `GET` | `/runtime-config` | 查看已解析的 MCP、Skills 和 Bash 权限配置。 |
 | `POST` | `/runtime-config/refresh` | 重新扫描 Skills 并发现 MCP 工具。 |
 | `POST` | `/runtime-config/mcp` | 添加或更新 MCP server，并立即发现工具。 |
 | `DELETE` | `/runtime-config/mcp/{name}` | 删除 MCP server。 |
 | `POST` | `/runtime-config/skills` | 用 `SKILL.md` 内容添加或更新 Skill。 |
 | `DELETE` | `/runtime-config/skills/{name}` | 删除用户 Skill。 |
-| `GET` | `/bash-audit` | 查看 Bash 自动审查决策。 |
 | `GET` | `/sessions/{user_id}/{session_id}/artifacts` | 查看当前会话生成的文件。 |
 | `GET` | `/sessions/{user_id}/{session_id}/artifacts/{path}` | 下载会话文件。 |
 
@@ -296,7 +293,7 @@ http://127.0.0.1:8000
 
 ### 1. 文档入库
 
-用户在知识库页上传文件，后端先保存原始文件，再由 `DocumentLoader` 解析文本。解析结果会生成 L1/L2/L3 三层块：父块保存在 `parent_chunks.json`，叶子块生成 BGE dense embedding 和 BM25 sparse embedding 后写入 Milvus。BGE 模型和 Milvus client 都采用懒加载，应用启动时不会预加载向量模型。
+用户在知识库页上传文件，后端以流式方式写入不超过 50MB 的临时文件，解析成功后才原子替换正式源文件，因此损坏的同名文件不会覆盖已有文档或提前删除已有向量。`.docx` 由 OpenXML 解析器处理；旧版二进制 `.doc` 在 Windows 上通过 Microsoft Word 只读提取，并使用纯 ASCII 临时路径规避旧格式的中文路径兼容问题，无 Word 时依次尝试 LibreOffice 和 antiword。解析结果会生成 L1/L2/L3 三层块：父块保存在 `parent_chunks.json`，叶子块生成 BGE dense embedding 和 BM25 sparse embedding 后写入 Milvus。BGE 模型和 Milvus client 都采用懒加载，应用启动时不会预加载向量模型。
 
 ### 2. 主 Agent 委派与按需工具选择
 
@@ -306,9 +303,9 @@ http://127.0.0.1:8000
 
 知识库检索会先走 Milvus Hybrid Search：BGE dense 向量和 BM25 sparse 向量分别召回候选，再用 RRF 融合。候选返回后先做 auto-merging 上卷，再用可选 rerank 重新打分排序。如果没有搜到片段，或相关性评估不通过，LangGraph 才会触发查询改写，再用 Step-back、HyDE 或复杂查询策略补召回。最终检索结果会交给模型生成回答。
 
-### 4. 运行记录
+### 4. 服务端诊断日志
 
-工具或外部服务失败会写入运行记录，避免静默失败。运行回调页面和 `GET /tool-failures` 只负责展示，不是审批节点，也不会重试或改变执行状态。
+工具或外部服务失败会写入本地诊断日志，避免静默失败；这些记录不进入 Agent 审批或重试流程，也不对前端提供只读页面。
 
 ## Skills 加载与工作区
 
@@ -342,7 +339,7 @@ stdio MCP 也会先经过相同的命令审查；内联解释器代码（`python
 
 回答结束后，后端发送 `artifacts` SSE 事件；前端在对应 Agent 消息下显示文件名、路径、大小和下载按钮。下载 URL 带有服务端 HMAC capability token；删除会话时对应目录也会删除。若没有配置 `ARTIFACT_SIGNING_KEY`，首次运行会在 `backend/tmp/.artifact_signing_key` 生成本地密钥。历史消息会保存当时的文件清单。
 
-当前项目没有账号登录系统。签名下载链接可防止仅凭 `user_id/session_id` 枚举文件，但正式公网多用户部署仍应在 FastAPI 前增加 SSO、反向代理认证或其他统一身份层，并限制 `/sessions` 与 `/tool-failures` 的访问。
+当前项目没有账号登录系统。签名下载链接可防止仅凭 `user_id/session_id` 枚举文件，但正式公网多用户部署仍应在 FastAPI 前增加 SSO、反向代理认证或其他统一身份层，并限制 `/sessions` 的访问。
 
 MCP 由主 Agent 直接调用；OpenCLI 由 Skills subagent 通过审查 Bash 调用。MCP 的完整工具列表只来自启动时的 `get_tools()`，不在本地源代码中维护。
 
@@ -447,7 +444,7 @@ $env:PYTHONIOENCODING="utf-8"
 - 后端单文件尽量保持在 250 行以内。
 - 前端 JS/CSS 已按功能拆分，`script.js` 和 `style.css` 只保留入口。
 - 不要在业务代码中硬编码真实 Key，只通过 `.env` 读取。
-- 工具失败不要静默丢弃，统一记录到 `tool_failures.json`；对外只开放读取接口。
+- 工具失败不要静默丢弃，统一记录到服务端 `tool_failures.json`，不提供公开读取接口。
 - `data/`、`volumes/`、`.env`、`.venv/` 默认不提交，避免泄露运行数据和凭据。
 - 手动改代码后至少运行：
 

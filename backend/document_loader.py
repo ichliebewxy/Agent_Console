@@ -1,10 +1,9 @@
 """文档加载和分片服务 - 支持多格式与多模态图片识别"""
 import os
-import uuid
 import pathlib
+import uuid
 import fitz  # PyMuPDF
 import pptx
-import docx
 import pandas as pd
 from typing import Dict, List
 
@@ -13,6 +12,7 @@ from langchain_community.chat_models.tongyi import ChatTongyi
 from langchain_core.messages import HumanMessage
 
 from encoding_utils import safe_print
+from word_document_reader import WordDocumentReader
 
 
 class DocumentLoader:
@@ -31,6 +31,7 @@ class DocumentLoader:
         self._splitter_level_1 = RecursiveCharacterTextSplitter(chunk_size=level_1_size, chunk_overlap=level_1_overlap, add_start_index=True, separators=separators)
         self._splitter_level_2 = RecursiveCharacterTextSplitter(chunk_size=level_2_size, chunk_overlap=level_2_overlap, add_start_index=True, separators=separators)
         self._splitter_level_3 = RecursiveCharacterTextSplitter(chunk_size=level_3_size, chunk_overlap=level_3_overlap, add_start_index=True, separators=separators)
+        self._word_reader = WordDocumentReader()
 
         # 2. 初始化图片临时存储目录和视觉大模型
         self.image_output_dir = image_output_dir
@@ -46,6 +47,16 @@ class DocumentLoader:
         if isinstance(content, list):
             return "".join([item.get("text", "") for item in content if isinstance(item, dict)]).strip()
         return str(content).strip()
+
+    @staticmethod
+    def _normalize_word_text(text: str) -> str:
+        return WordDocumentReader.normalize_text(text)
+
+    def _extract_docx_text(self, file_path: str) -> str:
+        return self._word_reader.extract_docx_text(file_path)
+
+    def _extract_legacy_doc_text(self, file_path: str) -> str:
+        return self._word_reader.extract_legacy_doc_text(file_path)
 
     def _image_to_text_summary(self, img_path: str) -> str:
         """调用多模态模型识别图片/扫描件内容"""
@@ -182,13 +193,21 @@ class DocumentLoader:
                     page_global_chunk_idx += len(chunks)
                     documents.extend(chunks)
 
-            # 4. DOCX 处理
-            elif file_lower.endswith((".docx", ".doc")):
-                doc = docx.Document(file_path)
-                full_text = "\n".join([para.text for para in doc.paragraphs])
+            # 4. Word 处理：OpenXML .docx 与旧版二进制 .doc 必须分流
+            elif file_lower.endswith(".docx"):
+                full_text = self._extract_docx_text(file_path)
                 base_doc = {"filename": filename, "file_path": file_path, "file_type": "Word", "page_number": 1}
                 chunks = self._split_page_to_three_levels(full_text, base_doc, page_global_chunk_idx)
                 documents.extend(chunks)
+
+            elif file_lower.endswith(".doc"):
+                full_text = self._extract_legacy_doc_text(file_path)
+                pages = [page.strip() for page in full_text.split("\f") if page.strip()]
+                for page_num, page_text in enumerate(pages or [full_text], start=1):
+                    base_doc = {"filename": filename, "file_path": file_path, "file_type": "Word", "page_number": page_num}
+                    chunks = self._split_page_to_three_levels(page_text, base_doc, page_global_chunk_idx)
+                    page_global_chunk_idx += len(chunks)
+                    documents.extend(chunks)
 
             # 5. Excel / CSV 处理
             elif file_lower.endswith((".xlsx", ".xls", ".csv")):

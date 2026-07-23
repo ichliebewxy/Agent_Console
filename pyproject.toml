@@ -28,6 +28,7 @@ dependencies = [
     "PyMuPDF",
     "python-pptx",
     "python-docx",
+    "pywin32>=306; sys_platform == 'win32'",
     "langchain_deepseek",
     "sentence-transformers>=3.0.0",
 ]

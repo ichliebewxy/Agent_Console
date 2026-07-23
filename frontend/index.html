@@ -32,10 +32,6 @@
         <button :class="{active: activeView === 'config'}" @click="switchView('config')" title="运行配置" aria-label="打开运行配置">
           <i class="fas fa-sliders"></i><span>配置中心</span>
         </button>
-        <button :class="{active: activeView === 'ops'}" @click="switchView('ops')" title="运行记录" aria-label="打开运行记录">
-          <i class="fas fa-triangle-exclamation"></i><span>运行回调</span>
-          <strong v-if="failureCount">{{ failureCount }}</strong>
-        </button>
         <button :class="{active: showHistorySidebar}" @click="handleHistory" title="历史" aria-label="打开历史会话">
           <i class="fas fa-clock-rotate-left"></i><span>历史</span>
         </button>
@@ -59,7 +55,6 @@
         </div>
         <div class="topbar-status">
           <span class="status-pill"><i class="fas fa-circle"></i> SSE 在线</span>
-          <span class="status-pill failure-indicator"><i class="fas fa-triangle-exclamation"></i>{{ failureCount }} 条记录</span>
           <span class="session-pill" :title="sessionId">{{ sessionId }}</span>
         </div>
       </header>
@@ -281,53 +276,6 @@
         </section>
       </section>
 
-      <section v-show="activeView === 'ops'" class="panel-view">
-        <div class="section-head">
-          <div>
-            <h3>工具失败运行记录</h3>
-            <p>这里只读展示工具和检索失败信息，不参与 Agent 执行、审批或重试。</p>
-          </div>
-          <button class="secondary-action inline" @click="loadFailures"><i class="fas fa-rotate"></i>刷新</button>
-        </div>
-
-        <div class="ops-list">
-          <article v-if="failures.length === 0" class="muted-row">暂无失败运行记录</article>
-          <article v-for="failure in failures" :key="failure.id" class="ops-item">
-            <header>
-              <span :class="['badge', failure.status]">{{ failureStatusLabel(failure.status) }}</span>
-              <small>
-                <span v-if="failure.occurrence_count && failure.occurrence_count > 1">重复 {{ failure.occurrence_count }} 次 · </span>
-                {{ new Date(failure.updated_at).toLocaleString() }}
-              </small>
-            </header>
-            <h4>{{ failure.tool_name }}</h4>
-            <p>{{ failure.error }}</p>
-            <p v-if="failure.fallback" class="muted-text">降级策略：{{ failure.fallback }}</p>
-            <p v-if="failure.callback_note" class="muted-text">历史备注：{{ failure.callback_note }}</p>
-            <details v-if="failure.payload && Object.keys(failure.payload).length" class="payload-details">
-              <summary>查看调用参数</summary>
-              <pre>{{ JSON.stringify(failure.payload, null, 2) }}</pre>
-            </details>
-          </article>
-        </div>
-
-        <div class="section-head audit-head">
-          <div>
-            <h3>Bash 权限审查</h3>
-            <p>执行前自动应用 deny → allow → default deny，并记录命中规则。</p>
-          </div>
-        </div>
-        <div class="ops-list">
-          <article v-if="bashAudits.length === 0" class="muted-row">暂无 Bash 审查记录</article>
-          <article v-for="audit in bashAudits" :key="audit.id" class="ops-item">
-            <header><span :class="['badge', audit.behavior]">{{ audit.behavior }}</span><small>{{ new Date(audit.updated_at).toLocaleString() }}</small></header>
-            <h4>{{ audit.rule_id }}</h4>
-            <p>{{ audit.reason }}</p>
-            <details class="payload-details"><summary>查看命令</summary><pre>{{ audit.command }}</pre></details>
-          </article>
-        </div>
-      </section>
-
       <aside v-if="showHistorySidebar" class="history-drawer">
         <header>
           <h3>历史会话</h3>
@@ -350,7 +298,6 @@
   <script src="js/chat.js"></script>
   <script src="js/knowledge.js"></script>
   <script src="js/config.js"></script>
-  <script src="js/ops.js"></script>
   <script src="js/formatters.js"></script>
   <script src="script.js"></script>
 </body>

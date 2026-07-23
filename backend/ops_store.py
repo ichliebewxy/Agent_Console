@@ -88,7 +88,6 @@ def record_tool_failure(
         "payload": payload or {},
         "fallback": fallback,
         "status": "open",
-        "callback_note": "",
     }
     if dedupe:
         return tool_failure_store.upsert_open(row, ["tool_name", "payload"])

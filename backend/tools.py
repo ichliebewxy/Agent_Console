@@ -138,7 +138,7 @@ def search_knowledge_base(query: str) -> str:
     try:
         rag_result = run_rag_graph(query)
     except Exception as e:
-        fallback = "知识库检索失败，已记录失败回调；请根据已有上下文谨慎回答，并说明检索不可用。"
+        fallback = "知识库检索失败，已写入服务端日志；请根据已有上下文谨慎回答，并说明检索不可用。"
         record_tool_failure("search_knowledge_base", str(e), {"query": query}, fallback)
         return fallback
 

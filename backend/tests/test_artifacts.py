@@ -19,8 +19,8 @@ from artifact_service import (
     list_session_artifacts,
     resolve_session_artifact,
 )
+from api import router as api_router
 from routes_artifacts import router as artifacts_router
-from routes_ops import router as ops_router
 from runtime_context import delete_session_files, session_files_dir
 from schemas import ChatRequest
 
@@ -84,19 +84,15 @@ class ArtifactTests(unittest.TestCase):
                 self.assertTrue((second_root / "keep.txt").is_file())
                 _signing_key.cache_clear()
 
-    def test_runtime_records_are_read_only_and_reviews_are_removed(self):
-        app = FastAPI()
-        app.include_router(ops_router)
-        client = TestClient(app)
-        with patch("routes_ops.tool_failure_store.list", return_value=[]):
-            self.assertEqual(client.get("/tool-failures").status_code, 200)
-        self.assertEqual(client.post("/tool-failures", json={}).status_code, 405)
-        self.assertEqual(client.get("/reviews").status_code, 404)
-
     def test_chat_identity_rejects_null_empty_and_path_characters(self):
         for invalid in (None, "", "../other", "with/slash"):
             with self.assertRaises(ValidationError):
                 ChatRequest(message="hello", user_id=invalid, session_id="session-a")
+
+    def test_runtime_record_routes_are_not_exposed(self):
+        paths = {route.path for route in api_router.routes}
+        self.assertNotIn("/tool-failures", paths)
+        self.assertNotIn("/bash-audit", paths)
 
 
 if __name__ == "__main__":
