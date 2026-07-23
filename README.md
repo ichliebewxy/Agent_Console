@@ -1,149 +1,461 @@
 # Agent Console
 
-Agent Console 是一个本地运行的 LangChain 多 Agent + RAG 工作台。主 Agent 固定持有知识库查询和 `bash/read_file/write_file/edit_file/glob` 五个基础工具，并可调用审查、Skills、subagent 和启动时动态发现的 MCP 工具。专业流程、OpenCLI、PDF、代码审查和多步骤文件工作可交给 Skills subagent。控制台同时提供文档入库、混合检索、技能渐进加载、会话临时目录、浏览器自动化和工具步骤追踪。
+Agent Console 是一个面向本地可信环境的 LangChain 多 Agent + RAG 工作台。它把对话模型、知识库、浏览器/桌面自动化、MCP 工具和本地文件工作区组合成一个可观察、可扩展的控制台。
 
-## 核心能力
+项目的核心原则是“能力按需加载、工具有边界、过程可追踪”：主 Agent 只持有稳定的基础工具和路由能力；专业知识通过 Skills catalog 渐进加载；OpenCLI 等动态能力交给 Skills 小 Agent；知识库使用分层切块、dense+sparse 混合召回、RRF、auto-merging 和可选 rerank。
 
-- 流式对话：`/chat/stream` 通过 SSE 返回增量回答、模型消息分段边界、RAG 步骤、工具调用步骤和最终 trace。
-- LangChain Agent：使用 LangChain `create_agent`、标准消息和 `@tool`/`StructuredTool` 统一模型、工具、流式输出与 subagent。
-- 固定工具面：知识库之外的本地基础工具严格为 `bash`、`read_file`、`write_file`、`edit_file`、`glob`；`review` 只返回命令审查结果，不执行命令。
-- Subagent 委派：`load_subagent` 懒加载 `skills_specialist`，`delegate_to_skill_agent` 发送自包含任务。
-- 启动发现：MCP server 只配置在独立的 `backend/mcp_servers.json`；应用启动时读取服务器并动态转换为 LangChain tools，本地代码不写死 MCP 工具列表。
-- 技能渐进披露：可用 `load_skill` 按名称读取技能；Skills subagent 先看到受预算限制的名称/描述，选中后才加载完整 `SKILL.md` 和引用资源。
-- 本地临时运行：Agent 生成的命令、脚本、程序、转换器和测试以当前会话的 `backend/tmp/<session-key>/` 为工作目录运行，中间产物也保存在这里。
-- 会话文件下载：每个对话拥有独立文件目录，生成文件通过 SSE 进入回答卡片并可直接点击下载。
-- 可视化工具流程：委派、小 Agent 的实际工具和 RAG 检索都会在前端展示调用参数、当前阶段和返回摘要。
-- 工具调用保护：每轮对话最多执行 250 次工具调用，达到上限后 Agent 会收到明确提示并整理已有结果。
-- 本地知识库：支持上传 PDF、Word（`.docx`/`.doc`）、PPT、Excel、CSV、TXT，解析后写入 Milvus。
-- 分层 RAG：L1/L2 父块保存在本地 DocStore，L3 叶子块进入向量库，回答时支持 auto-merging 上卷上下文。
-- 混合检索：BGE-M3 dense embedding + BM25 sparse embedding + Milvus Hybrid Search，并用 RRF 融合。
-- 查询扩展：相关性不足时进入 LangGraph 节点，自动选择 Step-back、HyDE 或复杂组合策略。
-- 可选重排：支持接入 SiliconFlow rerank。
-- 地图工具：DashScope AMap MCP 用于路线、POI、地址与坐标；项目不再提供本地天气查询工具。
-- OpenCLI 浏览器工具：可通过用户浏览器打开网页、读取页面状态、点击、输入、抽取内容和查看网络请求。
-- 服务端诊断日志：MCP、OpenCLI、知识库和 Milvus 等失败会记录到 `data/tool_failures.json`，不在前端或公开 API 中展示。
+> 适用范围：个人开发机、内网实验环境和受信任的单机部署。当前没有账号/租户系统，也不是操作系统级安全沙箱。若部署到公网，必须在反向代理或身份层增加认证、限流和访问控制。
 
-## 技术栈
+## 目录
 
-- 后端：FastAPI、Uvicorn、LangChain、LangGraph、Pydantic。
-- Agent 工具：LangChain tools、langchain-mcp-adapters、DashScope MCP、OpenCLI。
-- 向量库：Milvus standalone、MinIO、etcd。
-- 检索：BGE-M3、Milvus Hybrid Search、BM25 sparse vector、RRF、可选 rerank。
-- 文档解析：PyMuPDF、pypdf、python-docx、python-pptx、docx2txt；旧版 `.doc` 使用 Microsoft Word，并可降级到 LibreOffice 或 antiword。
-- 前端：Vue 3 CDN、SSE、Marked、Highlight.js、Font Awesome。
+- [核心亮点](#核心亮点)
+- [系统架构](#系统架构)
+- [OpenCLI Skill 详解](#opencli-skill-详解)
+- [目录与文件职责](#目录与文件职责)
+- [运行数据与持久化文件](#运行数据与持久化文件)
+- [部署前置条件](#部署前置条件)
+- [完整部署步骤](#完整部署步骤)
+- [配置说明](#配置说明)
+- [首次使用](#首次使用)
+- [主要 API](#主要-api)
+- [安全边界](#安全边界)
+- [常见问题与排障](#常见问题与排障)
+- [开发与测试](#开发与测试)
 
-## OpenCLI 在本项目中的定位
+## 核心亮点
 
-[OpenCLI](https://github.com/jackwener/OpenCLI) 是一个面向网站和浏览器自动化的 CLI 工具层。它可以把网站、已登录的 Chrome/Chromium 浏览器会话、Electron 应用和本地 CLI 包装成可调用接口，让人或 AI Agent 用稳定命令完成打开页面、读取 DOM、点击、输入、等待、抽取内容和查看网络请求等操作。
+| 能力 | 说明 |
+| --- | --- |
+| 流式对话 | `/chat/stream` 使用 SSE 输出模型内容、内容分段边界、RAG 步骤、工具步骤、引用 trace 和会话产物。 |
+| LangChain 主 Agent | 基于 `create_agent` 统一管理模型、工具、消息历史、同步调用和异步流式调用。 |
+| Skills 渐进披露 | 启动时只扫描 `SKILL.md` 的 YAML 元数据；小 Agent 选中技能后才加载正文和 references，避免上下文膨胀。 |
+| OpenCLI 封装 | 不把动态 registry 的大量命令硬编码成主 Agent 工具，而是以 `opencli` Skill + 审查 Bash 的方式调用。 |
+| 动态 MCP | `backend/mcp_servers.json` 是 MCP server 的唯一配置源；启动时发现工具并转换为 LangChain tools。 |
+| 分层 RAG | 文档生成 L1/L2 父块和 L3 叶子块；叶子块入 Milvus，父块保存在本地 DocStore，检索时自动向上合并上下文。 |
+| 混合检索 | BGE-M3 dense embedding + BM25 sparse embedding + Milvus Hybrid Search + RRF 融合，可选接入 SiliconFlow rerank。 |
+| 查询扩展 | 初始召回相关性不足时，LangGraph 自动选择 Step-back、HyDE 或 complex 策略再次召回。 |
+| `.doc` 兼容 | `.docx` 走 OpenXML；旧版二进制 `.doc` 在 Windows 优先使用 Word COM，并降级到 LibreOffice/antiword。中文路径会先复制到 ASCII 临时路径。 |
+| 会话工作区 | 每个 `user_id/session_id` 拥有独立的 `backend/tmp/<session-key>/`；生成的脚本、预览、转换结果和最终文件都留在会话目录。 |
+| 工具安全 | Bash 默认拒绝，执行顺序为 deny → authorize → allow → default deny；阻止路径逃逸、shell 拼接、危险系统命令和高风险 OpenCLI。 |
+| 可观察但不扰人 | 前端展示当前对话实际产生的工具/RAG 轨迹和引用；没有引用时不展示检索轨迹。旧的“运行回调”只读页面和公开回调接口不再提供，失败记录仅留在服务端诊断文件。 |
+| 调用上限 | 每轮对话最多执行 `AGENT_TOOL_CALL_LIMIT` 次工具调用，默认 250 次；达到上限会停止继续调用并整理已有结果。 |
 
-本项目没有把 1300+ 条 OpenCLI registry 命令逐个注入主 Agent，而是将 OpenCLI 的查询、浏览器、下载、网络、桌面应用等能力沉淀为 `agent_workspace/skills/opencli`，只交给 Skills 小 Agent：
+## 系统架构
 
-- 主 Agent 需要访问网页、下载、查询或浏览器交互时，只委派完整任务；Skills 小 Agent 读取 live registry 和精确 help 后，再经审查 Bash 调用 `opencli`。
-- OpenCLI 复用用户自己的浏览器登录态，适合查询 Bilibili 热门、网页列表、后台页面等需要真实浏览器上下文的任务。
-- 工具执行失败会进入服务端 `tool_failures.json`，不会让一次浏览器失败静默丢失。
-- 每一次 OpenCLI 工具调用都会通过 SSE 展示在对话流程里，用户能看到调用参数、执行阶段和返回摘要。
-
-## 架构流程
+### 总体组件
 
 ```mermaid
 flowchart LR
-  U["用户 / 前端控制台"] --> API["FastAPI 路由"]
-  API --> Supervisor["LangChain 主 Agent"]
-  Supervisor --> Loader["load_subagent"]
-  Loader --> Gateway["delegate_to_skill_agent"]
-  Supervisor --> KB["search_knowledge_base"]
-  Supervisor --> Core["bash / read_file / write_file / edit_file / glob"]
-  Supervisor --> Review["review（仅审查，不执行）"]
-  Supervisor --> MCP["mcp_servers.json 启动发现"]
-  MCP --> AMap["DashScope AMap MCP"]
-  Gateway --> Skills["Skills 小 Agent（自行选技能）"]
-  Skills --> Catalog["名称 + 描述 catalog"]
-  Catalog --> SkillBody["按需 load_skill / 资源读取"]
-  Skills --> Workspace["五个基础工具 / backend/tmp 会话目录"]
-  Workspace --> LocalRun["review + 审查 Bash"]
-  LocalRun --> Artifacts["会话文件清单 + 下载 API"]
-  Artifacts --> SSE
-  KB --> RAG["LangGraph RAG Pipeline"]
-  RAG --> Milvus["Milvus Hybrid Search"]
-  RAG --> Parent["Parent Chunk Store"]
-  RAG --> Rerank["可选 Rerank"]
-  Supervisor --> SSE["SSE: content / rag_step / tool_step / trace"]
-  SSE --> U
-  AMap --> Ops["只读失败记录"]
-  Core --> Audit["Bash 权限审查"]
+  User[用户 / Vue 控制台] -->|HTTP + SSE| FastAPI[FastAPI 应用]
+  FastAPI --> Chat[Chat 路由]
+  FastAPI --> KBAPI[文档路由]
+  FastAPI --> ConfigAPI[运行配置路由]
+  FastAPI --> SessionAPI[会话与 Artifact 路由]
+
+  Chat --> MainAgent[LangChain 主 Agent]
+  MainAgent --> Core[固定工具: bash / read / write / edit / glob]
+  MainAgent --> Review[review: 只审查不执行]
+  MainAgent --> RAGTool[search_knowledge_base]
+  MainAgent --> SkillGateway[load_subagent / delegate_to_skill_agent]
+  MainAgent --> MCPTools[启动发现的 MCP tools]
+
+  SkillGateway --> SkillAgent[skills_specialist]
+  SkillAgent --> Catalog[Skill catalog]
+  Catalog --> SkillBody[按需加载 SKILL.md / references]
+  SkillAgent --> OpenCLI[OpenCLI 经审查 Bash 执行]
+  SkillAgent --> SessionFS[当前会话工作区]
+
+  RAGTool --> RAG[LangGraph RAG pipeline]
+  RAG --> Embed[BGE-M3 dense + BM25 sparse]
+  Embed --> Milvus[Milvus standalone]
+  RAG --> ParentStore[parent_chunks.json]
+  RAG --> Rerank[可选 rerank]
+
+  Core --> Audit[bash_audit.json]
+  MCPTools --> FailureLog[tool_failures.json]
+  MainAgent --> History[data/customer_service_history.json]
+  SessionFS --> Artifacts[Artifacts HMAC 下载]
+  MainAgent -->|content / rag_step / tool_step / trace / artifacts| User
 ```
 
-## 目录结构
+### 启动生命周期
 
-```text
-backend/
-  app.py                  FastAPI 应用入口，挂载前端静态文件
-  api.py                  总路由聚合
-  config.json             Skills catalog、Bash 权限和发现结果
-  mcp_servers.json        独立 MCP server 清单与启动发现结果
-  config_service.py       非 MCP 配置原子读写与默认权限规则
-  mcp_config_service.py   MCP 清单的独立持久化、脱敏与增删
-  routes_config.py        MCP/Skills 增删和刷新 API
-  routes_*.py             聊天、会话和文档路由
-  agent.py                主 Agent 初始化和同步/流式对话
-  subagents.py            LangChain Skills subagent 懒加载与统一委派入口
-  agent_prompt.py         主 Agent 与各小 Agent 的系统提示词
-  skill_service.py        技能元数据注册表、按名称加载和资源路径隔离
-  core_tools.py           五个固定工具与非执行 review 工具
-  workspace_tools.py      旧工作区工具兼容层
-  runtime_context.py      当前 user/session 上下文和隔离目录键
-  local_runtime_service.py 在 backend/tmp 中运行命令、限制超时与输出
-  artifact_service.py     会话产物枚举与安全下载路径解析
-  routes_artifacts.py     产物列表和下载 API
-  tools.py                知识库检索和步骤事件队列
-  tool_instrumentation.py 工具调用步骤包装器
-  mcp_service.py          启动读取 MCP server 并动态封装 LangChain tools
-  local_runtime_service.py 本地命令执行与会话临时目录环境
-  settings.py             统一读取环境变量
-  document_loader.py      文档解析和分层切块
-  embedding.py            Dense embedding + BM25 sparse embedding
-  milvus_client.py        Milvus 集合、查询、混合检索和自动重连
-  parent_chunk_store.py   L1/L2 父块本地存储
-  rag_utils.py            本地混合检索编排
-  rag_pipeline.py         LangGraph RAG 主流程
-  rag_expanded.py         扩展查询后的多路召回节点
-  query_expansion.py      Step-back 与 HyDE
-  retrieval_steps.py      Rerank、auto-merging、去重
-frontend/
-  index.html              单页控制台
-  script.js               Vue 挂载入口
-  js/*.js                 前端状态、聊天、知识库、运行记录、格式化逻辑
-  style.css               样式入口
-  css/*.css               拆分后的样式模块
-agent_workspace/
-  skills/                 迁移后的技能包和关联 resources/scripts
-backend/tmp/
-  <session-key>/          每个会话的中间产物和下载文件（Git 忽略）
-data/
-  documents/              上传文件，本地运行数据，默认不提交
-  parent_chunks.json      L1/L2 父块存储，默认不提交
-  tool_failures.json      工具失败与回调记录，默认不提交
-docker-compose.yml        Milvus、MinIO、etcd、Attu 依赖服务
-```
+`backend/app.py` 的 FastAPI lifespan 按以下顺序初始化：
 
-## 环境要求
+1. 在后台线程预热 BGE embedding 模型。
+2. 校验模型实际输出维度是否等于 `MILVUS_DENSE_DIM`；不一致直接终止启动，避免向量维度污染集合。
+3. 扫描 `AGENT_SKILLS_DIR`，建立 Skills catalog，并把元数据同步到 `backend/config.json`。
+4. 读取 `backend/mcp_servers.json`，发现已启用 MCP server 的工具；失败只记录错误并继续启动。
+5. 初始化 LangChain 主 Agent，把固定工具、Skills 工具、subagent 网关和已发现 MCP 工具装配到工具面。
+6. 挂载 `frontend/` 静态文件，开始提供 Web 控制台。
 
-- Python 3.12+
-- Node.js >= 20，用于 OpenCLI CLI 和浏览器自动化
-- uv
-- Docker Desktop（仅 Milvus、MinIO、etcd 等数据服务需要）
-- 可用的模型 API Key
-- OpenCLI 和 Browser Bridge 扩展，用于访问用户自己的浏览器会话
-
-安装依赖：
+推荐启动命令如下；它会正确触发 lifespan：
 
 ```powershell
+uv run uvicorn backend.app:app --host 127.0.0.1 --port 8080
+```
+
+`main.py` 目前只是打印 LangChain 版本，不是 Web 服务入口。
+
+### 对话与工具流程
+
+1. 前端将 `message/user_id/session_id` POST 到 `/chat/stream`。
+2. `ConversationStorage` 读取历史消息；历史过长时先摘要早期消息，并重置本轮 RAG/工具计数器。
+3. 主 Agent 先自行判断是直接回答、查询知识库、使用本地工具、调用 MCP，还是委派给 `skills_specialist`。
+4. 每次工具调用由 `tool_instrumentation.py` 包装，向 SSE 队列写入运行中、结果、错误或上限事件。
+5. 主 Agent 的最终文本以 `content` 事件流式返回；模型节点变化时发送 `content_boundary`，前端将多个回答片段显示为独立消息块。
+6. 回答结束后发送 `trace`（只有发生 RAG 时才有）和 `artifacts`，随后发送 `[DONE]`，并把消息、引用和文件清单持久化。
+
+SSE 事件类型：
+
+| 类型 | 含义 |
+| --- | --- |
+| `content` | 增量回答文本。 |
+| `content_boundary` | 主 Agent 模型消息边界，前端开始新的回答片段。 |
+| `rag_step` | 知识库召回、评分、改写、auto-merging 等阶段。 |
+| `tool_step` | 工具开始、完成、失败或达到上限。 |
+| `trace` | 完整 RAG trace 和引用片段。无知识库引用时不会发送。 |
+| `artifacts` | 当前会话目录中可下载的文件清单。 |
+| `error` | 流式过程中发生的模型或工具错误。 |
+| `[DONE]` | 流结束标记。 |
+
+### RAG/知识库流程
+
+```mermaid
+flowchart TD
+  Upload[上传文件 <= 50MB] --> Stage[临时文件 staging]
+  Stage --> Parse[DocumentLoader 解析]
+  Parse --> Split[L1/L2/L3 分层切块]
+  Split --> Parent[L1/L2 -> parent_chunks.json]
+  Split --> Leaf[L3 叶子块]
+  Leaf --> Dense[BGE-M3 dense]
+  Leaf --> Sparse[BM25 sparse]
+  Dense --> Write[MilvusWriter]
+  Sparse --> Write
+
+  Query[用户问题] --> Hybrid[Milvus dense+sparse hybrid search]
+  Hybrid --> RRF[RRF 融合]
+  RRF --> Merge[auto-merging: L3 -> L2 -> L1]
+  Merge --> Rerank[可选 rerank]
+  Rerank --> Grade[相关性评分]
+  Grade -->|通过| Answer[交给模型生成]
+  Grade -->|不足/无结果| Expand[Step-back / HyDE / complex]
+  Expand --> Hybrid
+```
+
+文档上传的原子性规则：先把内容写入临时文件，成功解析并生成 L3 叶子块后才替换 `data/documents/<filename>`；随后删除同名旧向量并写入新向量。解析或入库失败时不会提前删除旧源文件，向量写入失败也会回滚同名新向量。支持格式为 `.pdf`、`.docx`、`.doc`、`.pptx`、`.ppt`、`.xlsx`、`.xls`、`.csv`、`.txt`。
+
+## OpenCLI Skill 详解
+
+### 为什么用 Skill 封装
+
+OpenCLI 的 registry 是动态的，命令数量和参数会随版本、站点 adapter、浏览器扩展而变化。项目不把 1300+ 命令硬编码到主 Agent，而是把 OpenCLI 的使用规范、发现流程和安全边界封装到 `agent_workspace/skills/opencli`，由 `skills_specialist` 在需要时加载。
+
+调用链是：
+
+```text
+主 Agent 判断需要网页/浏览器/下载能力
+  -> delegate_to_skill_agent(完整任务)
+  -> skills_specialist 阅读 catalog
+  -> load_skill("opencli")
+  -> read_skill_resource("opencli", "references/<name>.md")
+  -> opencli list / --help 获取 live registry 与精确参数
+  -> review / bash 进行权限审查和执行
+  -> 返回证据、命令、权限级别和生成文件
+```
+
+### OpenCLI Skill 包结构
+
+```text
+agent_workspace/skills/opencli/
+├── SKILL.md
+├── agents/
+│   └── openai.yaml
+└── references/
+    ├── app-control.md
+    ├── browser.md
+    ├── cli-surface.md
+    ├── downloads.md
+    ├── library-api.md
+    ├── permissions.md
+    ├── search-routing.md
+    └── setup-and-doctor.md
+```
+
+| 文件 | 作用 |
+| --- | --- |
+| `SKILL.md` | 定义触发条件、发现优先工作流、Bash 执行要求、权限原则、浏览器 invariant 和结果报告格式。它要求先查 live registry，再读取精确 help，禁止凭记忆猜参数。 |
+| `references/cli-surface.md` | 顶层 CLI、registry 查询、输出格式、通用参数、退出码和命令发现方式。 |
+| `references/browser.md` | 浏览器 session、页面 `state`、refs 交互、extract、截图、网络请求和验证顺序。 |
+| `references/search-routing.md` | 公开搜索、站点查询、热门/趋势和登录态网站之间的路由选择。 |
+| `references/downloads.md` | 下载、导出、截图和缓存的落盘规则；要求输出到当前会话目录。 |
+| `references/app-control.md` | Electron/CDP 和桌面应用控制，包括连接、窗口/页面状态和交互边界。 |
+| `references/permissions.md` | OpenCLI 的 `read`、`write`、`P4` 等访问级别，以及哪些动作需要用户明确授权。 |
+| `references/setup-and-doctor.md` | OpenCLI 安装、daemon、Browser Bridge、`opencli doctor` 和常见环境诊断。 |
+| `references/library-api.md` | Node library/API exports 的查询方式，适合需要程序化调用而不是 CLI 的场景。 |
+| `agents/openai.yaml` | Skill 在客户端中的展示名称、短描述和默认提示，不参与运行时工具执行。 |
+
+### OpenCLI 的标准工作流
+
+1. 初次或不熟悉的任务先运行 `opencli --version`、`opencli list -f json`。
+2. 按意图、站点、`access`、`strategy` 和 `browser` 字段筛选，不把整个 registry 放入上下文。
+3. 读取 `opencli <site-or-app> --help -f yaml` 和具体命令的 `--help -f yaml`。
+4. 浏览器任务使用一个独立命名 session：先 `open/bind`，再读 `state`，使用返回的 refs 做一次交互，再读 `state` 验证。
+5. 下载、导出、截图和缓存必须写入当前 `backend/tmp/<session-key>/`，并向主 Agent 返回相对路径。
+6. 使用 `-f json` 执行并验证退出码和结果结构，最后报告实际命令、access 级别、验证结果和生成文件。
+
+示例（手动诊断）：
+
+```powershell
+opencli doctor
+opencli list -f json
+opencli browser lcagent open https://www.bilibili.com
+opencli browser lcagent state
+```
+
+### OpenCLI 权限与安全
+
+- registry 标记为 `access=read` 的查询可在 Bash 中以 `opencli_access="read"` 执行。
+- 登录、刷新登录态、点击、输入、发布、发消息、关注、上传、删除、归档、支付、插件安装和任意 `eval` 属于副作用；只有委派任务明确要求时才允许，并设置 `user_authorized_side_effect=true`。
+- P4 命令、高风险删除/上传/eval/auto-approve、公开 daemon（`0.0.0.0`/`--public`）会被 `bash_tool.py` 拒绝。
+- 不输出 cookie、Authorization header、私有网络响应体或下载文件内容，除非用户明确要求。
+- 不绕过验证码、付费墙、权限控制、浏览器风控或网站条款。
+
+Windows 下 URL 中的 `&` 是 `cmd.exe` 的命令分隔符；通过 Bash 执行 OpenCLI 时必须把完整 URL 用引号包住。
+
+## 目录与文件职责
+
+### 顶层文件
+
+| 路径 | 作用 |
+| --- | --- |
+| `pyproject.toml` | Python 项目元数据、Python 版本要求（>=3.12）、运行依赖和可选 `study` 依赖。 |
+| `uv.lock` | uv 锁定的完整依赖版本，部署时由 `uv sync` 使用。 |
+| `.env.example` | 环境变量模板；复制为 `.env` 后填写真实 Key，`.env` 不提交。 |
+| `docker-compose.yml` | 启动 etcd、MinIO、Milvus standalone 和可选 Attu；不启动 FastAPI。 |
+| `main.py` | 当前只打印 LangChain 版本，不是 Web 服务入口。 |
+| `README.md` | 本项目架构、部署、运维和开发说明。 |
+| `docs/assets/nebulanest-flow.png` | 项目流程图等文档素材。 |
+| `agent_workspace/README.md` | Skill 包目录约定、运行工作区隔离和迁移来源说明。 |
+
+### 后端入口、路由与数据模型
+
+| 路径 | 作用 |
+| --- | --- |
+| `backend/app.py` | 创建 FastAPI 应用、lifespan 初始化、CORS、静态文件挂载和 uvicorn 入口。 |
+| `backend/api.py` | 聚合聊天、配置、会话、Artifact、文档五类路由。 |
+| `backend/schemas.py` | Pydantic 请求/响应模型，约束聊天、文档、MCP、Skill、会话和 Artifact 数据结构。 |
+| `backend/routes_chat.py` | `/chat` 和 `/chat/stream`；将模型异常转换为 HTTP/SSE 错误。 |
+| `backend/routes_documents.py` | 文档上传、列表、删除；扩展名/文件名/50MB 校验、staging、解析和 Milvus 写入。 |
+| `backend/routes_config.py` | MCP/Skill 增删、配置刷新和主 Agent 热重载。 |
+| `backend/routes_sessions.py` | 历史会话列表、消息读取和会话删除；删除时同步清理会话工作区。 |
+| `backend/routes_artifacts.py` | Artifact 列表和 HMAC token 校验后的安全下载。 |
+| `backend/encoding_utils.py` | Windows stdout/stderr 编码保护和安全打印，减少中文/emoji 引起的 GBK 日志错误。 |
+
+### Agent、工具与运行时
+
+| 路径 | 作用 |
+| --- | --- |
+| `backend/agent.py` | 创建主 Agent、加载历史、同步/流式调用、SSE 事件编排、响应持久化和 250 次工具上限的 recursion limit。 |
+| `backend/agent_prompt.py` | 主 Agent 和 Skills subagent 的系统提示词、委派原则、工具使用规范和安全要求。 |
+| `backend/core_tools.py` | 主 Agent 固定工具：`bash`、`read_file`、`write_file`、`edit_file`、`glob`，以及只审查不执行的 `review`。 |
+| `backend/workspace_tools.py` | 旧工作区工具兼容层：列出、读取和写入会话目录文件。新代码优先使用 `core_tools.py`。 |
+| `backend/bash_tool.py` | Bash 权限判定和执行入口；实现 deny/authorize/allow/default-deny、OpenCLI 访问级别和审计。 |
+| `backend/local_runtime_service.py` | 在会话临时目录启动单条本地命令，设置 TMP/TEMP、超时、输出长度和环境变量过滤。 |
+| `backend/runtime_context.py` | 当前 user/session 上下文、会话目录键、异步锁和会话目录删除。 |
+| `backend/subagents.py` | 懒加载 `skills_specialist`，提供 `load_subagent` 和 `delegate_to_skill_agent` 两个主 Agent 网关。 |
+| `backend/tool_instrumentation.py` | 为工具增加调用开始/结果/错误/上限事件，并把事件推送给 SSE。 |
+| `backend/tools.py` | `search_knowledge_base` 工具、RAG/工具步骤队列、最近一次 RAG trace 和调用计数守卫。 |
+| `backend/skill_service.py` | Skill frontmatter 扫描、精确名称注册、catalog、正文/资源按需加载、路径隔离和用户 Skill 增删。 |
+| `backend/runtime_catalog_service.py` | 刷新 Skills catalog、发现 MCP，并同步发现结果摘要。 |
+| `backend/mcp_service.py` | 使用 `langchain-mcp-adapters` 连接 streamable HTTP/SSE/stdio MCP，展开环境变量，审查 stdio 命令并动态生成 LangChain tools。 |
+| `backend/mcp_config_service.py` | `backend/mcp_servers.json` 的独立持久化、规范化、发现状态更新和公开 API 脱敏。 |
+| `backend/config_service.py` | `backend/config.json` 的非 MCP 配置、Skills 元数据、Bash 默认权限合并和脱敏快照。 |
+| `backend/settings.py` | 统一读取 `.env`、路径、模型、Milvus、RAG、OpenCLI、Skill、Artifact 和本地运行限制。 |
+| `backend/ops_store.py` | `tool_failures.json` 和 `bash_audit.json` 的本地 JSON 列表存储；仅用于服务端诊断/审计。 |
+| `backend/conversation_storage.py` | 将消息、时间戳、RAG trace 和 Artifact 清单保存到 `data/customer_service_history.json`。 |
+| `backend/artifact_service.py` | 枚举会话产物、生成/校验 HMAC capability token、阻止符号链接和路径逃逸。 |
+| `backend/__init__.py` | Python 包标记，使 `backend` 可以作为模块运行。 |
+
+### RAG 与文档解析
+
+| 路径 | 作用 |
+| --- | --- |
+| `backend/document_loader.py` | 解析 PDF/Word/PPT/Excel/CSV/TXT，提取图片描述（配置 DashScope VLM 时），并生成 L1/L2/L3 分层块。 |
+| `backend/word_document_reader.py` | `.docx` 段落/表格提取；`.doc` 依次尝试 Word COM、LibreOffice、antiword，并处理中文路径兼容。 |
+| `backend/embedding.py` | 懒加载 BGE dense embedding、BM25 sparse embedding、词表统计和文档移除同步。 |
+| `backend/milvus_client.py` | 创建/检查 Milvus collection、插入、查询、Hybrid Search、删除、超时和 `closed channel` 自动重连。 |
+| `backend/milvus_writer.py` | 将叶子块生成向量并批量写入 Milvus。 |
+| `backend/parent_chunk_store.py` | 将 L1/L2 父块保存到本地 `data/parent_chunks.json`，供 auto-merging 回溯。 |
+| `backend/rag_state.py` | LangGraph RAG 状态结构和文档上下文格式化。 |
+| `backend/rag_pipeline.py` | 初始召回、相关性评分、查询改写、扩展召回和最终 trace 的 LangGraph 主图。 |
+| `backend/rag_expanded.py` | Step-back/HyDE/complex 分支召回、去重和分支 metadata 合并。 |
+| `backend/rag_utils.py` | dense+sparse 召回、Milvus hybrid 查询和 RRF 编排。 |
+| `backend/retrieval_steps.py` | 父块 auto-merging、去重、可选 SiliconFlow rerank 和检索 metadata。 |
+| `backend/query_expansion.py` | Step-back 问题/答案、HyDE 假设文档和扩展查询生成。 |
+
+### 前端
+
+前端是 Vue 3 CDN 单页应用，不需要单独的 Node 构建步骤。
+
+| 路径 | 作用 |
+| --- | --- |
+| `frontend/index.html` | 页面骨架、导航、聊天/知识库/配置中心/历史抽屉模板和 CDN 依赖。 |
+| `frontend/script.js` | 将 `window.NebulaNestApp` 挂载到 `#app`。 |
+| `frontend/js/app-core.js` | Vue 状态、视图切换、localStorage、会话初始化、基础 UI 方法。 |
+| `frontend/js/chat.js` | 发送消息、读取 SSE、消息分段、停止请求、历史会话加载。 |
+| `frontend/js/knowledge.js` | 文件选择、扩展名/50MB 前端校验、上传、刷新和删除文档。 |
+| `frontend/js/config.js` | MCP/Skill 配置中心、刷新 catalog、添加/删除配置。 |
+| `frontend/js/formatters.js` | Markdown、代码高亮、来源信息、工具调用分组、文件图标和大小格式化。 |
+| `frontend/style.css` | 样式入口，通过 `@import` 引入拆分后的 CSS。 |
+| `frontend/css/base.css` | 全局变量、字体、基础控件和通用样式。 |
+| `frontend/css/workspace.css` | 页面外壳、侧栏、顶部栏和工作区布局。 |
+| `frontend/css/chat.css` | 消息、输入框、流式回答和聊天列表。 |
+| `frontend/css/trace-composer.css` | RAG/工具步骤、引用和 trace 卡片。 |
+| `frontend/css/panels.css` | 知识库、配置中心、表格和卡片面板。 |
+| `frontend/css/overlays.css` | toast、弹层、历史抽屉等覆盖层。 |
+| `frontend/css/responsive.css` | 移动端和窄屏布局适配。 |
+
+### 测试文件
+
+| 路径 | 覆盖范围 |
+| --- | --- |
+| `backend/tests/test_agent_architecture.py` | 主 Agent 固定工具面、subagent 网关和架构约束。 |
+| `backend/tests/test_artifacts.py` | Artifact token、路径隔离、符号链接和下载边界。 |
+| `backend/tests/test_config_service.py` | 配置加载、默认 Bash 权限、脱敏和持久化。 |
+| `backend/tests/test_document_loader.py` | 多格式文档解析、分层切块和 `.doc`/`.docx` 分流。 |
+| `backend/tests/test_langchain_runtime.py` | LangChain 模型/工具装配的运行时行为。 |
+| `backend/tests/test_local_runtime_service.py` | 本地命令超时、输出截断、环境和会话目录。 |
+| `backend/tests/test_routes_documents.py` | 文件名校验、50MB 限制、staging 和失败时保留旧源文件。 |
+| `backend/tests/test_skill_service.py` | Skill frontmatter、catalog、正文/资源加载和路径逃逸防护。 |
+| `backend/tests/test_tool_instrumentation.py` | 工具调用事件、结果分组和调用上限。 |
+| `backend/tests/__init__.py` | 测试包标记。 |
+
+### Skills 包
+
+| Skill | 触发场景 | 包含内容 |
+| --- | --- | --- |
+| `agent-builder` | 设计 Agent、理解多 Agent/工具/Skill 机制或脚手架生成。 | `SKILL.md`、agent philosophy、最小 Agent、工具模板、subagent 模式、`scripts/init_agent.py`。 |
+| `code-review` | 代码审查、Bug、安全、性能、可维护性检查。 | `SKILL.md`，包含审查清单、常见问题和输出格式。 |
+| `mcp-builder` | 创建 MCP server、增加外部工具或接入 API。 | `SKILL.md`，包含 Python/TypeScript 模板、资源、测试和安全实践。 |
+| `opencli` | 实时网站查询、浏览器/桌面控制、下载/导出、网络检查。 | `SKILL.md`、8 个 reference、`agents/openai.yaml`；详见上一节。 |
+| `pdf` | 阅读、创建、合并、拆分或处理 PDF。 | `SKILL.md`，包含 pdftotext、PyMuPDF、pandoc、reportlab 等工作流。 |
+
+新增 Skill 时，在 `agent_workspace/skills/<name>/SKILL.md` 开头提供：
+
+```yaml
+---
+name: my-skill
+description: What it does and when the specialist should use it.
+---
+```
+
+其中 `name` 必须是精确可匹配的名称；用户通过配置中心新增的 Skill 名称限制为小写字母、数字和连字符。Skill 的 references/scripts 必须通过 `read_skill_resource` 读取，不能传入任意文件系统路径。
+
+## 运行数据与持久化文件
+
+| 路径 | 内容 | 是否提交 |
+| --- | --- | --- |
+| `data/documents/` | 上传后保存的原始文档。 | 否，通常加入 Git 忽略。 |
+| `data/parent_chunks.json` | L1/L2 父块 DocStore。 | 否。 |
+| `data/bm25_state.json` | BM25 词表和 df 统计（启用持久化时）。 | 否。 |
+| `data/customer_service_history.json` | 按 user/session 保存的消息、RAG trace、Artifact 清单。 | 否。 |
+| `data/tool_failures.json` | MCP、OpenCLI、Milvus、知识库等失败诊断记录。 | 否，不提供公开只读页面。 |
+| `data/bash_audit.json` | Bash 权限决策、规则、命令摘要、用户/session 和退出码。 | 否。 |
+| `backend/config.json` | Skills catalog、Bash 权限、发现时间和 Skill 错误。 | 可提交默认模板；运行时会更新。 |
+| `backend/mcp_servers.json` | MCP server 配置和发现摘要；敏感值仅使用环境变量占位符。 | 可提交非敏感配置，生产密钥不得写入。 |
+| `backend/tmp/<session-key>/` | 每个会话的脚本、下载、转换结果、预览、缓存和最终 Artifact。 | 否。 |
+| `backend/tmp/.gitkeep` | 保留会话临时目录的空目录占位文件。 |
+| `backend/tmp/.artifact_signing_key` | 未配置 `ARTIFACT_SIGNING_KEY` 时自动生成的本地下载签名密钥。 | 否，必须备份或在生产显式配置。 |
+| `volumes/` | Docker 的 etcd、MinIO、Milvus 数据卷。 | 否。 |
+
+## 部署前置条件
+
+### 必需组件
+
+- Windows 10/11、Linux 或 macOS。
+- Python 3.12 或更高版本。
+- [uv](https://docs.astral.sh/uv/)；用于创建虚拟环境和按 `uv.lock` 安装依赖。
+- Docker Desktop 或 Docker Engine + Compose v2；仅用于 Milvus 依赖服务。
+- 可访问模型服务的 API Key：至少需要 `CHAT_API_KEY`；如果使用高德 MCP，需要 `DASHSCOPE_MCP_API_KEY`。
+- 可访问 Hugging Face 或已有本地缓存的 BGE-M3 模型。首次启动会下载并加载模型，CPU 环境可能需要数分钟。
+
+### 可选组件
+
+- Node.js 20+ 和 npm：仅在使用 OpenCLI CLI/Browser Bridge 时需要。
+- OpenCLIApp 或 `@jackwener/opencli`：需要实时网页、用户浏览器登录态、下载或桌面自动化时安装。
+- Microsoft Word + `pywin32`：Windows 解析传统二进制 `.doc` 的首选；`pyproject.toml` 会在 Windows 自动安装 `pywin32`。
+- LibreOffice 或 antiword：没有 Microsoft Word 时解析 `.doc` 的降级方案。
+- SiliconFlow rerank API Key：需要远程 rerank 时配置；不配置也可使用基础混合检索。
+- DashScope VLM Key：需要解析 PDF/PPT 内嵌图片文字时配置 `DASHSCOPE_API_KEY`；纯文本文档不需要。
+
+### 资源建议
+
+- 仅 CPU：建议至少 8 GB 内存，首次 BGE-M3 加载和批量入库较慢。
+- GPU：可将 `EMBEDDING_DEVICE` 改为 `cuda`，并确保 PyTorch/CUDA 环境与 sentence-transformers 匹配。
+- Milvus、MinIO、etcd 的数据卷会持续增长；生产环境应规划磁盘、备份和 Docker 日志轮转。
+
+## 完整部署步骤
+
+以下命令以项目根目录 `D:\agent_console\Agent_Console`（Windows）或对应 Linux/macOS 路径为例。
+
+### 1. 获取代码并安装 Python 依赖
+
+```powershell
+git clone <your-repository-url> agent-console
+cd agent-console
 uv sync
 ```
 
-安装 OpenCLI：
+`uv sync` 会按 `pyproject.toml` 和 `uv.lock` 创建 `.venv` 并安装 FastAPI、LangChain、Milvus、文档解析和 embedding 依赖。若只做开发而不使用可选学习依赖，不需要安装 `study` extra。
 
-Windows/macOS 本地使用也可以优先安装 OpenCLIApp，它会内置 OpenCLI runtime，并提供环境诊断、更新和浏览器登录态保活能力。纯 CLI、CI 或服务器环境可使用 npm 全局安装：
+### 2. 创建环境文件
+
+```powershell
+Copy-Item .env.example .env
+```
+
+至少填写：
+
+```dotenv
+CHAT_API_KEY=你的对话模型Key
+CHAT_MODEL=deepseek-v4-flash
+CHAT_BASE_URL=https://api.deepseek.com
+```
+
+生产环境还应设置一枚长随机字符串：
+
+```dotenv
+ARTIFACT_SIGNING_KEY=替换为至少32字节的随机值
+```
+
+不要把 `.env`、API Key、cookie、Authorization header 或真实 MCP 凭据提交到仓库。
+
+### 3. 启动 Milvus 依赖
+
+```powershell
+docker compose up -d
+docker compose ps
+```
+
+Compose 会启动：
+
+| 容器 | 用途 | 默认端口 |
+| --- | --- | --- |
+| `milvus-etcd` | Milvus 元数据 | 容器内部 2379 |
+| `milvus-minio` | 对象存储 | API `9008`，控制台 `9081` |
+| `milvus-standalone` | 向量数据库 | gRPC `19530`，健康检查 `9091` |
+| `milvus-attu` | 可选管理界面 | `8083` |
+
+等待 Milvus 健康后再启动应用：
+
+```powershell
+Invoke-WebRequest http://127.0.0.1:9091/healthz
+```
+
+Linux/macOS 可使用 `curl http://127.0.0.1:9091/healthz`。Docker Compose 只负责上述数据服务，不负责启动 FastAPI。
+
+### 4. 安装并诊断 OpenCLI（可选）
 
 ```powershell
 node --version
@@ -151,306 +463,266 @@ npm install -g @jackwener/opencli
 opencli doctor
 ```
 
+也可以安装 OpenCLIApp，让它管理 runtime、daemon 和浏览器登录态。若 `opencli` 不在 PATH，可在 `.env` 设置：
 
-启动 Milvus 依赖：
-
-```powershell
-docker compose up -d
-```
-
-查看容器状态：
-
-```powershell
-docker ps
-```
-
-## 环境变量
-
-复制 `.env.example` 为 `.env`，再填入真实 Key。不要把真实 `.env` 提交到仓库。
-
-```env
-# Chat model
-CHAT_MODEL=deepseek-v4-flash
-CHAT_API_KEY=...
-CHAT_BASE_URL=https://api.deepseek.com
-QUERY_EXPANSION_MODEL=deepseek-v4-flash
-
-# DashScope MCP (AMap/Gaode tools only)
-DASHSCOPE_MCP_API_KEY=...
-MCP_DISCOVERY_TIMEOUT=30
-
-# BGE embeddings
-EMBEDDING_MODEL=BAAI/bge-m3
-EMBEDDING_DEVICE=cpu
-EMBEDDING_DIM=1024
-EMBEDDING_BATCH_SIZE=16
-BM25_STATE_PATH=
-
-# Rerank
-RERANK_MODEL=BAAI/bge-reranker-v2-m3
-RERANK_BINDING_HOST=https://api.siliconflow.cn/v1/rerank
-RERANK_API_KEY=...
-
-# Milvus
-MILVUS_HOST=127.0.0.1
-MILVUS_PORT=19530
-MILVUS_COLLECTION=embeddings_bge_m3
-MILVUS_DENSE_DIM=1024
-
-# Optional OpenCLI browser automation
-OPENCLI_BIN=
+```dotenv
+OPENCLI_BIN=C:\Users\<user>\AppData\Roaming\npm\opencli.cmd
 OPENCLI_SESSION=lcagent
-OPENCLI_TIMEOUT=75
-OPENCLI_OUTPUT_MAX_CHARS=12000
-
-# Skills specialist and local tmp workspace
-BACKEND_TMP_DIR=backend/tmp
-AGENT_SKILLS_DIR=agent_workspace/skills
-SKILL_CATALOG_MAX_CHARS=8000
-SKILL_CONTENT_MAX_CHARS=60000
-WORKSPACE_FILE_MAX_CHARS=50000
-ARTIFACT_SIGNING_KEY=请替换为生产环境长随机值
-
-# Local execution in backend/tmp
-LOCAL_RUN_TIMEOUT=120
-LOCAL_RUN_OUTPUT_MAX_CHARS=20000
-LOCAL_RUN_COMMAND_MAX_CHARS=8000
 ```
 
-### Key 职责
+浏览器自动化还需要安装并连接 Browser Bridge 扩展。没有 OpenCLI 时，主 Agent、知识库、普通 MCP 和本地工具仍可使用，只是相关 Skill 任务会报告环境不可用。
 
-| 变量 | 用途 |
-| --- | --- |
-| `CHAT_API_KEY` | 主对话模型与查询扩展。 |
-| `DASHSCOPE_MCP_API_KEY` | 高德地图 MCP，只用于 `mcp_service.py`。 |
-| `MCP_DISCOVERY_TIMEOUT` | 单个 MCP server 的工具发现超时，默认 30 秒；超时会记录错误并继续启动。 |
-| `RERANK_API_KEY` | 重排模型 Key，只用于 rerank。 |
-| `EMBEDDING_*` | BGE embedding 配置，默认模型 `BAAI/bge-m3`，默认维度 `1024`。 |
-| `BM25_STATE_PATH` | 可选，BM25 词表与 df 统计持久化路径；默认 `data/bm25_state.json`。 |
-| `OPENCLI_BIN` | 可选，显式指定 OpenCLI 可执行文件，例如 `C:\Users\wangy\AppData\Roaming\npm\opencli.cmd`。 |
-| `OPENCLI_SESSION` | OpenCLI 浏览器会话名，默认 `lcagent`。 |
-| `BACKEND_TMP_DIR` | Skills 小 Agent 的本地临时目录根，默认 `backend/tmp`。 |
-| `AGENT_SKILLS_DIR` | `SKILL.md` 技能包根目录，默认 `agent_workspace/skills`。 |
-| `SKILL_*_MAX_CHARS` | catalog 与单次完整技能内容的上下文预算。 |
-| `WORKSPACE_FILE_MAX_CHARS` | 工作区文本文件单次读写上限。 |
-| `ARTIFACT_SIGNING_KEY` | 文件下载 capability URL 的 HMAC 密钥；生产环境必须设置长随机值。 |
-| `LOCAL_RUN_*` | 本地命令的超时、输出长度和命令长度限制。 |
+### 5. 检查 MCP 配置
 
-## 启动应用
+`backend/mcp_servers.json` 是 MCP 的 source of truth。默认示例包含高德地图 DashScope MCP：
 
-推荐在开发时显式使用 `PORT=8000`：
+```json
+{
+  "mcpServers": {
+    "map": {
+      "url": "https://dashscope.aliyuncs.com/api/v1/mcps/amap-maps/mcp",
+      "transport": "streamable_http",
+      "enabled": true,
+      "headers": {"Authorization": "Bearer ${DASHSCOPE_MCP_API_KEY}"}
+    }
+  }
+}
+```
+
+如果启用它，请在 `.env` 填写 `DASHSCOPE_MCP_API_KEY`。MCP 发现失败不会阻止应用启动，但会写入配置中的错误摘要和 `data/tool_failures.json`。
+
+### 6. 启动 FastAPI
+
+推荐从项目根目录启动：
 
 ```powershell
-$env:PORT="8000"
+uv run uvicorn backend.app:app --host 127.0.0.1 --port 8080
+```
+
+或使用 `backend/app.py` 的直接入口：
+
+```powershell
 cd backend
 ..\.venv\Scripts\python.exe app.py
 ```
 
-打开控制台：
+默认地址：<http://127.0.0.1:8080>。启动日志应依次看到 embedding ready、runtime catalog ready、主 Agent initialized。首次启动可能因模型下载、MCP 发现和 Milvus 建连而较慢。
 
-```text
-http://127.0.0.1:8000
+若要让局域网设备访问，可绑定 `0.0.0.0`，但必须先在反向代理增加认证、HTTPS、限流和 CORS 策略；不要直接把 OpenCLI daemon 或没有认证的配置 API 暴露到公网。
+
+### 7. 验证部署
+
+```powershell
+Invoke-WebRequest http://127.0.0.1:8080
+Invoke-WebRequest http://127.0.0.1:8080/docs
+Invoke-RestMethod http://127.0.0.1:8080/runtime-config
+Invoke-RestMethod http://127.0.0.1:8080/documents
 ```
 
-常用本地服务：
+浏览器打开 <http://127.0.0.1:8080>，依次检查：
 
-| 服务 | 地址 |
-| --- | --- |
-| Agent Console | `http://127.0.0.1:8000` |
-| Milvus gRPC | `127.0.0.1:19530` |
-| Attu 管理界面 | `http://127.0.0.1:8083` |
-| MinIO API | `http://127.0.0.1:9008` |
-| MinIO Console | `http://127.0.0.1:9081` |
+1. 对话页能提交简单问题。
+2. 知识库页能列出空文档列表。
+3. 配置中心能看到 Skills catalog 和 MCP 发现状态。
+4. 需要 OpenCLI 时，`opencli doctor`、Browser Bridge 和 `OPENCLI_BIN` 均正常。
 
-说明：`backend/app.py` 默认只监听 `127.0.0.1:8080`。为了避免和其他本地服务混淆，建议开发时显式设置 `PORT=8000`。配置 API 没有独立账号认证；若显式把 `HOST` 改为公网或局域网地址，必须在反向代理层增加认证和访问控制。
+### 8. 首次知识库入库
 
-## 主要页面
+1. 打开“知识库”页，选择不超过 50MB 的文件。
+2. 支持 PDF、`.docx`、`.doc`、PPT/PPTX、Excel/XLSX、CSV、TXT。
+3. 点击“入库”，等待解析、embedding 和 Milvus 写入完成。
+4. 在文档列表确认 chunk 数量，再回到对话页提问并检查引用片段。
 
-- 对话：流式回答、主 Agent 委派、小 Agent 工具步骤、RAG trace 和引用片段。
-- 知识库：上传文档、入库、查看文档块数量、删除文档。
-- 历史会话：按用户和 session 读取历史消息。
+传统 `.doc` 的部署注意：
+
+- Windows 优先使用本机 Microsoft Word COM；安装 Microsoft Word 后重启服务即可。
+- 若没有 Word，安装 LibreOffice（`soffice`）或 `antiword`，程序会按 Word → LibreOffice → antiword 顺序尝试。
+- 上传的文件名必须是单层安全文件名，不能含路径分隔符、控制字符、Windows 保留名或尾随空格/句点。
+- 若客户端上传的实际内容是 OpenXML，只是扩展名错误地写成 `.doc`，读取器会检测 `PK` 签名并按 `.docx` 解析。
+
+## 配置说明
+
+所有变量由 `backend/settings.py` 读取；相对路径以项目根目录为基准。
+
+| 变量 | 默认值 | 作用 |
+| --- | --- | --- |
+| `CHAT_MODEL` | `deepseek-v4-flash` | 主 Agent 对话模型。 |
+| `CHAT_API_KEY` | 空 | 主模型和查询扩展所需 Key。 |
+| `CHAT_BASE_URL` | `https://api.deepseek.com` | OpenAI-compatible 模型服务地址。 |
+| `GRADE_MODEL` | `deepseek-v4-flash` | RAG 文档相关性评分模型。 |
+| `QUERY_EXPANSION_MODEL` | `CHAT_MODEL` | Step-back/HyDE/路由模型。 |
+| `AGENT_TOOL_CALL_LIMIT` | `250` | 每轮最大工具调用数；同时影响 Agent recursion limit。 |
+| `DASHSCOPE_MCP_API_KEY` | 空 | 高德地图 MCP 的授权 Key。 |
+| `MCP_DISCOVERY_TIMEOUT` | `30` | 单个 MCP server 工具发现超时（秒）。 |
+| `EMBEDDING_MODEL` | `BAAI/bge-m3` | dense embedding 模型。 |
+| `EMBEDDING_DEVICE` | `cpu` | `cpu` 或可用的 `cuda`。 |
+| `EMBEDDING_DIM` | `1024` | embedding 预期维度。 |
+| `EMBEDDING_BATCH_SIZE` | `16` | 批量编码大小。 |
+| `BM25_STATE_PATH` | 空 | BM25 状态文件；空值使用 `data/bm25_state.json` 约定路径。 |
+| `MILVUS_HOST` | `127.0.0.1` | Milvus 主机。 |
+| `MILVUS_PORT` | `19530` | Milvus gRPC 端口。 |
+| `MILVUS_COLLECTION` | `embeddings_bge_m3` | Milvus collection 名称。切换 embedding 维度时应使用新集合并重新入库。 |
+| `MILVUS_TIMEOUT` | `8` | Milvus 操作超时（秒）。 |
+| `MILVUS_DENSE_DIM` | `EMBEDDING_DIM` | collection dense 字段维度，必须与模型实际输出一致。 |
+| `AUTO_MERGE_ENABLED` | `true` | 是否将多个叶子块自动上卷为父块。 |
+| `AUTO_MERGE_THRESHOLD` | `2` | 同一父块至少命中多少子块才合并。 |
+| `LEAF_RETRIEVE_LEVEL` | `3` | 首先召回的叶子层级。 |
+| `RERANK_MODEL` | 空 | 可选 rerank 模型。模板默认示例为 `BAAI/bge-reranker-v2-m3`。 |
+| `RERANK_BINDING_HOST` | 空 | rerank API 地址；代码会规范化为 `/v1/rerank`。 |
+| `RERANK_API_KEY` | 空 | rerank API Key。三项同时存在才会调用 rerank。 |
+| `OPENCLI_BIN` | 空 | OpenCLI 可执行文件路径；Windows 常为 `opencli.cmd`。 |
+| `OPENCLI_SESSION` | `lcagent` | OpenCLI 浏览器 session 名称。 |
+| `OPENCLI_TIMEOUT` | `75` | OpenCLI 单次命令超时（秒）。 |
+| `OPENCLI_OUTPUT_MAX_CHARS` | `12000` | OpenCLI 输出截断上限。 |
+| `BACKEND_TMP_DIR` | `backend/tmp` | 会话临时目录根。 |
+| `AGENT_SKILLS_DIR` | `agent_workspace/skills` | Skill 包根目录。 |
+| `SKILL_CATALOG_MAX_CHARS` | `8000` | 注入 Skills subagent 的 catalog 上限。 |
+| `SKILL_CONTENT_MAX_CHARS` | `60000` | 单次 Skill 正文/资源读取上限。 |
+| `WORKSPACE_FILE_MAX_CHARS` | `50000` | 单个文本文件读写上限。 |
+| `ARTIFACT_SIGNING_KEY` | 空 | Artifact 下载 HMAC key；为空时在 `backend/tmp/.artifact_signing_key` 自动生成。 |
+| `LOCAL_RUN_TIMEOUT` | `120` | 本地命令超时（秒）。 |
+| `LOCAL_RUN_OUTPUT_MAX_CHARS` | `20000` | 本地命令 stdout/stderr 上限。 |
+| `LOCAL_RUN_COMMAND_MAX_CHARS` | `8000` | 单条命令长度上限。 |
+
+## 首次使用
+
+### 对话
+
+直接在聊天框输入问题。需要知识库时可明确说“根据知识库回答”；需要网页/下载/浏览器时，主 Agent 会委派 OpenCLI Skill。模型生成的文件会显示在回答下方的 Artifact 卡片中。
+
+### 配置中心
+
+- **MCP Servers**：添加 `streamable_http`、`sse` 或 `stdio` server；保存后立即发现工具并重载主 Agent。API 返回会脱敏 URL、headers、args 和 env。
+- **Skills Catalog**：填写小写名称、描述和 `SKILL.md` 正文；保存后写入 `agent_workspace/skills/<name>/SKILL.md` 并刷新 catalog。
+- **Bash 审查**：查看当前 deny/authorize/allow 规则。真正的审计明细仍只保存在服务端 `data/bash_audit.json`。
+
+### 知识库回答的引用显示
+
+前端只在消息包含有效 RAG 引用片段时显示“检索与调用轨迹”；普通闲聊、工具回答或无引用回答不会显示空的检索面板。引用中会标明文件名、文件类型、页码、检索来源和可用分数。
 
 ## 主要 API
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| `POST` | `/chat/stream` | SSE 流式对话，返回 `content`、`content_boundary`、`rag_step`、`tool_step`、`trace`。 |
-| `POST` | `/chat` | 非流式对话。 |
+| `POST` | `/chat` | 非流式对话，返回 `response`、可选 `rag_trace` 和 `artifacts`。 |
+| `POST` | `/chat/stream` | SSE 流式对话，事件见上文。 |
+| `GET` | `/documents` | 列出 Milvus 中按文件聚合的文档和叶子 chunk 数。 |
+| `POST` | `/documents/upload` | 上传并解析文档、生成向量、写入 Milvus。单文件上限 50MB。 |
+| `DELETE` | `/documents/{filename}` | 删除同名 Milvus 向量和父块；当前接口不会自动删除 `data/documents` 下的原始文件。 |
 | `GET` | `/sessions/{user_id}` | 获取用户会话列表。 |
-| `GET` | `/sessions/{user_id}/{session_id}` | 获取会话消息。 |
-| `POST` | `/documents/upload` | 上传文档并入库。 |
-| `GET` | `/documents` | 查看已入库文档。 |
-| `DELETE` | `/documents/{filename}` | 删除文档。 |
-| `GET` | `/runtime-config` | 查看已解析的 MCP、Skills 和 Bash 权限配置。 |
-| `POST` | `/runtime-config/refresh` | 重新扫描 Skills 并发现 MCP 工具。 |
-| `POST` | `/runtime-config/mcp` | 添加或更新 MCP server，并立即发现工具。 |
-| `DELETE` | `/runtime-config/mcp/{name}` | 删除 MCP server。 |
-| `POST` | `/runtime-config/skills` | 用 `SKILL.md` 内容添加或更新 Skill。 |
+| `GET` | `/sessions/{user_id}/{session_id}` | 获取会话消息、RAG trace 和历史 Artifact 清单。 |
+| `DELETE` | `/sessions/{user_id}/{session_id}` | 删除会话历史及 `backend/tmp` 对应目录。 |
+| `GET` | `/sessions/{user_id}/{session_id}/artifacts` | 使用 SSE 返回的 token 列出当前会话文件。 |
+| `GET` | `/sessions/{user_id}/{session_id}/artifacts/{path}` | 使用 HMAC token 下载会话文件。 |
+| `GET` | `/runtime-config` | 查看脱敏后的 Skills、MCP、发现状态和 Bash 规则。 |
+| `POST` | `/runtime-config/refresh` | 重新扫描 Skills、重新发现 MCP 并热重载主 Agent。 |
+| `POST` | `/runtime-config/mcp` | 新增或更新 MCP server。 |
+| `DELETE` | `/runtime-config/mcp/{name}` | 删除 MCP server 并热重载主 Agent。 |
+| `POST` | `/runtime-config/skills` | 创建或覆盖用户 Skill。 |
 | `DELETE` | `/runtime-config/skills/{name}` | 删除用户 Skill。 |
-| `GET` | `/sessions/{user_id}/{session_id}/artifacts` | 查看当前会话生成的文件。 |
-| `GET` | `/sessions/{user_id}/{session_id}/artifacts/{path}` | 下载会话文件。 |
+| `GET` | `/docs` | FastAPI Swagger 文档。 |
 
-## 运行流程
+当前没有“运行回调”页面，也没有用于公开查看 `tool_failures.json`/`bash_audit.json` 的 API；这些文件仅供本机排障和审计。
 
-### 1. 文档入库
+## 安全边界
 
-用户在知识库页上传文件，后端以流式方式写入不超过 50MB 的临时文件，解析成功后才原子替换正式源文件，因此损坏的同名文件不会覆盖已有文档或提前删除已有向量。`.docx` 由 OpenXML 解析器处理；旧版二进制 `.doc` 在 Windows 上通过 Microsoft Word 只读提取，并使用纯 ASCII 临时路径规避旧格式的中文路径兼容问题，无 Word 时依次尝试 LibreOffice 和 antiword。解析结果会生成 L1/L2/L3 三层块：父块保存在 `parent_chunks.json`，叶子块生成 BGE dense embedding 和 BM25 sparse embedding 后写入 Milvus。BGE 模型和 Milvus client 都采用懒加载，应用启动时不会预加载向量模型。
+- Bash 默认 `deny`，只有明确允许的开发工具和会话目录命令才能执行。
+- 阻止提权、关机、磁盘格式化、系统配置破坏、路径逃逸、未加引号 shell 链接、命令替换、下载后直接执行和危险 OpenCLI 操作。
+- `read_file/write_file/edit_file/glob` 将路径限制在当前会话目录；Artifact 下载拒绝绝对路径、`..` 和符号链接。
+- stdio MCP 会复用 Bash 审查，拒绝内联解释器代码和未使用 `--no-install` 的 `npx`；不要在配置中放远程安装命令。
+- MCP URL、headers、args、env 通过 API 返回时会脱敏；真实密钥只应来自环境变量占位符。
+- `ARTIFACT_SIGNING_KEY` 应在生产环境显式设置并安全保管；更换 key 会使旧下载链接失效。
+- 当前 API 没有身份认证。公网/多用户部署必须增加 SSO、反向代理认证、HTTPS、CORS 白名单、限流和按用户隔离。
+- 不要公开 OpenCLI daemon 端口，不要把 `backend/mcp_servers.json` 中的真实 token 提交到 Git。
 
-### 2. 主 Agent 委派与按需工具选择
+## 常见问题与排障
 
-前端把问题提交到 `/chat/stream`，`agent.py` 调用 LangChain 主 Agent。主 Agent 直接持有知识库查询、五个固定本地工具、`review`、Skills 加载工具和启动时从 `backend/mcp_servers.json` 发现的 MCP 工具；专业流程、OpenCLI、PDF、代码审查和多步骤文件工作则委派给 `delegate_to_skill_agent`。Skills subagent 先看 catalog，再自行选择并加载一个或多个 Skill。委派和实际工具调用都会被 `tool_instrumentation.py` 包装成用户可见步骤，并受每轮 250 次调用上限保护。
+### 服务启动时报 embedding 维度不一致
 
-### 3. RAG 检索与生成
+检查 `EMBEDDING_DIM`、`MILVUS_DENSE_DIM` 和实际模型输出。BGE-M3 默认 1024 维；切换模型或维度时应设置新的 `MILVUS_COLLECTION` 并重新上传文档。
 
-知识库检索会先走 Milvus Hybrid Search：BGE dense 向量和 BM25 sparse 向量分别召回候选，再用 RRF 融合。候选返回后先做 auto-merging 上卷，再用可选 rerank 重新打分排序。如果没有搜到片段，或相关性评估不通过，LangGraph 才会触发查询改写，再用 Step-back、HyDE 或复杂查询策略补召回。最终检索结果会交给模型生成回答。
-
-### 4. 服务端诊断日志
-
-工具或外部服务失败会写入本地诊断日志，避免静默失败；这些记录不进入 Agent 审批或重试流程，也不对前端提供只读页面。
-
-## Skills 加载与工作区
-
-实现参考 [shareAI-lab/learn-claude-code](https://github.com/shareAI-lab/learn-claude-code) 的工具分发和 Skill Loading，并针对当前 LangChain 架构调整为由 subagent 决策：
-
-1. 主 Agent 可以调用 `load_skill`，也可以先用 `load_subagent` 再委派完整任务。
-2. Skills subagent 创建时只注入 `name + description` catalog，默认最多 8000 字符。
-3. subagent 根据任务自行选择精确技能名，再调用 `load_skill` 读取完整 `SKILL.md`。
-4. `references/`、`scripts/` 等资源必须通过 `read_skill_resource` 相对 skill root 读取，调用方不能传入任意技能路径。
-5. 工作文件按 user/session 哈希分到 `backend/tmp/<session-key>/`；五个固定工具提供 Glob、读取、写入、单次编辑和审查/执行能力。
-6. 任何命令、脚本、生成程序、转换器和测试都调用经过审查的 `bash`，以对应会话目录为当前目录；源码、缓存、解压文件、预览、日志和最终文件全部留在这里。
-
-7. 用户可以在前端“配置中心”增加 MCP server 和 Skill；MCP server 保存到 `backend/mcp_servers.json`，Skill catalog 保存到 `backend/config.json`，随后重新发现 MCP 工具并热加载主 Agent。
-
-已从 `D:\learn_claude_code\skills` 原样迁移四个技能：`agent-builder`、`code-review`、`mcp-builder`、`pdf`，包括 `agent-builder` 的 references 和 scripts。新增技能时，在 `agent_workspace/skills/<name>/SKILL.md` 中提供 YAML frontmatter：
-
-```yaml
----
-name: example-skill
-description: What the skill does and when the small agent should use it.
----
-```
-
-技能目录在进程内首次导入时建立注册表；新增或修改技能后重启服务即可刷新。完整技能正文不会进入主 Agent system prompt。
-
-## 本地临时运行与文件下载
-
-`bash` 先执行 s03_permission 风格的自动审查，再在宿主机运行单条命令，并把当前目录以及 `TMP`、`TEMP`、缓存目录都指向 `backend/tmp/<session-key>/`。未加引号的 `&`、`&&`、`|`、`;`、换行和命令替换会在创建进程前拒绝，避免白名单前缀被复合命令绕过。默认运行超时 120 秒，命令和输出长度受配置限制，常见 API key、token、password 环境变量不会传给子进程。它不是安全沙箱：允许的 Python/Node 等程序在操作系统权限上仍可能访问临时目录之外的路径，因此只适合受信任的本地使用环境。
-
-stdio MCP 也会先经过相同的命令审查；内联解释器代码（`python -c`、`node -e`、`powershell -Command` 等）和会远程安装包的 `npx`/`npm` 形式会被拒绝。配置 API 只建议在本机使用，外部部署必须自行增加认证。
-
-回答结束后，后端发送 `artifacts` SSE 事件；前端在对应 Agent 消息下显示文件名、路径、大小和下载按钮。下载 URL 带有服务端 HMAC capability token；删除会话时对应目录也会删除。若没有配置 `ARTIFACT_SIGNING_KEY`，首次运行会在 `backend/tmp/.artifact_signing_key` 生成本地密钥。历史消息会保存当时的文件清单。
-
-当前项目没有账号登录系统。签名下载链接可防止仅凭 `user_id/session_id` 枚举文件，但正式公网多用户部署仍应在 FastAPI 前增加 SSO、反向代理认证或其他统一身份层，并限制 `/sessions` 的访问。
-
-MCP 由主 Agent 直接调用；OpenCLI 由 Skills subagent 通过审查 Bash 调用。MCP 的完整工具列表只来自启动时的 `get_tools()`，不在本地源代码中维护。
-
-## OpenCLI 浏览器自动化
-
-OpenCLI skill 适合处理需要访问网页、读取当前页面、抽取热门内容、下载文件、分析网络请求或控制桌面应用的任务。它的工作方式是：Skills 小 Agent 先读取 live registry 和精确 help，再通过经过权限审查的 `bash` 调用本地 `opencli` CLI。本项目不把 OpenCLI 的 1300+ 个动态命令注册成主 Agent 工具。
-
-OpenCLI skill 覆盖 live registry、公开查询、42 个 browser 命令、network、下载/导出、桌面应用、plugin/adapter/profile/daemon/external 管理面和 Node library exports。每次先运行 `opencli list -f json`，再读站点和具体命令的 `--help -f yaml`，避免把动态 registry 写死在提示词中。
-
-典型浏览器顺序是打开或绑定 session、读取 `state`、使用返回的 refs 交互，再次读取 `state` 验证。下载、导出、截图和本地缓存全部写入当前 `backend/tmp/<session-key>/`。
-
-建议手动验证环境：
+### Milvus 报 `closed channel` 或连接失败
 
 ```powershell
-opencli doctor
+docker compose ps
+Invoke-WebRequest http://127.0.0.1:9091/healthz
 ```
 
-官方常用命令示例：
+确认 19530 没有被其他服务占用、Docker 卷可写，并等待 standalone 的 healthcheck 变为 healthy。客户端会对 `closed channel` 自动重连并重试一次。
 
-```powershell
-opencli list
-opencli bilibili hot --limit 5
-opencli browser lcagent open https://www.bilibili.com
-opencli browser lcagent state
-```
+### MCP 发现失败
 
-Windows 注意事项：
-
-- npm 全局安装通常会生成 `opencli.cmd`。
-- URL 中的 `&` 在 `cmd.exe` 中是命令分隔符，直接拼接命令会导致类似 `'pn' 不是内部或外部命令` 的错误。
-- 通过 Bash 调用时必须给含 `&` 的 URL 加引号，避免 `cmd.exe` 把 URL 拆成多条命令。
-
-安全边界：
-
-- 登录、发布、发消息和浏览器交互等外部副作用需要小 Agent 显式声明“用户已在当前任务中要求该动作”，并写入 Bash audit；不新增阻塞式人工审核节点。
-- 删除、归档、上传、任意 `eval`、自动批准、插件/外部 CLI 安装等 P4 操作由 Bash 执行层默认拒绝。
-- 不绕过验证码、付费墙、权限控制或网站风控。
-- 浏览器工具失败时，Agent 应说明限制，并避免用同一参数反复重试。
-
-## 常见问题
-
-### 启动时地图 MCP 显示发现失败
-
-应用启动时会读取 `backend/mcp_servers.json` 并发现启用的 MCP 工具；失败会把 server 和错误写回该清单并在配置中心展示。重点检查：
-
-- `DASHSCOPE_MCP_API_KEY` 是否是开通 MCP 的 Key。
-- `backend/mcp_servers.json` 中的 `url`、`transport` 和环境变量占位符是否正确。
-- 百炼控制台里的 AMap MCP 是否已开通，或是否需要重新开通升级协议。
+检查 `DASHSCOPE_MCP_API_KEY`、`backend/mcp_servers.json` 的 `transport/url`、网络连通性和服务商开通状态。失败只影响该 MCP，不会阻止其他 Agent 能力启动；具体错误可看配置中心的脱敏摘要和 `data/tool_failures.json`。
 
 ### OpenCLI 返回 `OPENCLI_ERROR`
 
-先运行：
+先运行 `opencli doctor`，再检查 daemon、Browser Bridge 扩展、`OPENCLI_BIN`、`OPENCLI_SESSION` 以及当前网页是否需要登录/验证码/权限确认。不要用同一失败参数无限重试。
 
-```powershell
-opencli doctor
-```
+### `.doc` 上传失败或提示 Package not found
 
-重点检查：
+`Package not found` 通常表示把旧版二进制 `.doc` 当成 `.docx`/ZIP 读取。当前代码已按扩展名分流并检测伪装的 OpenXML：
 
-- OpenCLI daemon 是否运行。
-- Browser Bridge 扩展是否安装并连接。
-- `OPENCLI_BIN` 是否指向正确的可执行文件。
-- 当前网页是否需要登录、验证码、权限确认或风控验证。
+- Windows 安装 Microsoft Word 和 `pywin32`，重启服务后重试。
+- 无 Word 时安装 LibreOffice 或 antiword。
+- 确认上传内容确实是 `.doc`，若文档可以转换，优先另存为 `.docx`。
+- 不要直接在 `data/documents` 中手工改名破坏文件格式；上传接口会先 staging，失败不会覆盖旧文件。
 
-### Milvus 报 `closed channel`
+旧版二进制 `.ppt`/`.xls` 对底层解析器的兼容性取决于本机库和文件内容；遇到无法解析的文件时，优先在 Office/LibreOffice 中另存为 `.pptx`/`.xlsx` 后再上传。
 
-`milvus_client.py` 已支持 `closed channel` 自动重连并重试一次。若仍失败，检查 Milvus 容器健康状态：
+### 上传成功但检索不到
 
-```powershell
-docker ps
-```
+检查 BGE 模型是否加载成功、Milvus 是否健康、上传响应中的叶子 chunk 数是否大于 0、`MILVUS_COLLECTION` 是否正确，以及 `data/parent_chunks.json` 是否可写。若切换过向量模型，创建新 collection 并重新入库。
 
-### 上传成功但搜索不到
+### Windows 出现 `gbk codec can't encode`
 
-检查：
-
-- BGE 首次加载是否成功，必要时确认本机能下载 `BAAI/bge-m3` 或已缓存模型。
-- Milvus `19530` 是否可用。
-- 上传文档是否生成 L3 叶子块。
-- `MILVUS_COLLECTION` 是否与当前服务一致。
-- 如果从旧的 Jina 2048 维集合切到 BGE-M3，请使用新的集合名，例如 `embeddings_bge_m3`，并重新上传文档入库。
-
-### 上传时报 `gbk codec can't encode`
-
-这是 Windows 控制台编码导致的日志输出错误，常见于日志、文件名或文本中含有 emoji 等非 GBK 字符。项目已在 `encoding_utils.py` 中对 stdout/stderr 和上传日志做了保护；如果仍遇到类似问题，可设置：
+设置 UTF-8 输出后重新启动：
 
 ```powershell
 $env:PYTHONIOENCODING="utf-8"
+uv run uvicorn backend.app:app --host 127.0.0.1 --port 8080
 ```
 
-### 前端收不到流式回答
+### 前端收不到 SSE
 
-检查：
+检查后端是否正常、`/chat/stream` 是否返回 `text/event-stream`、浏览器控制台是否有网络错误，以及反向代理是否关闭响应缓冲/压缩。Nginx 等代理应转发 `Connection: keep-alive` 并设置 `X-Accel-Buffering: no`。
 
-- 后端是否启动成功。
-- `/chat/stream` 是否返回 `text/event-stream`。
-- 浏览器控制台是否有网络错误。
-- 反向代理或浏览器插件是否缓存、压缩或缓冲 SSE。
+### 端口冲突
 
-## 开发约定
+FastAPI 默认 8080，Milvus 19530/9091，Attu 8083，MinIO 9008/9081。可以修改宿主端口映射，但 `.env` 中的 `MILVUS_PORT` 必须与实际暴露的 gRPC 端口一致。
 
-- 后端单文件尽量保持在 250 行以内。
-- 前端 JS/CSS 已按功能拆分，`script.js` 和 `style.css` 只保留入口。
-- 不要在业务代码中硬编码真实 Key，只通过 `.env` 读取。
-- 工具失败不要静默丢弃，统一记录到服务端 `tool_failures.json`，不提供公开读取接口。
-- `data/`、`volumes/`、`.env`、`.venv/` 默认不提交，避免泄露运行数据和凭据。
-- 手动改代码后至少运行：
+## 开发与测试
+
+### 语法检查
 
 ```powershell
-.\.venv\Scripts\python.exe -m compileall backend
-node --check frontend\js\app-core.js
-node --check frontend\js\chat.js
+uv run python -m compileall backend
+node --check frontend/js/app-core.js
+node --check frontend/js/chat.js
+node --check frontend/js/knowledge.js
+node --check frontend/js/config.js
+node --check frontend/js/formatters.js
 ```
+
+### 运行测试
+
+```powershell
+uv run python -m unittest discover -s backend/tests -p "test_*.py" -v
+```
+
+测试覆盖 Agent 工具架构、Artifact token、配置服务、文档解析、LangChain runtime、本地运行限制、文档路由、Skill registry 和工具 instrumentation。涉及真实模型、Milvus、MCP 或 OpenCLI 的测试应在对应服务可用时运行；否则使用 mock/跳过外部集成测试。
+
+### 代码约定
+
+- 后端模块尽量保持职责单一、单文件不超过约 250 行；跨模块状态通过 service/context 传递。
+- 新工具必须经过 `tool_instrumentation.py`，错误不能静默丢弃。
+- 新 Skill 必须有有效 YAML frontmatter，并通过 `skill_service.py` 的精确名称加载。
+- 业务代码不硬编码密钥；所有外部凭据走 `.env` 或受控的 MCP 环境变量占位符。
+- `data/`、`volumes/`、`.env`、`.venv/`、`backend/tmp/` 和运行日志不提交版本库。
+- 修改前端后同时更新对应 JS/CSS 模块，不把业务逻辑重新堆回 `index.html`。
+
+## 版本与维护提示
+
+- 更新 embedding 模型或维度时，使用新的 collection 名称并重新入库，避免新旧向量混用。
+- 更新 OpenCLI 时先运行 `opencli doctor`，再让 Skill 通过 live registry 重新读取命令帮助；不要把旧 registry 快照写进提示词。
+- 修改 MCP/Skills 配置后可调用 `/runtime-config/refresh`，无需重启即可重建主 Agent 工具面；修改 Python 代码仍需重启服务。
+- 生产部署请备份 `data/`、`volumes/`、`backend/config.json`、`backend/mcp_servers.json`（不含密钥）和 `ARTIFACT_SIGNING_KEY`，并建立日志轮转与健康检查。
