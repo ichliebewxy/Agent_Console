@@ -31,13 +31,4 @@ Object.assign(window.NebulaNestApp.methods, {
     if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
     return `${(value / (1024 * 1024)).toFixed(1)} MB`;
   },
-
-  failureStatusLabel(status) {
-    return {
-      open: "已记录",
-      retry_requested: "请求重试",
-      resolved: "已处理",
-      ignored: "已忽略",
-    }[status] || status;
-  },
 });

@@ -1,14 +1,11 @@
-"""Runtime MCP/Skill configuration and Bash permission audit APIs."""
-from fastapi import APIRouter, HTTPException, Query
+"""Runtime MCP/Skill configuration APIs."""
+from fastapi import APIRouter, HTTPException
 
 from config_service import CONFIG_STORE
 from mcp_config_service import MCP_STORE
 from mcp_service import discover_configured_mcp_tools
-from ops_store import bash_audit_store
 from runtime_catalog_service import refresh_runtime_catalogs, refresh_skill_catalog
 from schemas import (
-    BashAuditInfo,
-    BashAuditListResponse,
     MCPServerUpsertRequest,
     MutationResponse,
     RuntimeConfigResponse,
@@ -117,9 +114,3 @@ async def delete_skill(name: str):
     refresh_skill_catalog()
     await _reload_main_agent()
     return MutationResponse(message=f"Removed skill: {name}")
-
-
-@router.get("/bash-audit", response_model=BashAuditListResponse)
-async def list_bash_audit(limit: int = Query(default=100, ge=1, le=500)):
-    rows = bash_audit_store.list(limit=limit)
-    return BashAuditListResponse(audits=[BashAuditInfo(**row) for row in rows])

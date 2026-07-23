@@ -51,7 +51,7 @@ class ConfigServiceTests(unittest.TestCase):
         second = _runtime_tool_name("server", "lookup+one", used)
         self.assertNotEqual(first, second)
 
-    def test_config_and_bash_audit_routes_are_readable(self):
+    def test_config_route_is_readable_and_audit_route_is_removed(self):
         app = FastAPI()
         app.include_router(config_router)
         client = TestClient(app)
@@ -61,7 +61,7 @@ class ConfigServiceTests(unittest.TestCase):
         self.assertIn("mcpServers", config)
         self.assertIn("skills", config)
         self.assertIn("permissions", config)
-        self.assertEqual(client.get("/bash-audit").status_code, 200)
+        self.assertEqual(client.get("/bash-audit").status_code, 404)
 
     def test_config_normalizes_mcp_and_persists_discovery(self):
         with tempfile.TemporaryDirectory() as directory:

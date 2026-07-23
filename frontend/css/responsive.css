@@ -31,10 +31,6 @@
     display: none;
   }
 
-  .failure-indicator {
-    display: none;
-  }
-
   .message {
     width: 100%;
   }

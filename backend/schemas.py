@@ -136,23 +136,6 @@ class DocumentDeleteResponse(BaseModel):
     message: str
 
 
-class ToolFailureInfo(BaseModel):
-    id: str
-    status: str
-    tool_name: str
-    error: str
-    payload: Dict[str, Any] = {}
-    fallback: Optional[str] = ""
-    callback_note: Optional[str] = ""
-    occurrence_count: Optional[int] = 1
-    created_at: str
-    updated_at: str
-
-
-class ToolFailureListResponse(BaseModel):
-    failures: List[ToolFailureInfo]
-
-
 class MCPServerUpsertRequest(BaseModel):
     name: RuntimeId
     transport: str = "streamable_http"
@@ -185,22 +168,3 @@ class RuntimeRefreshResponse(BaseModel):
 
 class MutationResponse(BaseModel):
     message: str
-
-
-class BashAuditInfo(BaseModel):
-    id: str
-    status: str
-    behavior: str
-    rule_id: str
-    reason: str
-    command: str
-    command_length: int
-    user_id: str
-    session_id: str
-    exit_code: Optional[int] = None
-    created_at: str
-    updated_at: str
-
-
-class BashAuditListResponse(BaseModel):
-    audits: List[BashAuditInfo] = Field(default_factory=list)
