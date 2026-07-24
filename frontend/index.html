@@ -91,19 +91,32 @@
                   </div>
                 </div>
               </div>
-              <div v-if="toolCallGroups(msg).length" class="tool-call-list">
-                <div class="tool-call-heading"><i class="fas fa-wand-magic-sparkles"></i><strong>工具调用</strong><small>{{ toolCallGroups(msg).length }} 次</small></div>
+            </div>
+
+            <aside
+              v-if="!msg.isUser && toolCallGroups(msg).length"
+              class="tool-activity-bubble"
+              aria-label="工具调用"
+              aria-live="polite"
+            >
+              <div class="tool-call-heading">
+                <span class="tool-activity-icon"><i class="fas fa-wand-magic-sparkles"></i></span>
+                <strong>执行活动</strong>
+                <small>{{ toolCallGroups(msg).length }} 次工具调用</small>
+              </div>
+              <div class="tool-call-list">
                 <details v-for="(call, cIdx) in toolCallGroups(msg)" :key="call.callId" class="tool-call-card" :open="call.status === 'running'">
                   <summary>
                     <span :class="['tool-call-status', call.status]"><i :class="call.statusIcon"></i></span>
                     <strong>{{ call.toolName }}</strong>
                     <small>#{{ cIdx + 1 }} · {{ call.statusLabel }}</small>
+                    <i class="fas fa-chevron-down tool-call-chevron" aria-hidden="true"></i>
                   </summary>
                   <div v-if="call.detail" class="tool-call-detail">{{ call.detail }}</div>
                   <pre v-if="call.result" class="step-result">{{ call.result }}</pre>
                 </details>
               </div>
-            </div>
+            </aside>
 
             <div v-if="msg.isUser || msg.text" class="message-bubble" v-html="msg.isUser ? escapeHtml(msg.text) : parseMarkdown(msg.text)"></div>
 
