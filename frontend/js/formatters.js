@@ -38,7 +38,7 @@ Object.assign(window.NebulaNestApp.methods, {
   shouldShowAgentTrace(msg) {
     if (!msg || msg.isUser) return false;
     if (msg.isThinking) return true;
-    return this.sourceChunks(msg).length > 0;
+    return Array.isArray(msg.ragSteps) && msg.ragSteps.length > 0;
   },
 
   toolCallGroups(msg) {
