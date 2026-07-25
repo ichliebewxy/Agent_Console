@@ -25,8 +25,8 @@ services:
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
     ports:
-      - "9001:9001"
-      - "9000:9000"
+      - "9081:9001"
+      - "9008:9000"
     volumes:
       - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/minio:/minio_data
     command: minio server /minio_data --console-address ":9001"
@@ -66,7 +66,7 @@ services:
       - MILVUS_URL=standalone:19530  
       - PORT=3000
     ports:
-      - "8080:3000"
+      - "8083:3000"
     depends_on:
       - standalone
     networks:

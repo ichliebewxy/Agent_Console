@@ -28,9 +28,13 @@ Object.assign(window.NebulaNestApp.methods, {
       text: "",
       isUser: false,
       isThinking: true,
-      thinkingText: "正在调用 Agent、检查工具与知识库...",
+      thinkingText: "主 Agent 正在规划并选择小 Agent...",
       ragTrace: null,
       ragSteps: [],
+      toolSteps: [],
+      flowSteps: [],
+      artifacts: [],
+      streamGroupId: this.createId(),
     });
     const botMsgIdx = this.messages.length - 1;
     this.abortController = new AbortController();
@@ -46,9 +50,10 @@ Object.assign(window.NebulaNestApp.methods, {
       if (!response.body) throw new Error("浏览器不支持流式响应");
       await this.readSseStream(response.body, botMsgIdx);
     } catch (error) {
-      this.messages[botMsgIdx].isThinking = false;
-      this.messages[botMsgIdx].text = error.name === "AbortError"
-        ? (this.messages[botMsgIdx].text || "已终止本次回答。")
+      const botMessage = this.activeAssistantMessage(botMsgIdx);
+      botMessage.isThinking = false;
+      botMessage.text = error.name === "AbortError"
+        ? (botMessage.text || "已终止本次回答。")
         : `请求失败：${error.message}\n\n已保留当前状态，你可以稍后重试。`;
     } finally {
       this.isLoading = false;
@@ -82,23 +87,84 @@ Object.assign(window.NebulaNestApp.methods, {
     if (dataStr === "[DONE]") return;
     try {
       const data = JSON.parse(dataStr);
-      const botMessage = this.messages[botMsgIdx];
-      if (data.type === "content") {
+      if (data.type === "content_boundary") {
+        this.startNextAssistantSegment(botMsgIdx);
+      } else if (data.type === "content") {
+        const botMessage = this.activeAssistantMessage(botMsgIdx);
         botMessage.isThinking = false;
         botMessage.text += data.content;
       } else if (data.type === "trace") {
-        botMessage.ragTrace = data.rag_trace;
+        this.mergeStreamTrace(botMsgIdx, data.rag_trace);
       } else if (data.type === "rag_step") {
+        const botMessage = this.activeAssistantMessage(botMsgIdx);
         botMessage.ragSteps.push(data.step);
+        botMessage.flowSteps = botMessage.flowSteps || [];
+        botMessage.flowSteps.push(data.step);
+      } else if (data.type === "tool_step") {
+        const botMessage = this.activeAssistantMessage(botMsgIdx);
+        botMessage.toolSteps = botMessage.toolSteps || [];
+        botMessage.flowSteps = botMessage.flowSteps || [];
+        botMessage.toolSteps.push(data.step);
+        botMessage.flowSteps.push(data.step);
+      } else if (data.type === "artifacts") {
+        const botMessage = this.activeAssistantMessage(botMsgIdx);
+        botMessage.artifacts = data.artifacts || [];
       } else if (data.type === "error") {
+        const botMessage = this.activeAssistantMessage(botMsgIdx);
         botMessage.isThinking = false;
         botMessage.text += `\n\n工具或模型返回错误：${data.content}`;
-        this.loadFailures();
       }
       this.persistState();
     } catch (error) {
       console.warn("SSE parse error", error);
     }
+  },
+
+  activeAssistantMessage(botMsgIdx) {
+    const root = this.messages[botMsgIdx];
+    if (!root || !root.streamGroupId) return root;
+    for (let index = this.messages.length - 1; index >= botMsgIdx; index -= 1) {
+      if (this.messages[index].streamGroupId === root.streamGroupId) return this.messages[index];
+    }
+    return root;
+  },
+
+  mergeStreamTrace(botMsgIdx, ragTrace) {
+    const root = this.messages[botMsgIdx];
+    const target = this.activeAssistantMessage(botMsgIdx);
+    if (!root || !target || !root.streamGroupId) {
+      if (target) target.ragTrace = ragTrace;
+      return;
+    }
+    for (let index = botMsgIdx; index < this.messages.length; index += 1) {
+      const message = this.messages[index];
+      if (message === target || message.streamGroupId !== root.streamGroupId) continue;
+      target.ragSteps.push(...(message.ragSteps || []));
+      target.toolSteps.push(...(message.toolSteps || []));
+      target.flowSteps.push(...(message.flowSteps || []));
+      message.ragSteps = [];
+      message.toolSteps = [];
+      message.flowSteps = [];
+    }
+    target.ragTrace = ragTrace;
+  },
+
+  startNextAssistantSegment(botMsgIdx) {
+    const current = this.activeAssistantMessage(botMsgIdx);
+    if (!current || !current.text.trim()) return;
+    this.messages.push({
+      id: this.createId(),
+      text: "",
+      isUser: false,
+      isThinking: false,
+      thinkingText: "",
+      ragTrace: null,
+      ragSteps: [],
+      toolSteps: [],
+      flowSteps: [],
+      artifacts: [],
+      streamGroupId: current.streamGroupId,
+    });
   },
 
   async handleHistory() {
@@ -127,6 +193,9 @@ Object.assign(window.NebulaNestApp.methods, {
         isUser: msg.type === "human",
         ragTrace: msg.rag_trace || null,
         ragSteps: [],
+        toolSteps: [],
+        flowSteps: [],
+        artifacts: msg.artifacts || [],
       }));
       this.persistState();
       this.$nextTick(() => this.scrollToBottom());

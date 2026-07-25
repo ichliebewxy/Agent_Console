@@ -1,7 +1,7 @@
 [project]
-name = "nebulanest-agent-console"
+name = "agent-console"
 version = "0.1.0"
-description = "A local Agent and RAG console with hybrid retrieval, tool callbacks, and human review."
+description = "A local LangChain agent console with lazy subagents, hybrid RAG, and startup-discovered MCP tools."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -13,16 +13,24 @@ dependencies = [
     "pymilvus>=2.5.0",
     "python-multipart>=0.0.9",
     "pydantic>=2.8.0",
+    "pyyaml>=6.0.2",
     "langchain>=0.2.14",
     "langchain-core>=0.2.37",
     "langchain-community>=0.2.12",
     "langchain-text-splitters>=0.2.2",
     "langchain-openai>=0.1.22",
+    "langchain-huggingface>=0.1.0",
     "langchain-mcp-adapters>=0.1.0",
     "langgraph>=0.2.31",
     "pypdf>=4.3.1",
     "docx2txt>=0.8",
     "websockets>=16.0",
+    "PyMuPDF",
+    "python-pptx",
+    "python-docx",
+    "pywin32>=306; sys_platform == 'win32'",
+    "langchain_deepseek",
+    "sentence-transformers>=3.0.0",
 ]
 
 [project.optional-dependencies]
