@@ -1,11 +1,22 @@
-from pydantic import BaseModel
-from typing import Optional, List, Any, Dict
+from pydantic import BaseModel, Field, StringConstraints
+from typing import Annotated, Optional, List, Any, Dict
+
+
+RuntimeId = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=1,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+    ),
+]
 
 
 class ChatRequest(BaseModel):
     message: str
-    user_id: Optional[str] = "default_user"
-    session_id: Optional[str] = "default_session"
+    user_id: RuntimeId = "default_user"
+    session_id: RuntimeId = "default_session"
 
 
 class RetrievedChunk(BaseModel):
@@ -30,8 +41,10 @@ class RagTrace(BaseModel):
     expansion_type: Optional[str] = None
     hypothetical_doc: Optional[str] = None
     retrieval_stage: Optional[str] = None
+    grade_model: Optional[str] = None
     grade_score: Optional[str] = None
     grade_route: Optional[str] = None
+    grade_error: Optional[str] = None
     rewrite_needed: Optional[bool] = None
     rewrite_strategy: Optional[str] = None
     rewrite_query: Optional[str] = None
@@ -42,25 +55,35 @@ class RagTrace(BaseModel):
     rerank_error: Optional[str] = None
     retrieval_mode: Optional[str] = None
     candidate_k: Optional[int] = None
+    candidate_count: Optional[int] = None
     leaf_retrieve_level: Optional[int] = None
     auto_merge_enabled: Optional[bool] = None
     auto_merge_applied: Optional[bool] = None
     auto_merge_threshold: Optional[int] = None
     auto_merge_replaced_chunks: Optional[int] = None
     auto_merge_steps: Optional[int] = None
-    ragflow_enabled: Optional[bool] = None
-    ragflow_applied: Optional[bool] = None
-    ragflow_endpoint: Optional[str] = None
-    ragflow_dataset_ids: Optional[List[str]] = None
-    ragflow_error: Optional[str] = None
     retrieved_chunks: Optional[List[RetrievedChunk]] = None
     initial_retrieved_chunks: Optional[List[RetrievedChunk]] = None
     expanded_retrieved_chunks: Optional[List[RetrievedChunk]] = None
 
 
+class ArtifactInfo(BaseModel):
+    path: str
+    name: str
+    size: int
+    updated_at: str
+    mime_type: str
+    download_url: str
+
+
+class ArtifactListResponse(BaseModel):
+    artifacts: List[ArtifactInfo] = Field(default_factory=list)
+
+
 class ChatResponse(BaseModel):
     response: str
     rag_trace: Optional[RagTrace] = None
+    artifacts: List[ArtifactInfo] = Field(default_factory=list)
 
 
 class MessageInfo(BaseModel):
@@ -68,6 +91,7 @@ class MessageInfo(BaseModel):
     content: str
     timestamp: str
     rag_trace: Optional[RagTrace] = None
+    artifacts: List[ArtifactInfo] = Field(default_factory=list)
 
 
 class SessionMessagesResponse(BaseModel):
@@ -112,58 +136,35 @@ class DocumentDeleteResponse(BaseModel):
     message: str
 
 
-class HumanReviewCreateRequest(BaseModel):
-    user_id: Optional[str] = "default_user"
-    session_id: Optional[str] = "default_session"
-    question: Optional[str] = ""
-    answer: str
-    message_index: Optional[int] = None
-    rag_trace: Optional[Dict[str, Any]] = None
-    reviewer_note: Optional[str] = ""
+class MCPServerUpsertRequest(BaseModel):
+    name: RuntimeId
+    transport: str = "streamable_http"
+    url: str = ""
+    command: str = ""
+    args: List[str] = Field(default_factory=list)
+    headers: Dict[str, str] = Field(default_factory=dict)
+    env: Dict[str, str] = Field(default_factory=dict)
+    enabled: bool = True
 
 
-class HumanReviewUpdateRequest(BaseModel):
-    status: str
-    reviewer_note: Optional[str] = ""
-    revised_answer: Optional[str] = None
+class SkillCreateRequest(BaseModel):
+    name: str
+    description: str
+    instructions: str
+    overwrite: bool = False
 
 
-class HumanReviewInfo(BaseModel):
-    id: str
-    status: str
-    user_id: Optional[str] = None
-    session_id: Optional[str] = None
-    question: Optional[str] = None
-    answer: str
-    message_index: Optional[int] = None
-    rag_trace: Optional[Dict[str, Any]] = None
-    reviewer_note: Optional[str] = ""
-    revised_answer: Optional[str] = None
-    created_at: str
-    updated_at: str
+class RuntimeConfigResponse(BaseModel):
+    config: Dict[str, Any]
 
 
-class HumanReviewListResponse(BaseModel):
-    reviews: List[HumanReviewInfo]
+class RuntimeRefreshResponse(BaseModel):
+    skills: List[Dict[str, Any]] = Field(default_factory=list)
+    skill_errors: List[Dict[str, str]] = Field(default_factory=list)
+    mcp_server_count: int = 0
+    mcp_tool_count: int = 0
+    mcp_errors: Dict[str, str] = Field(default_factory=dict)
 
 
-class ToolFailureUpdateRequest(BaseModel):
-    status: str
-    callback_note: Optional[str] = ""
-
-
-class ToolFailureInfo(BaseModel):
-    id: str
-    status: str
-    tool_name: str
-    error: str
-    payload: Dict[str, Any] = {}
-    fallback: Optional[str] = ""
-    callback_note: Optional[str] = ""
-    occurrence_count: Optional[int] = 1
-    created_at: str
-    updated_at: str
-
-
-class ToolFailureListResponse(BaseModel):
-    failures: List[ToolFailureInfo]
+class MutationResponse(BaseModel):
+    message: str

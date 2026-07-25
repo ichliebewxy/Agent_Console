@@ -22,11 +22,6 @@ def _init_meta() -> dict:
         "auto_merge_threshold": None,
         "auto_merge_replaced_chunks": 0,
         "auto_merge_steps": 0,
-        "ragflow_enabled": False,
-        "ragflow_applied": False,
-        "ragflow_endpoint": None,
-        "ragflow_dataset_ids": None,
-        "ragflow_errors": [],
     }
 
 
@@ -46,12 +41,6 @@ def _merge_meta(target: dict, source: dict, prefix: str):
     target["auto_merge_threshold"] = target["auto_merge_threshold"] or source.get("auto_merge_threshold")
     target["auto_merge_replaced_chunks"] += int(source.get("auto_merge_replaced_chunks") or 0)
     target["auto_merge_steps"] += int(source.get("auto_merge_steps") or 0)
-    target["ragflow_enabled"] = target["ragflow_enabled"] or bool(source.get("ragflow_enabled"))
-    target["ragflow_applied"] = target["ragflow_applied"] or bool(source.get("ragflow_applied"))
-    target["ragflow_endpoint"] = target["ragflow_endpoint"] or source.get("ragflow_endpoint")
-    target["ragflow_dataset_ids"] = target["ragflow_dataset_ids"] or source.get("ragflow_dataset_ids")
-    if source.get("ragflow_error"):
-        target["ragflow_errors"].append(f"{prefix}:{source.get('ragflow_error')}")
 
 
 def _dedupe(results: List[dict]) -> List[dict]:
@@ -123,10 +112,5 @@ def retrieve_expanded(state: RAGState) -> RAGState:
         "auto_merge_threshold": meta["auto_merge_threshold"],
         "auto_merge_replaced_chunks": meta["auto_merge_replaced_chunks"],
         "auto_merge_steps": meta["auto_merge_steps"],
-        "ragflow_enabled": meta["ragflow_enabled"],
-        "ragflow_applied": meta["ragflow_applied"],
-        "ragflow_endpoint": meta["ragflow_endpoint"],
-        "ragflow_dataset_ids": meta["ragflow_dataset_ids"],
-        "ragflow_error": "; ".join(meta["ragflow_errors"]) if meta["ragflow_errors"] else None,
     })
     return {"docs": deduped, "context": format_docs(deduped), "rag_trace": rag_trace}

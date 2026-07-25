@@ -28,7 +28,8 @@ def _raise_model_error(error: Exception):
 @router.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest):
     try:
-        return ChatResponse(**chat_with_agent(request.message, request.user_id, request.session_id))
+        result = await chat_with_agent(request.message, request.user_id, request.session_id)
+        return ChatResponse(**result)
     except HTTPException:
         raise
     except Exception as exc:

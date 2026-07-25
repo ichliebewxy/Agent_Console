@@ -1,20 +1,18 @@
-from typing import Optional
 import asyncio
+from contextvars import ContextVar
+from typing import Optional
 
-import requests
-
-try:
-    from langchain_core.tools import tool
-except ImportError:
-    from langchain_core.tools import tool
+from langchain_core.tools import tool
 
 from ops_store import record_tool_failure
-from settings import AMAP_API_KEY, AMAP_WEATHER_API
+from settings import AGENT_TOOL_CALL_LIMIT
 
 _LAST_RAG_CONTEXT = None
-_KNOWLEDGE_TOOL_CALLS_THIS_TURN = 0
+_TOOL_CALL_STATE: ContextVar[dict | None] = ContextVar("agent_tool_call_state", default=None)
 _RAG_STEP_QUEUE = None
 _RAG_STEP_LOOP = None
+_TOOL_STEP_QUEUE = None
+_TOOL_STEP_LOOP = None
 
 
 def _set_last_rag_context(context: dict):
@@ -31,8 +29,26 @@ def get_last_rag_context(clear: bool = True) -> Optional[dict]:
 
 
 def reset_tool_call_guards():
-    global _KNOWLEDGE_TOOL_CALLS_THIS_TURN
-    _KNOWLEDGE_TOOL_CALLS_THIS_TURN = 0
+    _TOOL_CALL_STATE.set({"count": 0, "knowledge_count": 0})
+
+
+def _current_tool_call_state() -> dict:
+    state = _TOOL_CALL_STATE.get()
+    if state is None:
+        state = {"count": 0, "knowledge_count": 0}
+        _TOOL_CALL_STATE.set(state)
+    return state
+
+
+def consume_tool_call_budget() -> tuple[bool, int]:
+    """Reserve one tool call for the current user turn."""
+    state = _current_tool_call_state()
+    count = int(state.get("count", 0))
+    if count >= AGENT_TOOL_CALL_LIMIT:
+        return False, count
+    count += 1
+    state["count"] = count
+    return True, count
 
 
 def set_rag_step_queue(queue):
@@ -54,93 +70,95 @@ def emit_rag_step(icon: str, label: str, detail: str = ""):
     step = {"icon": icon, "label": label, "detail": detail}
     try:
         if not _RAG_STEP_LOOP.is_closed():
-            _RAG_STEP_LOOP.call_soon_threadsafe(_RAG_STEP_QUEUE.put_nowait, step)
+            try:
+                current_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                current_loop = None
+            if current_loop is _RAG_STEP_LOOP:
+                _RAG_STEP_QUEUE.put_nowait(step)
+            else:
+                _RAG_STEP_LOOP.call_soon_threadsafe(_RAG_STEP_QUEUE.put_nowait, step)
     except Exception:
         pass
 
 
-@tool
-def get_current_weather(city: str) -> str:
-    """Get current weather for a city by calling the configured AMap weather API."""
-    city = (city or "").strip()
-    if not city:
-        return "city 参数不能为空"
-    if not AMAP_API_KEY:
-        fallback = "天气工具未配置 AMAP_API_KEY，无法查询实时天气。"
-        record_tool_failure("get_current_weather", "missing AMAP_API_KEY", {"city": city}, fallback)
-        return fallback
+def set_tool_step_queue(queue):
+    global _TOOL_STEP_QUEUE, _TOOL_STEP_LOOP
+    _TOOL_STEP_QUEUE = queue
+    if queue:
+        try:
+            _TOOL_STEP_LOOP = asyncio.get_running_loop()
+        except RuntimeError:
+            _TOOL_STEP_LOOP = asyncio.get_event_loop()
+    else:
+        _TOOL_STEP_LOOP = None
 
-    payload = {
-        "key": AMAP_API_KEY,
-        "city": city,
-        "extensions": "base",
-        "output": "JSON",
-    }
 
+def emit_tool_step(step: dict):
+    global _TOOL_STEP_QUEUE, _TOOL_STEP_LOOP
+    if _TOOL_STEP_QUEUE is None or _TOOL_STEP_LOOP is None:
+        return
     try:
-        resp = requests.get(AMAP_WEATHER_API, params=payload, timeout=10)
-        resp.raise_for_status()
-        data = resp.json()
-        if data.get("status") != "1":
-            error = data.get("info") or data.get("infocode") or "AMap weather API returned non-success status"
-            record_tool_failure("get_current_weather", str(error), payload, "Returned weather API error to the model.")
-            return f"天气查询失败：{error}"
+        if not _TOOL_STEP_LOOP.is_closed():
+            try:
+                current_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                current_loop = None
+            if current_loop is _TOOL_STEP_LOOP:
+                _TOOL_STEP_QUEUE.put_nowait(step)
+            else:
+                _TOOL_STEP_LOOP.call_soon_threadsafe(_TOOL_STEP_QUEUE.put_nowait, step)
+    except Exception:
+        pass
 
-        lives = data.get("lives") or []
-        if not lives:
-            return f"未查询到 {city} 的实时天气数据"
 
-        live = lives[0]
-        province = live.get("province") or ""
-        actual_city = live.get("city") or city
-        weather_text = live.get("weather") or "未知"
-        temperature = live.get("temperature") or "未知"
-        wind_direction = live.get("winddirection") or "未知"
-        wind_power = live.get("windpower") or "未知"
-        humidity = live.get("humidity") or "未知"
-        report_time = live.get("reporttime") or "未知"
-
-        location = f"{province}{actual_city}" if province and province != actual_city else actual_city
-        return (
-            f"【{location} 实时天气】\n"
-            f"天气状况：{weather_text}\n"
-            f"温度：{temperature}℃\n"
-            f"湿度：{humidity}%\n"
-            f"风向：{wind_direction}\n"
-            f"风力：{wind_power}\n"
-            f"更新时间：{report_time}"
-        )
-    except requests.exceptions.Timeout:
-        fallback = "天气服务超时，已记录失败回调，请稍后重试。"
-        record_tool_failure("get_current_weather", "timeout", payload, fallback)
-        return fallback
-    except requests.exceptions.RequestException as e:
-        fallback = "天气服务网络请求失败，已记录失败回调。"
-        record_tool_failure("get_current_weather", str(e), payload, fallback)
-        return f"{fallback} 原因：{e}"
-    except Exception as e:
-        fallback = "天气数据解析失败，已记录失败回调。"
-        record_tool_failure("get_current_weather", str(e), payload, fallback)
-        return f"{fallback} 原因：{e}"
+def _format_search_status(rag_trace: dict, docs_count: int) -> str:
+    status = {
+        "tool": rag_trace.get("tool_name", "search_knowledge_base"),
+        "query": rag_trace.get("query"),
+        "retrieval_stage": rag_trace.get("retrieval_stage"),
+        "retrieval_mode": rag_trace.get("retrieval_mode"),
+        "retrieved_chunks": docs_count,
+        "candidate_k": rag_trace.get("candidate_k"),
+        "candidate_count": rag_trace.get("candidate_count"),
+        "leaf_retrieve_level": rag_trace.get("leaf_retrieve_level"),
+        "auto_merge_enabled": rag_trace.get("auto_merge_enabled"),
+        "auto_merge_applied": rag_trace.get("auto_merge_applied"),
+        "auto_merge_replaced_chunks": rag_trace.get("auto_merge_replaced_chunks"),
+        "rerank_enabled": rag_trace.get("rerank_enabled"),
+        "rerank_applied": rag_trace.get("rerank_applied"),
+        "rerank_model": rag_trace.get("rerank_model"),
+        "rerank_endpoint": rag_trace.get("rerank_endpoint"),
+        "rerank_error": rag_trace.get("rerank_error"),
+        "grade_model": rag_trace.get("grade_model"),
+        "grade_score": rag_trace.get("grade_score"),
+        "grade_route": rag_trace.get("grade_route"),
+        "grade_error": rag_trace.get("grade_error"),
+    }
+    lines = ["Search Status:"]
+    for key, value in status.items():
+        if value is not None and value != "":
+            lines.append(f"- {key}: {value}")
+    return "\n".join(lines)
 
 
 @tool("search_knowledge_base")
 def search_knowledge_base(query: str) -> str:
     """Search for information in the knowledge base using hybrid retrieval."""
-    global _KNOWLEDGE_TOOL_CALLS_THIS_TURN
-    if _KNOWLEDGE_TOOL_CALLS_THIS_TURN >= 1:
+    state = _current_tool_call_state()
+    if int(state.get("knowledge_count", 0)) >= 1:
         return (
             "TOOL_CALL_LIMIT_REACHED: search_knowledge_base has already been called once in this turn. "
             "Use the existing retrieval result and provide the final answer directly."
         )
-    _KNOWLEDGE_TOOL_CALLS_THIS_TURN += 1
+    state["knowledge_count"] = 1
 
     from rag_pipeline import run_rag_graph
 
     try:
         rag_result = run_rag_graph(query)
     except Exception as e:
-        fallback = "知识库检索失败，已记录失败回调；请根据已有上下文谨慎回答，并说明检索不可用。"
+        fallback = "知识库检索失败，已写入服务端日志；请根据已有上下文谨慎回答，并说明检索不可用。"
         record_tool_failure("search_knowledge_base", str(e), {"query": query}, fallback)
         return fallback
 
@@ -149,8 +167,9 @@ def search_knowledge_base(query: str) -> str:
     if rag_trace:
         _set_last_rag_context({"rag_trace": rag_trace})
 
+    status_text = _format_search_status(rag_trace, len(docs))
     if not docs:
-        return "No relevant documents found in the knowledge base."
+        return f"{status_text}\n\nNo relevant documents found in the knowledge base."
 
     formatted = []
     for i, result in enumerate(docs, 1):
@@ -160,4 +179,9 @@ def search_knowledge_base(query: str) -> str:
         retrieval_source = result.get("retrieval_source", "local")
         formatted.append(f"[{i}] {source} (Page {page}, Source {retrieval_source}):\n{text}")
 
-    return "Retrieved Chunks:\n" + "\n\n---\n\n".join(formatted)
+    return f"{status_text}\n\nRetrieved Chunks:\n" + "\n\n---\n\n".join(formatted)
+
+
+# s02-compatible export: the fixed local tool dispatch table is maintained in
+# core_tools.py and deliberately excludes knowledge-base/MCP dynamic tools.
+from core_tools import TOOLS  # noqa: E402  (late import avoids tool-module cycles)
