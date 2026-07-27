@@ -1,7 +1,10 @@
 Object.assign(window.NebulaNestApp.methods, {
   sourceChunks(msg) {
     const trace = msg.ragTrace || {};
-    return trace.expanded_retrieved_chunks || trace.initial_retrieved_chunks || trace.retrieved_chunks || [];
+    for (const key of ["expanded_retrieved_chunks", "initial_retrieved_chunks", "retrieved_chunks"]) {
+      if (Array.isArray(trace[key]) && trace[key].length) return trace[key];
+    }
+    return [];
   },
 
   formatSourceMeta(source) {
@@ -25,21 +28,51 @@ Object.assign(window.NebulaNestApp.methods, {
     return "fas fa-file file-default";
   },
 
-  reviewStatusLabel(status) {
-    return {
-      pending: "待审核",
-      approved: "已批准",
-      rejected: "已驳回",
-      needs_revision: "需修订",
-    }[status] || status;
+  formatFileSize(bytes) {
+    const value = Number(bytes || 0);
+    if (value < 1024) return `${value} B`;
+    if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+    return `${(value / (1024 * 1024)).toFixed(1)} MB`;
   },
 
-  failureStatusLabel(status) {
-    return {
-      open: "待回调",
-      retry_requested: "请求重试",
-      resolved: "已处理",
-      ignored: "已忽略",
-    }[status] || status;
+  shouldShowAgentTrace(msg) {
+    if (!msg || msg.isUser) return false;
+    if (msg.isThinking) return true;
+    return Array.isArray(msg.ragSteps) && msg.ragSteps.length > 0;
+  },
+
+  toolCallGroups(msg) {
+    const groups = new Map();
+    for (const [index, step] of (msg && Array.isArray(msg.toolSteps) ? msg.toolSteps : []).entries()) {
+      const callId = step.call_id || `${step.tool_name || "tool"}-${index}`;
+      if (!groups.has(callId)) {
+        groups.set(callId, {
+          callId,
+          toolName: step.tool_name || "未知工具",
+          detail: "",
+          result: "",
+          status: "running",
+          statusLabel: "执行中",
+          statusIcon: "fas fa-spinner fa-spin",
+        });
+      }
+      const group = groups.get(callId);
+      if (step.detail) group.detail = step.detail;
+      if (step.result) group.result = step.result;
+      if (step.phase === "result") {
+        group.status = "success";
+        group.statusLabel = "已完成";
+        group.statusIcon = "fas fa-check";
+      } else if (step.phase === "error") {
+        group.status = "error";
+        group.statusLabel = "失败";
+        group.statusIcon = "fas fa-xmark";
+      } else if (step.phase === "limit") {
+        group.status = "limit";
+        group.statusLabel = "达到上限";
+        group.statusIcon = "fas fa-ban";
+      }
+    }
+    return Array.from(groups.values());
   },
 });

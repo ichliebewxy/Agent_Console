@@ -19,17 +19,32 @@ class ConversationStorage:
     def save(self, user_id: str, session_id: str, messages: list, metadata: dict | None = None, extra_message_data: list | None = None):
         data = self._load()
         data.setdefault(user_id, {})
+        previous_messages = data.get(user_id, {}).get(session_id, {}).get("messages", [])
         serialized = []
         for idx, msg in enumerate(messages):
+            previous = previous_messages[idx] if idx < len(previous_messages) else {}
+            same_message = (
+                previous.get("type") == msg.type
+                and previous.get("content") == msg.content
+            )
             record = {
                 "type": msg.type,
                 "content": msg.content,
-                "timestamp": datetime.now().isoformat(),
+                "timestamp": (
+                    previous.get("timestamp")
+                    if same_message and previous.get("timestamp")
+                    else datetime.now().isoformat()
+                ),
             }
+            if same_message:
+                for key in ("rag_trace", "artifacts"):
+                    if key in previous:
+                        record[key] = previous[key]
             if extra_message_data and idx < len(extra_message_data):
                 extra = extra_message_data[idx] or {}
-                if "rag_trace" in extra:
-                    record["rag_trace"] = extra["rag_trace"]
+                for key in ("rag_trace", "artifacts"):
+                    if key in extra:
+                        record[key] = extra[key]
             serialized.append(record)
 
         data[user_id][session_id] = {

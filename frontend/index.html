@@ -29,13 +29,8 @@
         <button :class="{active: activeView === 'knowledge'}" @click="switchView('knowledge')" title="知识库" aria-label="打开知识库">
           <i class="fas fa-folder-tree"></i><span>知识库</span>
         </button>
-        <button :class="{active: activeView === 'reviews'}" @click="switchView('reviews')" title="人工审核" aria-label="打开人工审核">
-          <i class="fas fa-user-check"></i><span>人工审核</span>
-          <strong v-if="pendingReviewCount">{{ pendingReviewCount }}</strong>
-        </button>
-        <button :class="{active: activeView === 'ops'}" @click="switchView('ops')" title="运行回调" aria-label="打开运行回调">
-          <i class="fas fa-triangle-exclamation"></i><span>运行回调</span>
-          <strong v-if="openFailureCount">{{ openFailureCount }}</strong>
+        <button :class="{active: activeView === 'config'}" @click="switchView('config')" title="运行配置" aria-label="打开运行配置">
+          <i class="fas fa-sliders"></i><span>配置中心</span>
         </button>
         <button :class="{active: showHistorySidebar}" @click="handleHistory" title="历史" aria-label="打开历史会话">
           <i class="fas fa-clock-rotate-left"></i><span>历史</span>
@@ -60,8 +55,6 @@
         </div>
         <div class="topbar-status">
           <span class="status-pill"><i class="fas fa-circle"></i> SSE 在线</span>
-          <span class="status-pill review-indicator"><i class="fas fa-user-check"></i>{{ pendingReviewCount }} 待审</span>
-          <span class="status-pill failure-indicator"><i class="fas fa-triangle-exclamation"></i>{{ openFailureCount }} 回调</span>
           <span class="session-pill" :title="sessionId">{{ sessionId }}</span>
         </div>
       </header>
@@ -71,45 +64,98 @@
           <div v-if="messages.length === 0" class="empty-state">
             <i class="fas fa-compass"></i>
             <h3>从一个问题开始</h3>
-            <p>支持流式回答、RAG 过程追踪、人工审核提交和会话状态恢复。</p>
+            <p>支持主 Agent 委派、小 Agent 按需调用、RAG 过程追踪和会话状态恢复。</p>
             <div class="empty-actions">
               <button @click="switchView('knowledge')" type="button">检查知识库</button>
-              <button @click="switchView('reviews')" type="button">查看审核队列</button>
+              <button @click="switchView('config')" type="button">配置工具</button>
             </div>
           </div>
 
           <article v-for="(msg, index) in messages" :key="msg.id || index" :class="['message', msg.isUser ? 'from-user' : 'from-agent']">
             <div class="message-role">
               <span>{{ msg.isUser ? 'User' : 'Agent' }}</span>
-              <button v-if="!msg.isUser && msg.text" @click="submitForReview(msg, index)" title="提交人工审核" aria-label="提交人工审核">
-                <i class="fas fa-user-check"></i>
-              </button>
             </div>
 
-            <div v-if="!msg.isUser && msg.isThinking && !msg.text" class="message-bubble thinking">
-              <div class="thinking-line">
+            <div v-if="!msg.isUser && shouldShowAgentTrace(msg)" class="message-bubble thinking">
+              <div v-if="msg.isThinking && !msg.text" class="thinking-line">
                 <span class="loader"></span>
                 <strong>{{ activeThinkingLabel(msg) }}</strong>
               </div>
-              <div v-if="msg.ragSteps && msg.ragSteps.length" class="trace-steps">
-                <div v-for="(step, sIdx) in msg.ragSteps" :key="sIdx">
-                  <span>{{ step.icon || '•' }}</span>
-                  <b>{{ step.label }}</b>
-                  <small v-if="step.detail">{{ step.detail }}</small>
+              <div v-if="msg.ragSteps && msg.ragSteps.length" class="trace-steps rag-steps">
+                <div v-for="(step, sIdx) in msg.ragSteps" :key="`rag-${sIdx}`">
+                  <span class="step-index">{{ sIdx + 1 }}</span>
+                  <span class="step-icon">{{ step.icon || '•' }}</span>
+                  <div class="step-copy">
+                    <b>{{ step.label }}</b>
+                    <small v-if="step.detail">{{ step.detail }}</small>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <div v-else class="message-bubble" v-html="msg.isUser ? escapeHtml(msg.text) : parseMarkdown(msg.text)"></div>
+            <aside
+              v-if="!msg.isUser && toolCallGroups(msg).length"
+              class="tool-activity-bubble"
+              aria-label="工具调用"
+              aria-live="polite"
+            >
+              <div class="tool-call-heading">
+                <span class="tool-activity-icon"><i class="fas fa-wand-magic-sparkles"></i></span>
+                <strong>执行活动</strong>
+                <small>{{ toolCallGroups(msg).length }} 次工具调用</small>
+              </div>
+              <div class="tool-call-list">
+                <details v-for="(call, cIdx) in toolCallGroups(msg)" :key="call.callId" class="tool-call-card" :open="call.status === 'running'">
+                  <summary>
+                    <span :class="['tool-call-status', call.status]"><i :class="call.statusIcon"></i></span>
+                    <strong>{{ call.toolName }}</strong>
+                    <small>#{{ cIdx + 1 }} · {{ call.statusLabel }}</small>
+                    <i class="fas fa-chevron-down tool-call-chevron" aria-hidden="true"></i>
+                  </summary>
+                  <div v-if="call.detail" class="tool-call-detail">{{ call.detail }}</div>
+                  <pre v-if="call.result" class="step-result">{{ call.result }}</pre>
+                </details>
+              </div>
+            </aside>
 
-            <details v-if="!msg.isUser && msg.ragTrace" class="trace-panel">
+            <div v-if="msg.isUser || msg.text" class="message-bubble" v-html="msg.isUser ? escapeHtml(msg.text) : parseMarkdown(msg.text)"></div>
+
+            <div v-if="!msg.isUser && msg.artifacts && msg.artifacts.length" class="artifact-panel">
+              <div class="artifact-title">
+                <i class="fas fa-box-archive"></i>
+                <strong>本次会话生成的文件</strong>
+              </div>
+              <div class="artifact-list">
+                <a
+                  v-for="artifact in msg.artifacts"
+                  :key="artifact.path"
+                  :href="artifact.download_url"
+                  :download="artifact.name"
+                  class="artifact-link"
+                  :title="`下载 ${artifact.path}`"
+                >
+                  <i :class="getFileIcon(artifact.name)"></i>
+                  <span>
+                    <b>{{ artifact.name }}</b>
+                    <small>{{ artifact.path }} · {{ formatFileSize(artifact.size) }}</small>
+                  </span>
+                  <i class="fas fa-download"></i>
+                </a>
+              </div>
+            </div>
+
+            <details v-if="!msg.isUser && sourceChunks(msg).length" class="trace-panel">
               <summary>检索与调用轨迹</summary>
               <div class="trace-grid">
                 <span>工具</span><b>{{ msg.ragTrace.tool_name || '未使用' }}</b>
                 <span>召回模式</span><b>{{ msg.ragTrace.retrieval_mode || '未知' }}</b>
+                <span>评分模型</span><b>{{ msg.ragTrace.grade_model || '-' }}</b>
                 <span>评分路由</span><b>{{ msg.ragTrace.grade_score || '-' }} / {{ msg.ragTrace.grade_route || '-' }}</b>
-                <span>RAGFlow</span><b>{{ msg.ragTrace.ragflow_applied ? '已参与召回' : (msg.ragTrace.ragflow_enabled ? '已启用未命中' : '未启用') }}</b>
-                <span v-if="msg.ragTrace.ragflow_error">RAGFlow 错误</span><b v-if="msg.ragTrace.ragflow_error">{{ msg.ragTrace.ragflow_error }}</b>
+                <span>重排模型</span><b>{{ msg.ragTrace.rerank_model || (msg.ragTrace.rerank_enabled ? '已配置' : '未启用') }}</b>
+                <span>重排状态</span><b>{{ msg.ragTrace.rerank_applied ? '已应用' : '未应用' }}{{ msg.ragTrace.rerank_error ? ` / ${msg.ragTrace.rerank_error}` : '' }}</b>
+                <span>候选数</span><b>{{ msg.ragTrace.candidate_count || '-' }} / {{ msg.ragTrace.candidate_k || '-' }}</b>
+                <span>叶子层级</span><b>{{ msg.ragTrace.leaf_retrieve_level || '-' }}</b>
+                <span>Auto-merge</span><b>{{ msg.ragTrace.auto_merge_applied ? '已应用' : '未应用' }}{{ msg.ragTrace.auto_merge_replaced_chunks ? ` / ${msg.ragTrace.auto_merge_replaced_chunks}` : '' }}</b>
               </div>
               <div v-if="sourceChunks(msg).length" class="sources">
                 <h4>引用片段</h4>
@@ -147,7 +193,7 @@
         <div class="section-head">
           <div>
             <h3>文档管理</h3>
-            <p>本地 Milvus 仍是默认知识库；配置 RAGFLOW_* 后会额外接入 RAGFlow 召回。</p>
+            <p>本地 Milvus 使用 BGE 稠密向量和 BM25 稀疏向量做混合召回。</p>
           </div>
           <button class="secondary-action inline" @click="loadDocuments"><i class="fas fa-rotate"></i>刷新</button>
         </div>
@@ -179,65 +225,79 @@
         </div>
       </section>
 
-      <section v-show="activeView === 'reviews'" class="panel-view">
+      <section v-show="activeView === 'config'" class="panel-view config-view">
         <div class="section-head">
           <div>
-            <h3>Human-in-the-loop 审核</h3>
-            <p>将回答提交到审核队列后，可批准、驳回或给出修订稿。</p>
+            <h3>MCP、Skills 与权限配置</h3>
+            <p>内容持久化到 backend/config.json；保存后会重新发现工具并热加载主 Agent。</p>
           </div>
-          <button class="secondary-action inline" @click="loadReviews"><i class="fas fa-rotate"></i>刷新</button>
+          <button class="secondary-action inline" :disabled="configLoading" @click="refreshRuntimeCatalog">
+            <i class="fas fa-arrows-rotate"></i>{{ configLoading ? '刷新中' : '重新解析' }}
+          </button>
         </div>
 
-        <div class="review-list">
-          <article v-if="reviews.length === 0" class="muted-row">暂无审核项</article>
-          <article v-for="review in reviews" :key="review.id" class="review-item">
-            <header>
-              <span :class="['badge', review.status]">{{ reviewStatusLabel(review.status) }}</span>
-              <small>{{ new Date(review.updated_at).toLocaleString() }}</small>
-            </header>
-            <h4>{{ review.question || '未记录问题' }}</h4>
-            <p>{{ review.answer }}</p>
-            <textarea v-model="review.revised_answer" placeholder="可选：填写人工修订稿"></textarea>
-            <div class="item-actions">
-              <button @click="updateReview(review, 'approved')"><i class="fas fa-check"></i>批准</button>
-              <button @click="updateReview(review, 'needs_revision')"><i class="fas fa-pen"></i>需修订</button>
-              <button class="danger-lite" @click="updateReview(review, 'rejected')"><i class="fas fa-xmark"></i>驳回</button>
+        <div v-if="runtimeConfig" class="config-stats">
+          <article><small>MCP Servers</small><strong>{{ Object.keys(runtimeConfig.mcpServers || {}).length }}</strong></article>
+          <article><small>MCP Tools</small><strong>{{ Object.values(runtimeConfig.mcpServers || {}).reduce((sum, item) => sum + ((item.tools || []).length), 0) }}</strong></article>
+          <article><small>Skills</small><strong>{{ (runtimeConfig.skills || []).length }}</strong></article>
+          <article><small>最近解析</small><strong class="config-time">{{ runtimeConfig.discovery && runtimeConfig.discovery.updated_at ? new Date(runtimeConfig.discovery.updated_at).toLocaleString() : '尚未解析' }}</strong></article>
+        </div>
+
+        <div class="config-grid">
+          <section class="config-card">
+            <header><div><h4>MCP Servers</h4><p>启动时解析工具 schema，主 Agent 直接获得已发现工具。</p></div></header>
+            <form class="config-form" @submit.prevent="addMcpServer">
+              <label>名称<input v-model="mcpForm.name" required pattern="[A-Za-z0-9_.-]+" placeholder="github"></label>
+              <label>Transport
+                <select v-model="mcpForm.transport"><option value="streamable_http">streamable_http</option><option value="sse">sse</option><option value="stdio">stdio</option></select>
+              </label>
+              <label v-if="mcpForm.transport !== 'stdio'" class="wide">URL<input v-model="mcpForm.url" required placeholder="https://example.com/mcp"></label>
+              <label v-else>Command<input v-model="mcpForm.command" required placeholder="npx"></label>
+              <label v-if="mcpForm.transport === 'stdio'">Args<input v-model="mcpForm.args" placeholder="-y package-name"></label>
+              <label class="wide">Headers JSON<textarea v-model="mcpForm.headers" rows="3" spellcheck="false"></textarea></label>
+              <label v-if="mcpForm.transport === 'stdio'" class="wide">Env JSON<textarea v-model="mcpForm.env" rows="3" spellcheck="false"></textarea></label>
+              <label class="check-line"><input v-model="mcpForm.enabled" type="checkbox"> 启用并参与发现</label>
+              <button class="primary-action" type="submit">保存并解析</button>
+            </form>
+            <div class="config-items">
+              <article v-for="(server, name) in (runtimeConfig && runtimeConfig.mcpServers || {})" :key="name" class="config-item">
+                <header><div><strong>{{ name }}</strong><small>{{ server.transport }} · {{ server.enabled ? 'enabled' : 'disabled' }}</small></div><button class="icon-danger" @click="deleteMcpServer(name)" title="删除"><i class="fas fa-trash"></i></button></header>
+                <p>{{ formatMcpEndpoint(server) }}</p>
+                <p v-if="server.error" class="config-error">发现失败：{{ server.error }}</p>
+                <div v-else class="tool-chips"><span v-for="tool in (server.tools || [])" :key="tool.runtime_name" :title="tool.description">{{ tool.runtime_name }}</span><em v-if="!(server.tools || []).length">暂无工具</em></div>
+              </article>
             </div>
-          </article>
-        </div>
-      </section>
+          </section>
 
-      <section v-show="activeView === 'ops'" class="panel-view">
-        <div class="section-head">
-          <div>
-            <h3>工具失败回调</h3>
-            <p>工具、RAGFlow 或本地检索失败会落盘，方便人工补偿、重试或关闭。</p>
+          <section class="config-card">
+            <header><div><h4>Skills Catalog</h4><p>Skills 小 Agent 读取 catalog 后自行选择并按需加载正文。</p></div></header>
+            <form class="config-form" @submit.prevent="addSkill">
+              <label>名称<input v-model="skillForm.name" required pattern="[a-z0-9-]+" placeholder="my-skill"></label>
+              <label class="wide">描述<input v-model="skillForm.description" required placeholder="说明功能以及何时使用"></label>
+              <label class="wide">SKILL.md 指令<textarea v-model="skillForm.instructions" required rows="8" placeholder="# Workflow&#10;&#10;Use imperative instructions..."></textarea></label>
+              <label class="check-line"><input v-model="skillForm.overwrite" type="checkbox"> 覆盖同名 Skill</label>
+              <button class="primary-action" type="submit">添加 Skill</button>
+            </form>
+            <div class="config-items">
+              <article v-for="skill in (runtimeConfig && runtimeConfig.skills || [])" :key="skill.name" class="config-item">
+                <header><div><strong>{{ skill.name }}</strong><small>{{ skill.path }} · {{ skill.resources }} resources</small></div><button class="icon-danger" @click="deleteSkill(skill.name)" title="删除"><i class="fas fa-trash"></i></button></header>
+                <p>{{ skill.description }}</p>
+              </article>
+            </div>
+            <div v-if="runtimeConfig && runtimeConfig.discovery && runtimeConfig.discovery.skill_errors && runtimeConfig.discovery.skill_errors.length" class="config-items">
+              <article v-for="item in runtimeConfig.discovery.skill_errors" :key="item.path" class="config-item config-error"><strong>Skill 解析失败</strong><p>{{ item.path }}：{{ item.error }}</p></article>
+            </div>
+          </section>
+        </div>
+
+        <section v-if="runtimeConfig && runtimeConfig.permissions" class="config-card permission-card">
+          <header><div><h4>Bash 自动审查</h4><p>优先级固定为 deny → allow → default deny；所有决策写入 Bash audit。</p></div></header>
+          <div class="permission-columns">
+            <div><strong>拒绝规则</strong><span v-for="rule in runtimeConfig.permissions.bash.deny" :key="rule.id"><b>{{ rule.id }}</b>{{ rule.description }}</span></div>
+            <div><strong>需明确授权</strong><span v-for="rule in (runtimeConfig.permissions.bash.authorize || [])" :key="rule.id"><b>{{ rule.id }}</b>{{ rule.description }}</span></div>
+            <div><strong>允许规则</strong><span v-for="rule in runtimeConfig.permissions.bash.allow" :key="rule.id"><b>{{ rule.id }}</b>{{ rule.description }}</span></div>
           </div>
-          <button class="secondary-action inline" @click="loadFailures"><i class="fas fa-rotate"></i>刷新</button>
-        </div>
-
-        <div class="review-list">
-          <article v-if="activeFailures.length === 0" class="muted-row">暂无待处理失败记录</article>
-          <article v-for="failure in activeFailures" :key="failure.id" class="review-item">
-            <header>
-              <span :class="['badge', failure.status]">{{ failureStatusLabel(failure.status) }}</span>
-              <small>
-                <span v-if="failure.occurrence_count && failure.occurrence_count > 1">重复 {{ failure.occurrence_count }} 次 · </span>
-                {{ new Date(failure.updated_at).toLocaleString() }}
-              </small>
-            </header>
-            <h4>{{ failure.tool_name }}</h4>
-            <p>{{ failure.error }}</p>
-            <p v-if="failure.fallback" class="muted-text">降级策略：{{ failure.fallback }}</p>
-            <p v-if="failure.callback_note" class="muted-text">回调备注：{{ failure.callback_note }}</p>
-            <textarea v-model="failure.callback_note" placeholder="记录回调结果或补偿动作"></textarea>
-            <div class="item-actions">
-              <button @click="updateFailure(failure, 'retry_requested')"><i class="fas fa-rotate-right"></i>请求重试</button>
-              <button @click="updateFailure(failure, 'resolved')"><i class="fas fa-check"></i>已处理</button>
-              <button class="danger-lite" @click="updateFailure(failure, 'ignored')"><i class="fas fa-ban"></i>忽略</button>
-            </div>
-          </article>
-        </div>
+        </section>
       </section>
 
       <aside v-if="showHistorySidebar" class="history-drawer">
@@ -261,7 +321,7 @@
   <script src="js/app-core.js"></script>
   <script src="js/chat.js"></script>
   <script src="js/knowledge.js"></script>
-  <script src="js/reviews-ops.js"></script>
+  <script src="js/config.js"></script>
   <script src="js/formatters.js"></script>
   <script src="script.js"></script>
 </body>
