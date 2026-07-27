@@ -15,6 +15,7 @@ volumes/
 
 # Runtime outputs
 backend/*.log
+backend/tmp/
 extracted_images/
 
 # OS files
