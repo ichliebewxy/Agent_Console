@@ -106,6 +106,7 @@ Object.assign(window.NebulaNestApp.methods, {
         botMessage.flowSteps = botMessage.flowSteps || [];
         botMessage.toolSteps.push(data.step);
         botMessage.flowSteps.push(data.step);
+        this.scrollToolActivityToEnd(botMessage.id);
       } else if (data.type === "artifacts") {
         const botMessage = this.activeAssistantMessage(botMsgIdx);
         botMessage.artifacts = data.artifacts || [];
@@ -127,6 +128,21 @@ Object.assign(window.NebulaNestApp.methods, {
       if (this.messages[index].streamGroupId === root.streamGroupId) return this.messages[index];
     }
     return root;
+  },
+
+  scrollToolActivityToEnd(messageId) {
+    this.$nextTick(() => {
+      if (!this.$refs.chatContainer) return;
+      const scroller = Array.from(
+        this.$refs.chatContainer.querySelectorAll("[data-tool-message-id]")
+      ).find((element) => element.dataset.toolMessageId === String(messageId));
+      if (!scroller) return;
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      scroller.scrollTo({
+        top: scroller.scrollHeight,
+        behavior: reduceMotion ? "auto" : "smooth",
+      });
+    });
   },
 
   mergeStreamTrace(botMsgIdx, ragTrace) {
