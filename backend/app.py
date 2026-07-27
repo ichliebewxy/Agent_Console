@@ -2,22 +2,54 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
+import asyncio
 import os
+import sys
 from contextlib import asynccontextmanager
+
+BACKEND_DIR = Path(__file__).resolve().parent
+BASE_DIR = BACKEND_DIR.parent
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
+from encoding_utils import configure_stdio_encoding
+
+configure_stdio_encoding()
 
 import api as api_module
 from agent import init_agent_async
+from embedding import embedding_service
+from runtime_catalog_service import refresh_runtime_catalogs
+from settings import MILVUS_DENSE_DIM
 
-BASE_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = BASE_DIR / "frontend"
 
 # 1. 在这里定义 lifespan 上下文管理器
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 启动时执行：初始化全局 Agent 和 MCP 工具
-    print("正在初始化 Agent 和 MCP 工具...")
+    print("Warming up embedding model...")
+    embedding_info = await asyncio.to_thread(embedding_service.warm_up)
+    if embedding_info["dim"] != MILVUS_DENSE_DIM:
+        raise RuntimeError(
+            "Embedding dimension mismatch: "
+            f"{embedding_info['model']} produced {embedding_info['dim']} dims, "
+            f"but MILVUS_DENSE_DIM is {MILVUS_DENSE_DIM}."
+        )
+    print(
+        "Embedding model ready: "
+        f"{embedding_info['model']} on {embedding_info['device']} "
+        f"({embedding_info['dim']} dims)."
+    )
+    print("正在解析 MCP 工具和 Skills catalog...")
+    catalog = await refresh_runtime_catalogs()
+    print(
+        "Runtime catalog ready: "
+        f"{len(catalog['skills'])} skills, "
+        f"{catalog['mcp_tool_count']} MCP tools."
+    )
+    print("正在初始化主 Agent...")
     await init_agent_async()
-    print("Agent 初始化完成，应用启动！")
+    print("主 Agent 初始化完成，应用启动！")
     
     yield
     
@@ -31,7 +63,8 @@ def create_app() -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
+        allow_origins=[],
+        allow_origin_regex=r"^https?://(?:localhost|127\.0\.0\.1)(?::\d+)?$",
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -63,5 +96,5 @@ app = create_app()
 if __name__ == "__main__":
     import uvicorn
     # 4. 直接运行这个 app 即可，不要再重新实例化 FastAPI
-    uvicorn.run("app:app", host=os.getenv("HOST", "0.0.0.0"), port=int(os.getenv("PORT", 8080)), reload=False) 
+    uvicorn.run("app:app", host=os.getenv("HOST", "127.0.0.1"), port=int(os.getenv("PORT", 8080)), reload=False)
     # 注意：建议使用字符串形式 "app:app" 启动 uvicorn，这是生产环境和正确触发 lifespan 的推荐方式

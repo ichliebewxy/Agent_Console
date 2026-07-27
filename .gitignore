@@ -21,3 +21,7 @@ extracted_images/
 # OS files
 .DS_Store
 data/
+
+# Local Agent runtime artifacts (skill packages remain tracked)
+backend/tmp/*
+!backend/tmp/.gitkeep

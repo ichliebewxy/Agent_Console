@@ -129,8 +129,7 @@ summary:focus-visible {
 .nav-list button,
 .secondary-action,
 .danger-action,
-.primary-action,
-.item-actions button {
+.primary-action {
   min-height: 40px;
   border: 1px solid transparent;
   border-radius: var(--radius);
