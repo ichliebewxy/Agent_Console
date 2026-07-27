@@ -97,24 +97,45 @@
               v-if="!msg.isUser && toolCallGroups(msg).length"
               class="tool-activity-bubble"
               aria-label="工具调用"
-              aria-live="polite"
             >
               <div class="tool-call-heading">
                 <span class="tool-activity-icon"><i class="fas fa-wand-magic-sparkles"></i></span>
                 <strong>执行活动</strong>
                 <small>{{ toolCallGroups(msg).length }} 次工具调用</small>
               </div>
-              <div class="tool-call-list">
-                <details v-for="(call, cIdx) in toolCallGroups(msg)" :key="call.callId" class="tool-call-card" :open="call.status === 'running'">
-                  <summary>
+              <div
+                class="tool-call-list"
+                :data-tool-message-id="msg.id || index"
+                role="log"
+                aria-live="polite"
+                aria-relevant="additions text"
+              >
+                <article v-for="(call, cIdx) in toolCallGroups(msg)" :key="call.callId" :class="['tool-call-card', call.status]">
+                  <header>
                     <span :class="['tool-call-status', call.status]"><i :class="call.statusIcon"></i></span>
                     <strong>{{ call.toolName }}</strong>
                     <small>#{{ cIdx + 1 }} · {{ call.statusLabel }}</small>
-                    <i class="fas fa-chevron-down tool-call-chevron" aria-hidden="true"></i>
-                  </summary>
-                  <div v-if="call.detail" class="tool-call-detail">{{ call.detail }}</div>
-                  <pre v-if="call.result" class="step-result">{{ call.result }}</pre>
-                </details>
+                  </header>
+                  <div class="tool-call-exchange">
+                    <div class="tool-call-payload request">
+                      <span><i class="fas fa-arrow-up-right-from-square"></i>发送请求</span>
+                      <pre>{{ call.request || '无参数' }}</pre>
+                    </div>
+                    <div
+                      v-if="call.hasResult"
+                      :class="['tool-call-payload', 'response', { error: call.status === 'error', limit: call.status === 'limit' }]"
+                    >
+                      <span>
+                        <i :class="call.status === 'error' ? 'fas fa-triangle-exclamation' : (call.status === 'limit' ? 'fas fa-ban' : 'fas fa-arrow-turn-down')"></i>
+                        {{ call.status === 'error' ? '失败原因' : (call.status === 'limit' ? '限制信息' : '返回结果') }}
+                      </span>
+                      <pre>{{ call.result || (call.status === 'error' ? '工具执行失败，未返回错误详情' : '无返回内容') }}</pre>
+                    </div>
+                    <div v-else class="tool-call-pending">
+                      <i class="fas fa-ellipsis fa-fade"></i>等待工具返回
+                    </div>
+                  </div>
+                </article>
               </div>
             </aside>
 
