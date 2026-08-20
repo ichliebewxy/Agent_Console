@@ -4,8 +4,9 @@ from uuid import uuid4
 
 from langchain_core.tools import StructuredTool
 
+from agent_state import consume_tool_call_budget
+from event_stream import emit_tool_step
 from settings import AGENT_TOOL_CALL_LIMIT
-from tools import consume_tool_call_budget, emit_tool_step
 
 
 def _compact_json(value, max_length: int = 520) -> str:

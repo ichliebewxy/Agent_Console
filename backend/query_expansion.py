@@ -1,7 +1,7 @@
 """Query expansion helpers for RAG."""
-from langchain.chat_models import init_chat_model
+from chat_models import build_chat_model
 
-from settings import CHAT_API_KEY, CHAT_BASE_URL, QUERY_EXPANSION_MODEL
+from settings import CHAT_API_KEY, QUERY_EXPANSION_MODEL
 
 _stepback_model = None
 
@@ -11,13 +11,7 @@ def _get_stepback_model():
     if not CHAT_API_KEY or not QUERY_EXPANSION_MODEL:
         return None
     if _stepback_model is None:
-        _stepback_model = init_chat_model(
-            model=QUERY_EXPANSION_MODEL,
-            model_provider="deepseek",
-            api_key=CHAT_API_KEY,
-            base_url=CHAT_BASE_URL,
-            temperature=0.2,
-        )
+        _stepback_model = build_chat_model(QUERY_EXPANSION_MODEL, temperature=0.2)
     return _stepback_model
 
 

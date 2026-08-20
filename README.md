@@ -35,7 +35,7 @@ Agent Console 是一个面向本地可信环境的 LangChain 多 Agent + RAG 工
 | 混合检索 | BGE-M3 dense embedding + BM25 sparse embedding + Milvus Hybrid Search + RRF 融合，可选接入 SiliconFlow rerank。 |
 | 查询扩展 | 初始召回相关性不足时，LangGraph 自动选择 Step-back、HyDE 或 complex 策略再次召回。 |
 | `.doc` 兼容 | `.docx` 走 OpenXML；旧版二进制 `.doc` 在 Windows 优先使用 Word COM，并降级到 LibreOffice/antiword。中文路径会先复制到 ASCII 临时路径。 |
-| 会话工作区 | 每个 `user_id/session_id` 拥有独立的 `backend/tmp/<session-key>/`；生成的脚本、预览、转换结果和最终文件都留在会话目录。 |
+| 会话工作区 | 每个 `user_id/session_id` 拥有独立的 `backend/tmp/<session-key>/`；脚本、缓存、预览等中间文件留在会话目录，最终产物统一放在其 `deliverables/` 子目录。 |
 | 工具安全 | Bash 默认拒绝，执行顺序为 deny → authorize → allow → default deny；阻止路径逃逸、shell 拼接、危险系统命令和高风险 OpenCLI。 |
 | 可观察但不扰人 | 前端展示当前对话实际产生的工具/RAG 轨迹和引用；没有引用时不展示检索轨迹。旧的“运行回调”只读页面和公开回调接口不再提供，失败记录仅留在服务端诊断文件。 |
 | 调用上限 | 每轮对话最多执行 `AGENT_TOOL_CALL_LIMIT` 次工具调用，默认 250 次；达到上限会停止继续调用并整理已有结果。 |
@@ -115,7 +115,7 @@ SSE 事件类型：
 | `rag_step` | 知识库召回、评分、改写、auto-merging 等阶段。 |
 | `tool_step` | 工具开始、完成、失败或达到上限。 |
 | `trace` | 完整 RAG trace 和引用片段。无知识库引用时不会发送。 |
-| `artifacts` | 当前会话目录中可下载的文件清单。 |
+| `artifacts` | 当前会话 `deliverables/` 目录中可下载的最终产物清单。 |
 | `error` | 流式过程中发生的模型或工具错误。 |
 | `[DONE]` | 流结束标记。 |
 
@@ -257,6 +257,7 @@ Windows 下 URL 中的 `&` 是 `cmd.exe` 的命令分隔符；通过 Bash 执行
 | 路径 | 作用 |
 | --- | --- |
 | `backend/agent.py` | 创建主 Agent、加载历史、同步/流式调用、SSE 事件编排、响应持久化和 250 次工具上限的 recursion limit。 |
+| `backend/chat_models.py` | 统一的 DeepSeek LangChain 聊天模型工厂，主 Agent、RAG 评分/路由与查询扩展共用。 |
 | `backend/agent_prompt.py` | 主 Agent 和 Skills subagent 的系统提示词、委派原则、工具使用规范和安全要求。 |
 | `backend/core_tools.py` | 主 Agent 固定工具：`bash`、`read_file`、`write_file`、`edit_file`、`glob`，以及只审查不执行的 `review`。 |
 | `backend/workspace_tools.py` | 旧工作区工具兼容层：列出、读取和写入会话目录文件。新代码优先使用 `core_tools.py`。 |
@@ -265,16 +266,19 @@ Windows 下 URL 中的 `&` 是 `cmd.exe` 的命令分隔符；通过 Bash 执行
 | `backend/runtime_context.py` | 当前 user/session 上下文、会话目录键、异步锁和会话目录删除。 |
 | `backend/subagents.py` | 懒加载 `skills_specialist`，提供 `load_subagent` 和 `delegate_to_skill_agent` 两个主 Agent 网关。 |
 | `backend/tool_instrumentation.py` | 为工具增加调用开始/结果/错误/上限事件，并把事件推送给 SSE。 |
-| `backend/tools.py` | `search_knowledge_base` 工具、RAG/工具步骤队列、最近一次 RAG trace 和调用计数守卫。 |
+| `backend/search_tool.py` | `search_knowledge_base` 知识库检索工具与检索状态格式化。 |
+| `backend/agent_state.py` | 每轮工具调用预算（ContextVar）与最近一次 RAG trace 的共享可变状态。 |
+| `backend/event_stream.py` | RAG 步骤与工具步骤的进程内事件总线，供 SSE 循环消费。 |
 | `backend/skill_service.py` | Skill frontmatter 扫描、精确名称注册、catalog、正文/资源按需加载、路径隔离和用户 Skill 增删。 |
 | `backend/runtime_catalog_service.py` | 刷新 Skills catalog、发现 MCP，并同步发现结果摘要。 |
 | `backend/mcp_service.py` | 使用 `langchain-mcp-adapters` 连接 streamable HTTP/SSE/stdio MCP，展开环境变量，审查 stdio 命令并动态生成 LangChain tools。 |
 | `backend/mcp_config_service.py` | `backend/mcp_servers.json` 的独立持久化、规范化、发现状态更新和公开 API 脱敏。 |
 | `backend/config_service.py` | `backend/config.json` 的非 MCP 配置、Skills 元数据、Bash 默认权限合并和脱敏快照。 |
+| `backend/redaction.py` | `config_service` 与 `mcp_config_service` 公共的密钥/URL/参数脱敏规则。 |
 | `backend/settings.py` | 统一读取 `.env`、路径、模型、Milvus、RAG、OpenCLI、Skill、Artifact 和本地运行限制。 |
 | `backend/ops_store.py` | `tool_failures.json` 和 `bash_audit.json` 的本地 JSON 列表存储；仅用于服务端诊断/审计。 |
 | `backend/conversation_storage.py` | 将消息、时间戳、RAG trace 和 Artifact 清单保存到 `data/customer_service_history.json`。 |
-| `backend/artifact_service.py` | 枚举会话产物、生成/校验 HMAC capability token、阻止符号链接和路径逃逸。 |
+| `backend/artifact_service.py` | 枚举会话 `deliverables/` 最终产物、生成/校验 HMAC capability token、阻止符号链接和路径逃逸。 |
 | `backend/__init__.py` | Python 包标记，使 `backend` 可以作为模块运行。 |
 
 ### RAG 与文档解析
@@ -364,7 +368,7 @@ description: What it does and when the specialist should use it.
 | `data/bash_audit.json` | Bash 权限决策、规则、命令摘要、用户/session 和退出码。 | 否。 |
 | `backend/config.json` | Skills catalog、Bash 权限、发现时间和 Skill 错误。 | 可提交默认模板；运行时会更新。 |
 | `backend/mcp_servers.json` | MCP server 配置和发现摘要；敏感值仅使用环境变量占位符。 | 可提交非敏感配置，生产密钥不得写入。 |
-| `backend/tmp/<session-key>/` | 每个会话的脚本、下载、转换结果、预览、缓存和最终 Artifact。 | 否。 |
+| `backend/tmp/<session-key>/` | 每个会话的脚本、下载、缓存和中间文件；其中 `deliverables/` 子目录存放交付给用户的最终产物。 | 否。 |
 | `backend/tmp/.gitkeep` | 保留会话临时目录的空目录占位文件。 |
 | `backend/tmp/.artifact_signing_key` | 未配置 `ARTIFACT_SIGNING_KEY` 时自动生成的本地下载签名密钥。 | 否，必须备份或在生产显式配置。 |
 | `volumes/` | Docker 的 etcd、MinIO、Milvus 数据卷。 | 否。 |
@@ -588,7 +592,7 @@ Invoke-RestMethod http://127.0.0.1:8080/documents
 
 ### 对话
 
-直接在聊天框输入问题。需要知识库时可明确说“根据知识库回答”；需要网页/下载/浏览器时，主 Agent 会委派 OpenCLI Skill。模型生成的文件会显示在回答下方的 Artifact 卡片中。
+直接在聊天框输入问题。需要知识库时可明确说“根据知识库回答”；需要网页/下载/浏览器时，主 Agent 会委派 OpenCLI Skill。模型生成的最终文件会显示在回答下方的 Artifact 卡片中（需位于会话 workspace 的 `deliverables/` 目录）。
 
 ### 配置中心
 
@@ -612,7 +616,7 @@ Invoke-RestMethod http://127.0.0.1:8080/documents
 | `GET` | `/sessions/{user_id}` | 获取用户会话列表。 |
 | `GET` | `/sessions/{user_id}/{session_id}` | 获取会话消息、RAG trace 和历史 Artifact 清单。 |
 | `DELETE` | `/sessions/{user_id}/{session_id}` | 删除会话历史及 `backend/tmp` 对应目录。 |
-| `GET` | `/sessions/{user_id}/{session_id}/artifacts` | 使用 SSE 返回的 token 列出当前会话文件。 |
+| `GET` | `/sessions/{user_id}/{session_id}/artifacts` | 使用 SSE 返回的 token 列出当前会话 `deliverables/` 最终产物。 |
 | `GET` | `/sessions/{user_id}/{session_id}/artifacts/{path}` | 使用 HMAC token 下载会话文件。 |
 | `GET` | `/runtime-config` | 查看脱敏后的 Skills、MCP、发现状态和 Bash 规则。 |
 | `POST` | `/runtime-config/refresh` | 重新扫描 Skills、重新发现 MCP 并热重载主 Agent。 |

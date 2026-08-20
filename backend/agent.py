@@ -3,23 +3,19 @@ import asyncio
 import json
 
 from langchain.agents import create_agent
-from langchain.chat_models import init_chat_model
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, SystemMessage
 
-from artifact_service import list_session_artifacts
 from agent_prompt import SYSTEM_PROMPT
+from agent_state import get_last_rag_context, reset_tool_call_guards
+from artifact_service import list_session_artifacts
+from chat_models import build_chat_model
 from conversation_storage import ConversationStorage
 from core_tools import TOOLS
+from event_stream import set_rag_step_queue, set_tool_step_queue
 from runtime_context import bind_runtime_context, session_async_lock
-from settings import AGENT_TOOL_CALL_LIMIT, CHAT_API_KEY, CHAT_BASE_URL, CHAT_MODEL
+from settings import AGENT_TOOL_CALL_LIMIT
 from subagents import build_subagent_tools
 from tool_instrumentation import instrument_tools
-from tools import (
-    get_last_rag_context,
-    reset_tool_call_guards,
-    set_rag_step_queue,
-    set_tool_step_queue,
-)
 
 
 agent = None
@@ -30,14 +26,7 @@ _AGENT_RECURSION_LIMIT = AGENT_TOOL_CALL_LIMIT * 2 + 8
 
 
 def _create_chat_model(temperature: float = 0.3):
-    return init_chat_model(
-        model=CHAT_MODEL,
-        model_provider="deepseek",
-        api_key=CHAT_API_KEY,
-        base_url=CHAT_BASE_URL,
-        temperature=temperature,
-        stream_usage=True,
-    )
+    return build_chat_model(temperature=temperature)
 
 
 async def init_agent_async():
@@ -48,7 +37,7 @@ async def init_agent_async():
         from core_tools import REVIEW_TOOLS
         from mcp_service import get_discovered_mcp_tools
         from skill_service import SKILL_TOOLS
-        from tools import search_knowledge_base
+        from search_tool import search_knowledge_base
 
         mcp_tools = get_discovered_mcp_tools()
         runtime_tools = [

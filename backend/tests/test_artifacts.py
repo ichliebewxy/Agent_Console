@@ -36,13 +36,18 @@ class ArtifactTests(unittest.TestCase):
                 first_root = session_files_dir("user-a", "session-a")
                 second_root = session_files_dir("user-a", "session-b")
                 self.assertNotEqual(first_root, second_root)
-                (first_root / "reports").mkdir()
-                (first_root / "reports" / "answer.txt").write_text(
+                deliverables = first_root / "deliverables"
+                (deliverables / "reports").mkdir(parents=True)
+                (deliverables / "reports" / "answer.txt").write_text(
                     "download me",
                     encoding="utf-8",
                 )
-                (first_root / ".cache").mkdir()
-                (first_root / ".cache" / "intermediate.bin").write_bytes(b"cache")
+                (deliverables / ".cache").mkdir(parents=True)
+                (deliverables / ".cache" / "intermediate.bin").write_bytes(b"cache")
+                # Intermediate/working files outside deliverables/ are not delivered.
+                (first_root / "scratch").mkdir()
+                (first_root / "scratch" / "draft.log").write_text("draft", encoding="utf-8")
+                (first_root / "work.ipynb").write_text("source", encoding="utf-8")
 
                 rows = list_session_artifacts("user-a", "session-a")
                 self.assertEqual([row["path"] for row in rows], ["reports/answer.txt"])

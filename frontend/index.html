@@ -3,10 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#122b22">
   <title>NebulaNest Agent Console</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/github.min.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/styles/github-dark.min.css">
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.7.0/highlight.min.js"></script>
   <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
@@ -65,9 +69,20 @@
             <i class="fas fa-compass"></i>
             <h3>从一个问题开始</h3>
             <p>支持主 Agent 委派、小 Agent 按需调用、RAG 过程追踪和会话状态恢复。</p>
+            <div class="empty-suggestions">
+              <button type="button" @click="useSuggestion('帮我总结一下知识库里最新文档的要点')">
+                <i class="fas fa-file-lines"></i><span>总结知识库最新文档的要点</span>
+              </button>
+              <button type="button" @click="useSuggestion('你现在可以调用哪些工具和技能？')">
+                <i class="fas fa-wand-magic-sparkles"></i><span>看看你能调用哪些工具和技能</span>
+              </button>
+              <button type="button" @click="useSuggestion('帮我把会议纪要整理成一份 Markdown 文档并导出')">
+                <i class="fas fa-box-archive"></i><span>整理一份 Markdown 文档并导出文件</span>
+              </button>
+            </div>
             <div class="empty-actions">
-              <button @click="switchView('knowledge')" type="button">检查知识库</button>
-              <button @click="switchView('config')" type="button">配置工具</button>
+              <button @click="switchView('knowledge')" type="button"><i class="fas fa-folder-tree"></i>检查知识库</button>
+              <button @click="switchView('config')" type="button"><i class="fas fa-sliders"></i>配置工具</button>
             </div>
           </div>
 

@@ -16,6 +16,15 @@ from settings import ARTIFACT_SIGNING_KEY, BACKEND_TMP_DIR
 
 _INTERNAL_DIRS = {".cache", ".npm-cache", ".pycache", "__pycache__"}
 
+# Only files inside this per-session subdirectory are delivered to the user.
+# Intermediate scripts, caches, extracted assets, logs, and previews stay
+# elsewhere in the session workspace and are excluded from artifact listing.
+DELIVERABLES_DIR = "deliverables"
+
+
+def _artifact_root(user_id: str, session_id: str) -> Path:
+    return session_files_dir(user_id, session_id, create=False) / DELIVERABLES_DIR
+
 
 @lru_cache(maxsize=1)
 def _signing_key() -> bytes:
@@ -51,27 +60,27 @@ def verify_artifact_access(user_id: str, session_id: str, token: str) -> bool:
 
 
 def _safe_artifact_path(user_id: str, session_id: str, relative_path: str) -> Path:
-    root = session_files_dir(user_id, session_id, create=False)
+    root = _artifact_root(user_id, session_id)
     target = (root / relative_path).resolve()
     if not target.is_relative_to(root):
-        raise ValueError("Artifact path escapes the session workspace.")
+        raise ValueError("Artifact path escapes the deliverables directory.")
     return target
 
 
 def _safe_artifact_open_path(user_id: str, session_id: str, relative_path: str) -> Path:
     """Resolve the parent only so O_NOFOLLOW can protect the final path component."""
-    root = session_files_dir(user_id, session_id, create=False)
+    root = _artifact_root(user_id, session_id)
     relative = Path(relative_path)
     if relative.is_absolute() or not relative.parts or ".." in relative.parts:
-        raise ValueError("Artifact path escapes the session workspace.")
+        raise ValueError("Artifact path escapes the deliverables directory.")
     parent = (root / relative.parent).resolve()
     if not parent.is_relative_to(root):
-        raise ValueError("Artifact path escapes the session workspace.")
+        raise ValueError("Artifact path escapes the deliverables directory.")
     return parent / relative.name
 
 
 def list_session_artifacts(user_id: str, session_id: str, limit: int = 200) -> list[dict]:
-    root = session_files_dir(user_id, session_id, create=False)
+    root = _artifact_root(user_id, session_id)
     if not root.exists():
         return []
     artifacts = []

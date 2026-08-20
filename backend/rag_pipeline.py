@@ -1,27 +1,16 @@
 """LangGraph RAG orchestration."""
-from langchain.chat_models import init_chat_model
 from langgraph.graph import END, StateGraph
 
+from chat_models import build_chat_model
+from event_stream import emit_rag_step
 from query_expansion import generate_hypothetical_document, step_back_expand
 from rag_expanded import retrieve_expanded
 from rag_state import GRADE_PROMPT, GradeDocuments, RAGState, RewriteStrategy, empty_rag_state, format_docs
 from rag_utils import retrieve_documents
-from settings import CHAT_API_KEY, CHAT_BASE_URL, CHAT_MODEL, GRADE_MODEL
-from tools import emit_rag_step
+from settings import CHAT_API_KEY, CHAT_MODEL, GRADE_MODEL
 
 _grader_model = None
 _router_model = None
-
-
-def _build_model(model_name: str = CHAT_MODEL, temperature: float = 0):
-    return init_chat_model(
-        model=model_name,
-        model_provider="deepseek",
-        api_key=CHAT_API_KEY,
-        base_url=CHAT_BASE_URL,
-        temperature=temperature,
-        stream_usage=True,
-    )
 
 
 def _get_grader_model():
@@ -29,7 +18,7 @@ def _get_grader_model():
     if not CHAT_API_KEY or not GRADE_MODEL:
         return None
     if _grader_model is None:
-        _grader_model = _build_model(GRADE_MODEL)
+        _grader_model = build_chat_model(GRADE_MODEL)
     return _grader_model
 
 
@@ -38,7 +27,7 @@ def _get_router_model():
     if not CHAT_API_KEY or not CHAT_MODEL:
         return None
     if _router_model is None:
-        _router_model = _build_model()
+        _router_model = build_chat_model()
     return _router_model
 
 

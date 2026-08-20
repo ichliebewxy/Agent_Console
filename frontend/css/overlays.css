@@ -1,20 +1,29 @@
-﻿.history-drawer {
+/* ── 历史会话抽屉 ───────────────────────────────────── */
+.history-drawer {
   position: absolute;
-  top: 76px;
+  top: var(--topbar-h);
   right: 0;
   bottom: 0;
-  width: 360px;
+  width: 380px;
   max-width: 100%;
   background: var(--surface-raised);
   border-left: 1px solid var(--line);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow-lg);
   z-index: 6;
   display: grid;
-  grid-template-rows: 60px 1fr;
+  grid-template-rows: 62px 1fr;
+  animation: drawer-in 0.28s cubic-bezier(0.21, 0.86, 0.36, 1) both;
+}
+
+@keyframes drawer-in {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
 }
 
 .history-drawer header {
-  padding: 0 16px;
+  padding: 0 18px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -23,6 +32,15 @@
 
 .history-drawer h3 {
   margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.02rem;
+  font-weight: 600;
+}
+
+.history-drawer header button:hover {
+  color: var(--ink);
+  border-color: var(--line-strong);
+  transform: rotate(90deg);
 }
 
 .history-list {
@@ -36,27 +54,31 @@
 
 .history-row {
   width: 100%;
-  min-height: 74px;
-  padding: 12px;
+  min-height: 72px;
+  padding: 12px 14px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
   color: var(--ink);
   display: grid;
   justify-items: start;
+  align-content: center;
   gap: 6px;
   text-align: left;
-  box-shadow: 0 3px 12px rgba(34, 44, 38, 0.04);
+  transition: transform 0.16s ease, border-color 0.16s ease, background 0.16s ease,
+    box-shadow 0.16s ease;
 }
 
-.history-row:hover,
-.history-row.active {
+.history-row:hover {
+  transform: translateY(-1px);
   border-color: var(--line-strong);
-  background: var(--surface-soft);
+  box-shadow: var(--shadow-sm);
 }
 
 .history-row.active {
-  box-shadow: inset 3px 0 0 var(--green), 0 3px 12px rgba(34, 44, 38, 0.04);
+  border-color: color-mix(in oklch, var(--green) 40%, var(--line));
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--green);
 }
 
 .history-row span {
@@ -64,35 +86,56 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  font-weight: 600;
 }
 
 .history-row small {
   color: var(--muted);
+  font-size: 0.74rem;
 }
 
+/* ── Toast 通知 ─────────────────────────────────────── */
 .toast {
   position: fixed;
   left: 50%;
-  bottom: 28px;
+  bottom: 30px;
   transform: translateX(-50%);
   z-index: 20;
-  padding: 10px 14px;
-  border-radius: var(--radius);
-  background: oklch(23% 0.032 148);
+  max-width: min(520px, calc(100vw - 48px));
+  padding: 12px 20px;
+  border: 1px solid color-mix(in oklch, white 12%, transparent);
+  border-radius: 999px;
+  background: color-mix(in oklch, oklch(22% 0.02 180) 94%, transparent);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
   color: oklch(98% 0.008 142);
-  box-shadow: var(--shadow);
+  font-size: 0.86rem;
+  line-height: 1.5;
+  box-shadow: var(--shadow-lg);
+  animation: toast-in 0.3s cubic-bezier(0.21, 0.86, 0.36, 1) both;
 }
 
-.file-pdf { color: oklch(49% 0.15 32); }
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 12px);
+  }
+}
+
+/* ── 文件类型图标色 ─────────────────────────────────── */
+.file-pdf { color: oklch(52% 0.15 32); }
 .file-word { color: var(--blue); }
-.file-ppt { color: oklch(50% 0.13 54); }
+.file-ppt { color: oklch(52% 0.13 54); }
 .file-excel { color: var(--green); }
 .file-text { color: var(--muted); }
 .file-default { color: var(--muted); }
 
+/* ── 滚动条 ─────────────────────────────────────────── */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
 }
 
 ::-webkit-scrollbar-track {
@@ -100,10 +143,19 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: oklch(83% 0.018 142);
+  background: color-mix(in oklch, var(--ink) 20%, transparent);
+  background-clip: padding-box;
+  border: 3px solid transparent;
   border-radius: 999px;
 }
 
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in oklch, var(--ink) 32%, transparent);
+  background-clip: padding-box;
+  border: 3px solid transparent;
+}
+
+/* ── 骨架屏 ─────────────────────────────────────────── */
 .skeleton-stack {
   padding: var(--space-md);
   display: grid;
@@ -111,9 +163,12 @@
 }
 
 .skeleton-stack span {
-  height: 38px;
+  height: 40px;
   border-radius: var(--radius);
-  background: linear-gradient(90deg, var(--surface-soft), oklch(94% 0.018 142), var(--surface-soft));
+  background: linear-gradient(90deg,
+      var(--surface-soft),
+      oklch(93.5% 0.016 150),
+      var(--surface-soft));
   background-size: 220% 100%;
   animation: skeleton-shift 1.2s ease-out infinite;
 }
@@ -134,4 +189,3 @@
     transition-duration: 0.01ms !important;
   }
 }
-

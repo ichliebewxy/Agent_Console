@@ -11,7 +11,7 @@ if str(BACKEND_DIR) not in sys.path:
 
 from settings import AGENT_TOOL_CALL_LIMIT
 from tool_instrumentation import instrument_tool
-from tools import reset_tool_call_guards
+from agent_state import reset_tool_call_guards
 
 
 class ToolCallLimitTests(unittest.IsolatedAsyncioTestCase):

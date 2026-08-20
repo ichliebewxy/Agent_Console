@@ -12,28 +12,15 @@ from __future__ import annotations
 import copy
 import json
 import os
-import re
 from datetime import datetime
 from pathlib import Path
 from threading import RLock
 from typing import Any
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+from redaction import redact_args, redact_secret, redact_url
 
 
 MCP_CONFIG_PATH = Path(__file__).resolve().parent / "mcp_servers.json"
-_ENV_ONLY = re.compile(r"^\$\{[A-Za-z_][A-Za-z0-9_]*\}$")
-_BEARER_ENV_ONLY = re.compile(r"^Bearer\s+\$\{[A-Za-z_][A-Za-z0-9_]*\}$", re.I)
-_SENSITIVE_ARG = re.compile(
-    r"(?:api[-_]?key|token|secret|password|credential|authorization|header|auth)",
-    re.I,
-)
-_SENSITIVE_INLINE = re.compile(
-    r"(?:bearer\s+|authorization\s*[:=]|\b(?:token|secret|password|credential)\b|(?:token|secret|api[-_]?key)\s*[:=])",
-    re.I,
-)
-_SENSITIVE_PATH = re.compile(r"(?:token|secret|api[-_]?key|password|credential|auth)", re.I)
-
-
 def _normalize_transport(value: str) -> str:
     aliases = {
         "streamableHttp": "streamable_http",
@@ -41,55 +28,6 @@ def _normalize_transport(value: str) -> str:
         "http": "streamable_http",
     }
     return aliases.get((value or "streamable_http").strip(), (value or "streamable_http").strip())
-
-
-def _public_secret(value: Any) -> str:
-    text = str(value or "")
-    if _ENV_ONLY.fullmatch(text) or _BEARER_ENV_ONLY.fullmatch(text):
-        return text
-    return "***configured***"
-
-
-def _public_url(value: Any) -> str:
-    text = str(value or "")
-    try:
-        parsed = urlsplit(text)
-    except ValueError:
-        return "***configured***"
-    path_parts = [
-        "***configured***" if part and (len(part) >= 32 or _SENSITIVE_PATH.search(part)) else part
-        for part in parsed.path.split("/")
-    ]
-    netloc = parsed.netloc
-    if "@" in netloc:
-        netloc = f"***configured***@{netloc.rsplit('@', 1)[1]}"
-    query = urlencode([(key, _public_secret(item)) for key, item in parse_qsl(parsed.query, keep_blank_values=True)])
-    fragment = "***configured***" if parsed.fragment else ""
-    return urlunsplit((parsed.scheme, netloc, "/".join(path_parts), query, fragment))
-
-
-def _public_args(values: Any) -> list[str]:
-    args = [str(value) for value in values] if isinstance(values, list) else []
-    redacted: list[str] = []
-    redact_next = False
-    for value in args:
-        if redact_next:
-            redacted.append(_public_secret(value))
-            redact_next = False
-            continue
-        if "=" in value:
-            flag, item = value.split("=", 1)
-            if _SENSITIVE_ARG.search(flag):
-                redacted.append(f"{flag}={_public_secret(item)}")
-                continue
-        if _SENSITIVE_INLINE.search(value) or (
-            len(value) >= 32 and re.fullmatch(r"[A-Za-z0-9_./+=:-]+", value)
-        ):
-            redacted.append("***configured***")
-            continue
-        redacted.append(value)
-        redact_next = bool(value.startswith("-") and _SENSITIVE_ARG.search(value))
-    return redacted
 
 
 def _normalize_server(server: dict[str, Any]) -> dict[str, Any]:
@@ -145,13 +83,13 @@ class MCPServerStore:
         if public:
             for server in servers.values():
                 server["headers"] = {
-                    key: _public_secret(value) for key, value in (server.get("headers") or {}).items()
+                    key: redact_secret(value) for key, value in (server.get("headers") or {}).items()
                 }
                 server["env"] = {
-                    key: _public_secret(value) for key, value in (server.get("env") or {}).items()
+                    key: redact_secret(value) for key, value in (server.get("env") or {}).items()
                 }
-                server["url"] = _public_url(server.get("url"))
-                server["args"] = _public_args(server.get("args"))
+                server["url"] = redact_url(server.get("url"))
+                server["args"] = redact_args(server.get("args"))
         return {"mcpServers": servers}
 
     def upsert(self, name: str, server: dict[str, Any]) -> None:

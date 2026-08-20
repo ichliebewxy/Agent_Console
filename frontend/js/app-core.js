@@ -191,6 +191,17 @@ window.NebulaNestApp = {
       this.messages = [];
       this.persistState();
     },
+
+    useSuggestion(text) {
+      this.userInput = text;
+      this.$nextTick(() => {
+        const el = this.$refs.textarea;
+        if (!el) return;
+        el.focus();
+        el.style.height = "auto";
+        el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
+      });
+    },
   },
 
   watch: {

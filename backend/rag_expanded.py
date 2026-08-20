@@ -4,7 +4,7 @@ from typing import List
 from query_expansion import generate_hypothetical_document
 from rag_state import RAGState, format_docs
 from rag_utils import retrieve_documents
-from tools import emit_rag_step
+from event_stream import emit_rag_step
 
 
 def _init_meta() -> dict:

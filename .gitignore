@@ -24,3 +24,5 @@ data/
 # Local Agent runtime artifacts (skill packages remain tracked)
 backend/tmp/*
 !backend/tmp/.gitkeep
+
+/.tmp_probe

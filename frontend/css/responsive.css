@@ -1,14 +1,21 @@
-﻿@media (max-width: 900px) {
+@media (max-width: 1180px) {
+  .config-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 900px) {
   .shell {
-    grid-template-columns: 72px 1fr;
+    grid-template-columns: 78px 1fr;
   }
 
   .rail {
-    padding: 14px 10px;
+    padding: 16px 10px;
   }
 
   .brand {
     justify-content: center;
+    padding: 2px 0 14px;
   }
 
   .brand > div:not(.brand-mark),
@@ -21,32 +28,54 @@
   .secondary-action,
   .danger-action {
     justify-content: center;
+    padding: 0;
+  }
+
+  .nav-list button.active::before {
+    display: none;
   }
 
   .topbar {
-    padding: 14px 16px;
+    padding: 14px 18px;
+  }
+
+  .topbar h2 {
+    font-size: 1.05rem;
   }
 
   .session-pill {
     display: none;
   }
 
-  .message {
-    width: 100%;
+  .chat-stream {
+    padding: 22px 16px;
+    gap: 20px;
   }
 
-  .chat-stream,
+  .from-user .message-bubble {
+    max-width: 88%;
+  }
+
+  .message-bubble {
+    font-size: 0.94rem;
+  }
+
+  .empty-state h3 {
+    font-size: 1.3rem;
+  }
+
   .panel-view {
-    padding: 18px 16px;
+    padding: 20px 16px 30px;
   }
 
   .composer {
-    margin: 0 16px 16px;
+    width: auto;
+    margin: 0 14px 16px;
   }
 
   .table-row {
     grid-template-columns: minmax(140px, 1fr) 80px 58px 50px;
-    padding: 0 10px;
+    padding: 0 12px;
   }
 
   .config-grid,
@@ -56,5 +85,28 @@
 
   .config-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .history-drawer {
+    width: min(380px, 100%);
+  }
+}
+
+@media (max-width: 520px) {
+  .config-stats {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .config-form {
+    grid-template-columns: 1fr;
+  }
+
+  .status-pill {
+    display: none;
+  }
+
+  .empty-suggestions button {
+    font-size: 0.84rem;
   }
 }
