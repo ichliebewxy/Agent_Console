@@ -49,16 +49,20 @@ Object.assign(window.NebulaNestApp.methods, {
         groups.set(callId, {
           callId,
           toolName: step.tool_name || "未知工具",
-          detail: "",
+          request: "",
           result: "",
+          hasResult: false,
           status: "running",
           statusLabel: "执行中",
           statusIcon: "fas fa-spinner fa-spin",
         });
       }
       const group = groups.get(callId);
-      if (step.detail) group.detail = step.detail;
-      if (step.result) group.result = step.result;
+      if (step.detail) group.request = step.detail.replace(/^参数\s*[:：]\s*/, "");
+      if (["result", "error", "limit"].includes(step.phase)) {
+        group.hasResult = true;
+        group.result = step.result ?? "";
+      }
       if (step.phase === "result") {
         group.status = "success";
         group.statusLabel = "已完成";
