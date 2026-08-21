@@ -39,6 +39,20 @@ Agent Console 是一个面向本地可信环境的 LangChain 多 Agent + RAG 工
 | 工具安全 | Bash 默认拒绝，执行顺序为 deny → authorize → allow → default deny；阻止路径逃逸、shell 拼接、危险系统命令和高风险 OpenCLI。 |
 | 可观察但不扰人 | 前端展示当前对话实际产生的工具/RAG 轨迹和引用；没有引用时不展示检索轨迹。旧的“运行回调”只读页面和公开回调接口不再提供，失败记录仅留在服务端诊断文件。 |
 | 调用上限 | 每轮对话最多执行 `AGENT_TOOL_CALL_LIMIT` 次工具调用，默认 250 次；达到上限会停止继续调用并整理已有结果。 |
+| 长期记忆（mem0） | 基于 [mem0](https://github.com/mem0ai/mem0) 的跨会话用户记忆：每轮对话前检索相关记忆注入上下文，对话后自动蒸馏沉淀新记忆；记忆面板支持查看、手动新增、编辑与删除。 |
+
+## 长期记忆（mem0）
+
+主 Agent 通过 `backend/memory_service.py` 接入 mem0 长期记忆层，实现“跨会话还记得你”：
+
+- **自动沉淀**：每轮对话结束后，后台把“用户消息 + Agent 回复”交给 mem0 的 LLM 抽取为结构化事实，并按语义去重/合并（`infer=True`）。
+- **上下文召回**：新一轮对话开始前，用当前问题做语义检索，把最相关的几条长期记忆作为 system 消息注入，Agent 无需用户重复自我介绍。
+- **本地化存储**：全部落在 `data/mem0/`（默认），包括本地 Qdrant 向量库与 SQLite 历史库；不依赖外部服务，模型使用项目已有的 `BAAI/bge-m3` 本地嵌入，DeepSeek 负责事实抽取。遥测默认关闭（`MEM0_TELEMETRY=False`）。
+- **手动管理**：前端“记忆”面板调用 `/memory/*` 接口，可查看、新增（原文照存或 LLM 抽取）、编辑、删除、清空某用户的记忆。
+
+相关配置（`.env`）：`MEMORY_ENABLED`（总开关）、`MEM0_DIR`（数据目录）、`MEM0_MODEL`（抽取模型，默认复用 `CHAT_MODEL`）、`MEM0_TOP_K`（每轮注入条数）。
+
+> 安装说明：`mem0ai` 目前在 PyPI 上仍声明 `protobuf<7.0.0`，而本项目 Milvus/gRPC 栈需要 `protobuf>=7`。请用 `uv pip install --no-deps mem0ai==2.0.18` 安装 mem0ai 本体，再单独安装 `qdrant-client` / `posthog` / `pytz` / `portalocker`（均已写入 `pyproject.toml`，无版本冲突）。
 
 ## 系统架构
 

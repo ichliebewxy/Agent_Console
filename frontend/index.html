@@ -36,6 +36,9 @@
         <button :class="{active: activeView === 'config'}" @click="switchView('config')" title="运行配置" aria-label="打开运行配置">
           <i class="fas fa-sliders"></i><span>配置中心</span>
         </button>
+        <button :class="{active: activeView === 'memory'}" @click="switchView('memory')" title="记忆" aria-label="打开记忆">
+          <i class="fas fa-brain"></i><span>记忆</span>
+        </button>
         <button :class="{active: showHistorySidebar}" @click="handleHistory" title="历史" aria-label="打开历史会话">
           <i class="fas fa-clock-rotate-left"></i><span>历史</span>
         </button>
@@ -261,6 +264,45 @@
         </div>
       </section>
 
+      <section v-show="activeView === 'memory'" class="panel-view memory-view">
+        <div class="section-head">
+          <div>
+            <h3>长期记忆</h3>
+            <p>基于 mem0 的用户长期记忆，跨会话本地持久化。Agent 每轮对话会先检索相关记忆、再自动沉淀新记忆。</p>
+          </div>
+          <button class="secondary-action inline" @click="loadMemories"><i class="fas fa-rotate"></i>刷新</button>
+        </div>
+
+        <div class="memory-composer">
+          <textarea v-model="memoryForm.memory" rows="2" placeholder="手动添加一条关于用户的事实，例如：用户喜欢简洁的代码风格"></textarea>
+          <div class="memory-composer-actions">
+            <label class="check-line"><input v-model="memoryForm.infer" type="checkbox"> 由 LLM 抽取为结构化记忆（否则原文照存）</label>
+            <button class="primary-action" :disabled="!memoryForm.memory.trim() || memoriesAdding" @click="addMemory">
+              <i class="fas fa-plus"></i>{{ memoriesAdding ? '添加中' : '添加记忆' }}
+            </button>
+          </div>
+        </div>
+
+        <div class="memory-list">
+          <div v-if="memoriesLoading" class="skeleton-stack" aria-label="正在加载记忆"><span></span><span></span><span></span></div>
+          <div v-else-if="memories.length === 0" class="muted-row">暂无记忆。开始对话后 Agent 会自动记录，也可以手动添加。</div>
+          <article v-for="mem in memories" :key="mem.id" class="memory-row">
+            <div class="memory-row-main">
+              <p>{{ mem.memory }}</p>
+              <small v-if="mem.updated_at">{{ new Date(mem.updated_at).toLocaleString() }}</small>
+            </div>
+            <div class="memory-row-actions">
+              <button class="icon-edit" @click="editMemory(mem)" title="编辑"><i class="fas fa-pen"></i></button>
+              <button class="icon-danger" @click="deleteMemory(mem.id)" title="删除"><i class="fas fa-trash"></i></button>
+            </div>
+          </article>
+        </div>
+
+        <div v-if="memories.length" class="memory-footer">
+          <button class="danger-action" @click="clearAllMemories"><i class="fas fa-trash"></i>清空全部记忆</button>
+        </div>
+      </section>
+
       <section v-show="activeView === 'config'" class="panel-view config-view">
         <div class="section-head">
           <div>
@@ -358,6 +400,7 @@
   <script src="js/chat.js"></script>
   <script src="js/knowledge.js"></script>
   <script src="js/config.js"></script>
+  <script src="js/memory.js"></script>
   <script src="js/formatters.js"></script>
   <script src="script.js"></script>
 </body>

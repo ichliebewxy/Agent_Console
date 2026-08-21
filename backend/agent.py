@@ -11,6 +11,7 @@ from artifact_service import list_session_artifacts
 from chat_models import build_chat_model
 from conversation_storage import ConversationStorage
 from core_tools import TOOLS
+import memory_service
 from event_stream import set_rag_step_queue, set_tool_step_queue
 from runtime_context import bind_runtime_context, session_async_lock
 from settings import AGENT_TOOL_CALL_LIMIT
@@ -80,6 +81,54 @@ def _prepare_messages(user_text: str, user_id: str, session_id: str) -> list:
     return messages
 
 
+def _format_memory_context(memories: list) -> str:
+    bullets = "\n".join(f"- {m}" for m in memories)
+    return (
+        "以下是当前用户相关的长期记忆（若与本轮问题无关可忽略）：\n"
+        f"{bullets}"
+    )
+
+
+async def _augment_with_memory(user_text: str, user_id: str, messages: list) -> list:
+    """把与当前问题相关的长期记忆注入为一条 system 消息。任何失败都不阻断对话。"""
+    if not memory_service.is_enabled():
+        return messages
+    try:
+        memories = await asyncio.to_thread(
+            memory_service.search_for_context, user_text, user_id
+        )
+    except Exception as exc:
+        print(f"[memory] 检索长期记忆失败，已跳过注入: {exc}")
+        return messages
+    if not memories:
+        return messages
+    return [SystemMessage(content=_format_memory_context(memories)), *messages]
+
+
+def _schedule_remember(user_id: str, user_message: str, assistant_message: str, session_id: str) -> None:
+    """后台异步把一轮对话蒸馏并写入长期记忆，不阻塞响应返回。"""
+    if not memory_service.is_enabled():
+        return
+
+    async def _run():
+        try:
+            await asyncio.to_thread(
+                memory_service.remember_conversation,
+                user_id,
+                user_message,
+                assistant_message,
+                session_id,
+            )
+        except Exception as exc:
+            print(f"[memory] 写入长期记忆失败: {exc}")
+
+    try:
+        loop = asyncio.get_running_loop()
+        loop.create_task(_run())
+    except RuntimeError:
+        pass
+
+
 def _extract_response(result) -> str:
     if isinstance(result, dict):
         if "output" in result:
@@ -116,6 +165,7 @@ async def chat_with_agent(
         raise RuntimeError("主 Agent 尚未初始化，请先等待 init_agent_async() 完成。")
     with bind_runtime_context(user_id, session_id):
         messages = _prepare_messages(user_text, user_id, session_id)
+        messages = await _augment_with_memory(user_text, user_id, messages)
         result = await agent.ainvoke(
             {"messages": messages},
             config={"recursion_limit": _AGENT_RECURSION_LIMIT},
@@ -130,6 +180,7 @@ async def chat_with_agent(
                 session_id,
             )
             _persist_response(user_id, session_id, messages, response, rag_trace, artifacts)
+        _schedule_remember(user_id, user_text, response, session_id)
         return {"response": response, "rag_trace": rag_trace, "artifacts": artifacts}
 
 
@@ -166,6 +217,7 @@ async def _chat_with_agent_stream_bound(
     if agent is None:
         raise RuntimeError("主 Agent 尚未初始化，请先等待 init_agent_async() 完成。")
     messages = _prepare_messages(user_text, user_id, session_id)
+    messages = await _augment_with_memory(user_text, user_id, messages)
     output_queue = asyncio.Queue()
     full_response = ""
 
@@ -256,6 +308,7 @@ async def _chat_with_agent_stream_bound(
             rag_trace,
             artifacts,
         )
+    _schedule_remember(user_id, user_text, full_response, session_id)
     artifact_payload = json.dumps(
         {"type": "artifacts", "artifacts": artifacts},
         ensure_ascii=False,

@@ -21,6 +21,7 @@ configure_stdio_encoding()
 import api as api_module
 from agent import init_agent_async
 from embedding import embedding_service
+import memory_service
 from runtime_catalog_service import refresh_runtime_catalogs
 from settings import MILVUS_DENSE_DIM
 
@@ -52,6 +53,18 @@ async def lifespan(app: FastAPI):
     print("正在初始化主 Agent...")
     await init_agent_async()
     print("主 Agent 初始化完成，应用启动！")
+
+    # 后台预热 mem0 长期记忆（加载本地 BGE 模型较重），避免首次对话卡顿。
+    # 失败不阻断启动：首次真正使用记忆时仍会按需重试。
+    def _warmup_memory():
+        try:
+            memory_service.init_memory()
+            print("mem0 长期记忆服务已就绪。")
+        except Exception as exc:
+            print(f"[memory] 预热失败，将按需重试: {exc}")
+
+    if memory_service.is_enabled():
+        asyncio.create_task(asyncio.to_thread(_warmup_memory))
     
     yield
     

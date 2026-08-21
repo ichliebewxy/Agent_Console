@@ -92,3 +92,13 @@ LOCAL_RUN_TIMEOUT = env_int("LOCAL_RUN_TIMEOUT", 120)
 LOCAL_RUN_OUTPUT_MAX_CHARS = env_int("LOCAL_RUN_OUTPUT_MAX_CHARS", 20000)
 LOCAL_RUN_COMMAND_MAX_CHARS = env_int("LOCAL_RUN_COMMAND_MAX_CHARS", 8000)
 AGENT_TOOL_CALL_LIMIT = max(1, env_int("AGENT_TOOL_CALL_LIMIT", 250))
+
+# ===== mem0 长期记忆（本地持久化）=====
+# 是否启用 mem0 长期记忆。关闭后 Agent 不再检索/写入记忆，记忆接口仍可用。
+MEMORY_ENABLED = env_bool("MEMORY_ENABLED", True)
+# 本地记忆数据目录（Qdrant 向量库 + SQLite 历史库）。相对路径基于项目根。
+MEM0_DIR = env_path("MEM0_DIR", PROJECT_ROOT / "data" / "mem0")
+# 用于 mem0 事实抽取/检索重排的对话模型（默认复用主聊天模型）。
+MEM0_MODEL = env("MEM0_MODEL", CHAT_MODEL)
+# 每次对话注入上下文的记忆条数上限。
+MEM0_TOP_K = max(1, env_int("MEM0_TOP_K", 5))

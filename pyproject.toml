@@ -31,6 +31,16 @@ dependencies = [
     "pywin32>=306; sys_platform == 'win32'",
     "langchain_deepseek",
     "sentence-transformers>=3.0.0",
+    # —— mem0 长期记忆（本地化）——
+    # 注意：mem0ai 目前在 PyPI 上仍声明 protobuf<7.0.0，而本项目的
+    # Milvus/gRPC 栈需要 protobuf>=7。为避免破坏 RAG，请用
+    # `uv pip install --no-deps mem0ai==2.0.18` 安装 mem0ai 本体，
+    # 并单独安装下列其余依赖（其余均无版本冲突）。
+    "mem0ai>=2.0.18",
+    "qdrant-client>=1.12.0",
+    "posthog>=7.14.0",
+    "pytz>=2024.1",
+    "portalocker>=2.7.0",
 ]
 
 [[tool.uv.index]]
