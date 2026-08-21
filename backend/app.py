@@ -1,3 +1,5 @@
+import os
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -53,8 +55,26 @@ async def lifespan(app: FastAPI):
     
     yield
     
-    # 关闭时清理（目前不需要清理，留空即可）
-    print("应用正在关闭...")
+    # 关闭时清理：显式关闭 Milvus 连接，避免进程退出时由于 atexit/GC
+    # 关闭 gRPC 通道而触发 "Cannot invoke RPC on closed channel!"。
+    print("应用正在关闭，释放 Milvus 连接...")
+    milvus_managers = []
+    try:
+        from rag_utils import _milvus_manager
+        milvus_managers.append(_milvus_manager)
+    except Exception:
+        pass
+    try:
+        from routes_documents import milvus_manager
+        milvus_managers.append(milvus_manager)
+    except Exception:
+        pass
+    for manager in milvus_managers:
+        try:
+            manager.close()
+        except Exception:
+            pass
+    print("应用已关闭。")
 
 
 def create_app() -> FastAPI:

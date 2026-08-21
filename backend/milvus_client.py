@@ -34,11 +34,17 @@ class MilvusManager:
     @staticmethod
     def _is_closed_channel_error(exc: Exception) -> bool:
         message = str(exc).lower()
-        return (
-            "closed channel" in message
-            or "channel closed" in message
-            or ("nonetype" in message and "has no attribute" in message)
+        markers = (
+            "closed channel",
+            "channel closed",
+            "cannot invoke rpc",
+            "rpc on closed",
+            "grpc_status",
+            "connection reset",
         )
+        if any(marker in message for marker in markers):
+            return True
+        return "nonetype" in message and "has no attribute" in message
 
     def _call(self, operation):
         client = self._get_client()
@@ -47,8 +53,20 @@ class MilvusManager:
         except Exception as exc:
             if not self._is_closed_channel_error(exc):
                 raise
+            # 连接已被关闭/失效：重建一个全新客户端后重试一次，避免在服务运行
+            # 或知识库检索时因空闲连接被回收而报 "Cannot invoke RPC on closed channel"。
             client = self._reset_client()
             return operation(client)
+
+    def close(self):
+        """显式关闭底层 Milvus 连接，避免进程退出时因 atexit/GC 关闭通道而报错。"""
+        with self._client_lock:
+            if self.client is not None:
+                try:
+                    self.client.close()
+                except Exception:
+                    pass
+                self.client = None
 
     def _get_dense_dim(self) -> int | None:
         description = self._call(lambda client: client.describe_collection(self.collection_name, timeout=self.timeout))

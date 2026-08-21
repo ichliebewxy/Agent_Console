@@ -1,4 +1,6 @@
 """文本向量化服务 - BGE dense embeddings + BM25 sparse embeddings."""
+import os
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 import json
 import math
 import re
@@ -11,6 +13,7 @@ from settings import (
     BM25_STATE_PATH,
     EMBEDDING_BATCH_SIZE,
     EMBEDDING_DEVICE,
+    EMBEDDING_LOCAL_FILES_ONLY,
     EMBEDDING_MODEL,
 )
 
@@ -48,14 +51,29 @@ class EmbeddingService:
             if self._embedder is None:
                 from langchain_huggingface import HuggingFaceEmbeddings
 
-                self._embedder = HuggingFaceEmbeddings(
-                    model_name=self.model_name,
-                    model_kwargs={"device": self.device},
-                    encode_kwargs={
-                        "normalize_embeddings": True,
-                        "batch_size": self.batch_size,
-                    },
-                )
+                model_kwargs = {"device": self.device}
+                if EMBEDDING_LOCAL_FILES_ONLY:
+                    # 只读本地缓存，绝不触发联网下载（避免服务运行/搜索时静默下载大模型）。
+                    model_kwargs["local_files_only"] = True
+
+                try:
+                    self._embedder = HuggingFaceEmbeddings(
+                        model_name=self.model_name,
+                        model_kwargs=model_kwargs,
+                        encode_kwargs={
+                            "normalize_embeddings": True,
+                            "batch_size": self.batch_size,
+                        },
+                    )
+                except Exception as exc:
+                    hint = ""
+                    if EMBEDDING_LOCAL_FILES_ONLY:
+                        hint = (
+                            " EMBEDDING_LOCAL_FILES_ONLY=true，但本地未找到完整模型缓存。"
+                            "请先运行 `python backend/preload_embedding_model.py` 完成一次性下载，"
+                            "或临时在 .env 中关闭该开关后再启动。"
+                        )
+                    raise Exception(f"BGE 嵌入模型加载失败: {exc}{hint}") from exc
         return self._embedder
 
     def _recompute_avg_len(self) -> None:

@@ -33,6 +33,10 @@ dependencies = [
     "sentence-transformers>=3.0.0",
 ]
 
+[[tool.uv.index]]
+url = "https://pypi.tuna.tsinghua.edu.cn/simple"
+default = true
+
 [project.optional-dependencies]
 study = [
     "langchain-classic>=0.2.0",

@@ -63,6 +63,9 @@ EMBEDDING_MODEL = env("EMBEDDING_MODEL", "BAAI/bge-m3")
 EMBEDDING_DEVICE = env("EMBEDDING_DEVICE", "cpu")
 EMBEDDING_DIM = env_int("EMBEDDING_DIM", 1024)
 EMBEDDING_BATCH_SIZE = env_int("EMBEDDING_BATCH_SIZE", 16)
+# 置为 true 时，嵌入模型只从本地缓存加载，绝不联网下载。
+# 先运行 `python backend/preload_embedding_model.py` 一次性下载完成后再开启。
+EMBEDDING_LOCAL_FILES_ONLY = env_bool("EMBEDDING_LOCAL_FILES_ONLY", False)
 BM25_STATE_PATH = env("BM25_STATE_PATH")
 MILVUS_DENSE_DIM = env_int("MILVUS_DENSE_DIM", EMBEDDING_DIM)
 
