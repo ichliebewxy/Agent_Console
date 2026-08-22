@@ -112,6 +112,39 @@
             </div>
 
             <aside
+              v-if="!msg.isUser && hasPlan(msg)"
+              class="plan-panel"
+              aria-label="任务计划"
+            >
+              <div class="plan-heading">
+                <span class="plan-icon"><i class="fas fa-list-check"></i></span>
+                <strong>执行计划</strong>
+                <small>{{ planStepStats(msg) }}</small>
+              </div>
+              <ol class="plan-list">
+                <li
+                  v-for="(step, pIdx) in planSteps(msg)"
+                  :key="step.id || pIdx"
+                  :class="['plan-step', step.status]"
+                  :title="planStatusLabel(step.status)"
+                >
+                  <span :class="['plan-status', step.status]"><i :class="planStatusIcon(step.status)"></i></span>
+                  <div class="plan-copy">
+                    <b>{{ step.title }}</b>
+                    <small v-if="step.detail">{{ step.detail }}</small>
+                    <small v-if="step.result" class="plan-result">{{ step.result }}</small>
+                  </div>
+                </li>
+              </ol>
+              <div v-if="planReflections(msg).length" class="plan-reflections">
+                <div v-for="(refl, rIdx) in planReflections(msg)" :key="rIdx" class="plan-reflection">
+                  <i class="fas fa-rotate"></i>
+                  <span>{{ refl.reason || (refl.decision === 'complete' ? '目标已达成，结束执行' : refl.decision === 'stop' ? '遇到阻塞，停止执行' : '继续执行') }}</span>
+                </div>
+              </div>
+            </aside>
+
+            <aside
               v-if="!msg.isUser && toolCallGroups(msg).length"
               class="tool-activity-bubble"
               aria-label="工具调用"

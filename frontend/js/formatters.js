@@ -79,4 +79,45 @@ Object.assign(window.NebulaNestApp.methods, {
     }
     return Array.from(groups.values());
   },
+
+  hasPlan(msg) {
+    return !!(msg && msg.plan && Array.isArray(msg.plan.steps) && msg.plan.steps.length);
+  },
+
+  planSteps(msg) {
+    return msg && msg.plan && Array.isArray(msg.plan.steps) ? msg.plan.steps : [];
+  },
+
+  planReflections(msg) {
+    return msg && msg.plan && Array.isArray(msg.plan.reflections) ? msg.plan.reflections : [];
+  },
+
+  planStepStats(msg) {
+    const steps = this.planSteps(msg);
+    const done = steps.filter((s) => s.status === "done").length;
+    const failed = steps.filter((s) => s.status === "failed").length;
+    return done + "/" + steps.length + " 已完成" + (failed ? " · " + failed + " 失败" : "");
+  },
+
+  planStatusIcon(status) {
+    const map = {
+      pending: "fas fa-circle",
+      in_progress: "fas fa-spinner fa-spin",
+      done: "fas fa-check",
+      failed: "fas fa-xmark",
+      skipped: "fas fa-minus",
+    };
+    return map[status] || "fas fa-circle";
+  },
+
+  planStatusLabel(status) {
+    const map = {
+      pending: "待执行",
+      in_progress: "执行中",
+      done: "已完成",
+      failed: "失败",
+      skipped: "已跳过",
+    };
+    return map[status] || status;
+  },
 });

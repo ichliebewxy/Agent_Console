@@ -39,6 +39,7 @@ Agent Console 是一个面向本地可信环境的 LangChain 多 Agent + RAG 工
 | 工具安全 | Bash 默认拒绝，执行顺序为 deny → authorize → allow → default deny；阻止路径逃逸、shell 拼接、危险系统命令和高风险 OpenCLI。 |
 | 可观察但不扰人 | 前端展示当前对话实际产生的工具/RAG 轨迹和引用；没有引用时不展示检索轨迹。旧的“运行回调”只读页面和公开回调接口不再提供，失败记录仅留在服务端诊断文件。 |
 | 调用上限 | 每轮对话最多执行 `AGENT_TOOL_CALL_LIMIT` 次工具调用，默认 250 次；达到上限会停止继续调用并整理已有结果。 |
+| Plan-and-Execute | 对多步骤任务，先用规划器一次性拆解为有序子任务，再逐步执行；每完成一步就结合实际结果“反省”，必要时增删改后续计划。 |
 | 长期记忆（mem0） | 基于 [mem0](https://github.com/mem0ai/mem0) 的跨会话用户记忆：每轮对话前检索相关记忆注入上下文，对话后自动蒸馏沉淀新记忆；记忆面板支持查看、手动新增、编辑与删除。 |
 
 ## 长期记忆（mem0）
@@ -128,6 +129,10 @@ SSE 事件类型：
 | `content_boundary` | 主 Agent 模型消息边界，前端开始新的回答片段。 |
 | `rag_step` | 知识库召回、评分、改写、auto-merging 等阶段。 |
 | `tool_step` | 工具开始、完成、失败或达到上限。 |
+| `plan` | 规划器拆解出的子任务清单与各自状态。 |
+| `plan_step` | 规划、执行、反省、完成等阶段的进度标记。 |
+| `execute` | 单个子任务状态变更（in_progress / done / failed）。 |
+| `reflect` | 反省结论（continue / complete / stop）与计划调整说明。 |
 | `trace` | 完整 RAG trace 和引用片段。无知识库引用时不会发送。 |
 | `artifacts` | 当前会话 `deliverables/` 目录中可下载的最终产物清单。 |
 | `error` | 流式过程中发生的模型或工具错误。 |
@@ -570,6 +575,9 @@ Invoke-RestMethod http://127.0.0.1:8080/documents
 | `GRADE_MODEL` | `deepseek-v4-flash` | RAG 文档相关性评分模型。 |
 | `QUERY_EXPANSION_MODEL` | `CHAT_MODEL` | Step-back/HyDE/路由模型。 |
 | `AGENT_TOOL_CALL_LIMIT` | `250` | 每轮最大工具调用数；同时影响 Agent recursion limit。 |
+| `PLAN_EXECUTE_ENABLED` | `true` | 为多步骤任务启用“规划 → 执行 → 反省调整”模式；简单问答仍走单次直答。 |
+| `PLAN_EXECUTE_MAX_STEPS` | `6` | 单次任务最多拆解/执行的子任务步数上限。 |
+| `PLAN_EXECUTE_RESULT_MAX_CHARS` | `3000` | 反省时注入“上一步结果”的字符上限。 |
 | `DASHSCOPE_MCP_API_KEY` | 空 | 高德地图 MCP 的授权 Key。 |
 | `MCP_DISCOVERY_TIMEOUT` | `30` | 单个 MCP server 工具发现超时（秒）。 |
 | `EMBEDDING_MODEL` | `BAAI/bge-m3` | dense embedding 模型。 |

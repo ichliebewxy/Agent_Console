@@ -93,6 +93,15 @@ LOCAL_RUN_OUTPUT_MAX_CHARS = env_int("LOCAL_RUN_OUTPUT_MAX_CHARS", 20000)
 LOCAL_RUN_COMMAND_MAX_CHARS = env_int("LOCAL_RUN_COMMAND_MAX_CHARS", 8000)
 AGENT_TOOL_CALL_LIMIT = max(1, env_int("AGENT_TOOL_CALL_LIMIT", 250))
 
+# ===== Plan-and-Execute（规划 → 执行 → 反省）=====
+# 是否启用“先拆解为子任务，再逐步执行，并结合实际结果反省调整计划”的任务模式。
+# 简单问答仍走单次直答路径，不会额外产生规划调用。
+PLAN_EXECUTE_ENABLED = env_bool("PLAN_EXECUTE_ENABLED", True)
+# 规划器最多拆解出的子任务数量；也是单轮实际执行的步数上限。
+PLAN_EXECUTE_MAX_STEPS = max(1, env_int("PLAN_EXECUTE_MAX_STEPS", 6))
+# 反省时注入“上一步结果”的字符上限，避免上下文过长。
+PLAN_EXECUTE_RESULT_MAX_CHARS = max(200, env_int("PLAN_EXECUTE_RESULT_MAX_CHARS", 3000))
+
 # ===== mem0 长期记忆（本地持久化）=====
 # 是否启用 mem0 长期记忆。关闭后 Agent 不再检索/写入记忆，记忆接口仍可用。
 MEMORY_ENABLED = env_bool("MEMORY_ENABLED", True)

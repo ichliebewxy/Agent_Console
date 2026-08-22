@@ -447,6 +447,161 @@
   font: 0.78rem/1.5 var(--font-mono);
 }
 
+/* ── Plan-and-Execute 计划面板 ─────────────────────── */
+.plan-panel {
+  width: 100%;
+  max-width: 640px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in oklch, var(--blue) 30%, var(--line));
+  border-radius: var(--radius-lg);
+  background: color-mix(in oklch, var(--surface) 90%, var(--info-bg));
+  box-shadow: 0 3px 14px rgba(34, 44, 38, 0.04);
+  display: grid;
+  gap: 10px;
+}
+
+.plan-heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--blue);
+  font-size: 0.85rem;
+}
+
+.plan-heading strong {
+  font-weight: 600;
+}
+
+.plan-heading small {
+  margin-left: auto;
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.plan-icon {
+  width: 26px;
+  height: 26px;
+  border-radius: 9px;
+  display: inline-grid;
+  place-items: center;
+  background: var(--info-bg);
+  color: var(--blue);
+  font-size: 0.72rem;
+}
+
+.plan-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 7px;
+}
+
+.plan-step {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  padding: 9px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: color-mix(in oklch, var(--surface-raised) 82%, transparent);
+}
+
+.plan-status {
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  border-radius: 999px;
+  display: inline-grid;
+  place-items: center;
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-size: 0.66rem;
+}
+
+.plan-step.in_progress .plan-status {
+  background: var(--info-bg);
+  color: var(--blue);
+}
+
+.plan-step.done .plan-status {
+  background: var(--success-bg);
+  color: var(--green-dark);
+}
+
+.plan-step.failed .plan-status {
+  background: var(--danger-bg);
+  color: var(--coral);
+}
+
+.plan-step.skipped .plan-status {
+  background: var(--surface-soft);
+  color: var(--muted);
+}
+
+.plan-copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.plan-copy b {
+  color: var(--ink);
+  font-size: 0.85rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.plan-copy small {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.plan-copy small.plan-result {
+  margin-top: 3px;
+  padding: 7px 9px;
+  border-left: 2px solid color-mix(in oklch, var(--green) 40%, transparent);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--surface-soft);
+  color: var(--ink);
+  white-space: pre-wrap;
+  font-family: var(--font-mono);
+  max-height: 132px;
+  overflow: auto;
+}
+
+.plan-step.failed .plan-copy small.plan-result {
+  border-left-color: color-mix(in oklch, var(--coral) 46%, transparent);
+}
+
+.plan-reflections {
+  display: grid;
+  gap: 5px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line-strong);
+}
+
+.plan-reflection {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.plan-reflection i {
+  color: var(--blue);
+  font-size: 0.7rem;
+}
+
 /* ── 工具调用活动卡 ─────────────────────────────────── */
 .tool-activity-bubble {
   width: 100%;

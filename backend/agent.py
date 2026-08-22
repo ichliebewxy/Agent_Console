@@ -12,9 +12,10 @@ from chat_models import build_chat_model
 from conversation_storage import ConversationStorage
 from core_tools import TOOLS
 import memory_service
+import plan_execute
 from event_stream import set_rag_step_queue, set_tool_step_queue
 from runtime_context import bind_runtime_context, session_async_lock
-from settings import AGENT_TOOL_CALL_LIMIT
+from settings import AGENT_TOOL_CALL_LIMIT, PLAN_EXECUTE_ENABLED
 from subagents import build_subagent_tools
 from tool_instrumentation import instrument_tools
 
@@ -140,6 +141,165 @@ def _extract_response(result) -> str:
         return result.content
     return str(result)
 
+def _sse_event(event: dict) -> str:
+    newline = chr(10)
+    return "data: " + json.dumps(event, ensure_ascii=False) + newline + newline
+
+
+class _RagStepQueueProxy:
+    def __init__(self, queue):
+        self._queue = queue
+
+    def put_nowait(self, step):
+        self._queue.put_nowait({"type": "rag_step", "step": step})
+
+
+class _ToolStepQueueProxy:
+    def __init__(self, queue):
+        self._queue = queue
+
+    def put_nowait(self, step):
+        self._queue.put_nowait({"type": "tool_step", "step": step})
+
+
+def _should_plan_execute(user_text: str) -> bool:
+    if not PLAN_EXECUTE_ENABLED:
+        return False
+    return plan_execute.is_multi_step_task(user_text)
+
+
+def _drain_output_queue(queue: asyncio.Queue) -> list:
+    drained = []
+    while True:
+        try:
+            drained.append(queue.get_nowait())
+        except asyncio.QueueEmpty:
+            break
+    return drained
+
+
+async def _execute_plan_step(instruction: str) -> str:
+    reset_tool_call_guards()
+    result = await agent.ainvoke(
+        {"messages": [HumanMessage(content=instruction)]},
+        config={"recursion_limit": _AGENT_RECURSION_LIMIT},
+    )
+    return _extract_response(result)
+
+
+async def _plan_execute_stream_events(user_text: str, plan, output_queue: asyncio.Queue):
+    "Yield plan / execute / reflect / content events for one plan-and-execute turn."
+    from settings import PLAN_EXECUTE_MAX_STEPS
+
+    def _plan_event():
+        steps = []
+        for s in plan.steps:
+            item = s.to_dict()
+            if item.get("result"):
+                item["result"] = item["result"][:200]
+            steps.append(item)
+        return {"type": "plan", "objective": plan.objective, "steps": steps}
+
+    yield _plan_event()
+    yield {
+        "type": "plan_step",
+        "step": {
+            "icon": "📋",
+            "phase": "plan",
+            "label": "规划完成：拆分为 " + str(len(plan.steps)) + " 个子任务",
+            "detail": plan.objective,
+        },
+    }
+
+    newline = chr(10)
+    index = 0
+    executed = 0
+    max_steps = PLAN_EXECUTE_MAX_STEPS
+    while index < len(plan.steps) and executed < max_steps:
+        step = plan.steps[index]
+        if step.status != "pending":
+            index += 1
+            continue
+        step.status = "in_progress"
+        yield {
+            "type": "plan_step",
+            "step": {
+                "icon": "▶",
+                "phase": "execute",
+                "label": "执行 " + str(index + 1) + "/" + str(len(plan.steps)) + "：" + step.title,
+                "detail": step.detail or "",
+            },
+        }
+        yield {
+            "type": "execute",
+            "step_id": step.id,
+            "status": "in_progress",
+            "title": step.title,
+            "index": index,
+            "total": len(plan.steps),
+        }
+
+        instruction = plan_execute.build_step_instruction(
+            plan, step, index + 1, len(plan.steps)
+        )
+        try:
+            result = await _execute_plan_step(instruction)
+            step.status = "done"
+        except Exception as exc:
+            result = "（执行出错：" + str(exc) + "）"
+            step.status = "failed"
+        step.result = result
+        executed += 1
+
+        for event in _drain_output_queue(output_queue):
+            yield event
+
+        if index > 0:
+            yield {"type": "content_boundary"}
+        header = "### 步骤 " + str(index + 1) + "：" + step.title + newline
+        yield {"type": "content", "content": header + str(result or "") + newline}
+        yield {
+            "type": "execute",
+            "step_id": step.id,
+            "status": step.status,
+            "title": step.title,
+            "index": index,
+            "total": len(plan.steps),
+            "result": str(result or "")[:200],
+        }
+
+        yield {
+            "type": "plan_step",
+            "step": {"icon": "🔄", "phase": "reflect", "label": "反省与计划调整", "detail": ""},
+        }
+        reflection = None
+        try:
+            reflection = await plan_execute.reflect(plan, step.result or "")
+        except Exception as exc:
+            print("[plan] 反省失败，按原计划继续: " + str(exc))
+        if reflection is not None:
+            notes = plan_execute.apply_reflection(plan, reflection)
+            yield {
+                "type": "reflect",
+                "decision": reflection.decision,
+                "reason": reflection.reason,
+                "adjusted": bool(notes),
+            }
+            if notes:
+                yield _plan_event()
+            if reflection.decision == "complete":
+                break
+            if reflection.decision == "stop":
+                break
+
+        index += 1
+
+    yield {
+        "type": "plan_step",
+        "step": {"icon": "✅", "phase": "complete", "label": "计划执行结束", "detail": ""},
+    }
+    yield _plan_event()
+
 
 def _persist_response(
     user_id: str,
@@ -166,11 +326,34 @@ async def chat_with_agent(
     with bind_runtime_context(user_id, session_id):
         messages = _prepare_messages(user_text, user_id, session_id)
         messages = await _augment_with_memory(user_text, user_id, messages)
-        result = await agent.ainvoke(
-            {"messages": messages},
-            config={"recursion_limit": _AGENT_RECURSION_LIMIT},
-        )
-        response = _extract_response(result)
+
+        output_queue = asyncio.Queue()
+        plan = None
+        if _should_plan_execute(user_text):
+            try:
+                plan = await plan_execute.generate_plan(user_text)
+            except Exception as exc:
+                print("[plan] 规划失败，退回到直接执行: " + str(exc))
+                plan = None
+
+        set_rag_step_queue(_RagStepQueueProxy(output_queue))
+        set_tool_step_queue(_ToolStepQueueProxy(output_queue))
+        try:
+            if plan is not None and getattr(plan, "steps", None):
+                response = ""
+                async for event in _plan_execute_stream_events(user_text, plan, output_queue):
+                    if event.get("type") == "content":
+                        response += event.get("content", "")
+            else:
+                result = await agent.ainvoke(
+                    {"messages": messages},
+                    config={"recursion_limit": _AGENT_RECURSION_LIMIT},
+                )
+                response = _extract_response(result)
+        finally:
+            set_rag_step_queue(None)
+            set_tool_step_queue(None)
+
         rag_context = get_last_rag_context(clear=True)
         rag_trace = rag_context.get("rag_trace") if rag_context else None
         async with session_async_lock(user_id, session_id):
@@ -218,6 +401,27 @@ async def _chat_with_agent_stream_bound(
         raise RuntimeError("主 Agent 尚未初始化，请先等待 init_agent_async() 完成。")
     messages = _prepare_messages(user_text, user_id, session_id)
     messages = await _augment_with_memory(user_text, user_id, messages)
+
+    plan = None
+    if _should_plan_execute(user_text):
+        yield _sse_event(
+            {
+                "type": "plan_step",
+                "step": {"icon": "🧭", "phase": "plan", "label": "正在规划任务拆解", "detail": ""},
+            }
+        )
+        try:
+            plan = await plan_execute.generate_plan(user_text)
+        except Exception as exc:
+            print("[plan] 规划失败，退回到直接执行: " + str(exc))
+            yield _sse_event(
+                {
+                    "type": "plan_step",
+                    "step": {"icon": "↩", "phase": "plan", "label": "规划未成功，改为直接执行", "detail": str(exc)[:200]},
+                }
+            )
+            plan = None
+
     output_queue = asyncio.Queue()
     full_response = ""
 
@@ -269,24 +473,33 @@ async def _chat_with_agent_stream_bound(
 
     set_rag_step_queue(_RagStepProxy())
     set_tool_step_queue(_ToolStepProxy())
-    agent_task = asyncio.create_task(_agent_worker())
+
+    agent_task = None
     try:
-        while True:
-            event = await output_queue.get()
-            if event is None:
-                break
-            yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-    except GeneratorExit:
-        agent_task.cancel()
-        try:
-            await agent_task
-        except asyncio.CancelledError:
-            pass
-        raise
+        if plan is not None and getattr(plan, "steps", None):
+            async for event in _plan_execute_stream_events(user_text, plan, output_queue):
+                if event.get("type") == "content":
+                    full_response += event.get("content", "")
+                yield _sse_event(event)
+        else:
+            agent_task = asyncio.create_task(_agent_worker())
+            try:
+                while True:
+                    event = await output_queue.get()
+                    if event is None:
+                        break
+                    yield _sse_event(event)
+            except GeneratorExit:
+                agent_task.cancel()
+                try:
+                    await agent_task
+                except asyncio.CancelledError:
+                    pass
+                raise
     finally:
         set_rag_step_queue(None)
         set_tool_step_queue(None)
-        if not agent_task.done():
+        if agent_task is not None and not agent_task.done():
             agent_task.cancel()
 
     rag_context = get_last_rag_context(clear=True)

@@ -29,6 +29,7 @@ Object.assign(window.NebulaNestApp.methods, {
       isUser: false,
       isThinking: true,
       thinkingText: "主 Agent 正在规划并选择小 Agent...",
+      plan: null,
       ragTrace: null,
       ragSteps: [],
       toolSteps: [],
@@ -110,6 +111,32 @@ Object.assign(window.NebulaNestApp.methods, {
       } else if (data.type === "artifacts") {
         const botMessage = this.activeAssistantMessage(botMsgIdx);
         botMessage.artifacts = data.artifacts || [];
+      } else if (data.type === "plan") {
+        const botMessage = this.activeAssistantMessage(botMsgIdx);
+        if (!botMessage.plan) botMessage.plan = { objective: "", steps: [], reflections: [] };
+        botMessage.plan.objective = data.objective || botMessage.plan.objective;
+        if (Array.isArray(data.steps)) botMessage.plan.steps = data.steps;
+      } else if (data.type === "plan_step") {
+        const botMessage = this.activeAssistantMessage(botMsgIdx);
+        botMessage.flowSteps = botMessage.flowSteps || [];
+        botMessage.flowSteps.push(data.step);
+      } else if (data.type === "execute") {
+        const botMessage = this.activeAssistantMessage(botMsgIdx);
+        if (!botMessage.plan) botMessage.plan = { objective: "", steps: [], reflections: [] };
+        const target = (botMessage.plan.steps || []).find((s) => s.id === data.step_id);
+        if (target) {
+          target.status = data.status;
+          if (data.result !== undefined) target.result = data.result;
+        }
+      } else if (data.type === "reflect") {
+        const botMessage = this.activeAssistantMessage(botMsgIdx);
+        if (!botMessage.plan) botMessage.plan = { objective: "", steps: [], reflections: [] };
+        botMessage.plan.reflections = botMessage.plan.reflections || [];
+        botMessage.plan.reflections.push({
+          decision: data.decision,
+          reason: data.reason,
+          adjusted: data.adjusted,
+        });
       } else if (data.type === "error") {
         const botMessage = this.activeAssistantMessage(botMsgIdx);
         botMessage.isThinking = false;
@@ -174,6 +201,7 @@ Object.assign(window.NebulaNestApp.methods, {
       isUser: false,
       isThinking: false,
       thinkingText: "",
+      plan: null,
       ragTrace: null,
       ragSteps: [],
       toolSteps: [],
@@ -207,6 +235,7 @@ Object.assign(window.NebulaNestApp.methods, {
         id: this.createId(),
         text: msg.content,
         isUser: msg.type === "human",
+        plan: null,
         ragTrace: msg.rag_trace || null,
         ragSteps: [],
         toolSteps: [],
