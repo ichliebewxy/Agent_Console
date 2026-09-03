@@ -1,10 +1,4 @@
 Object.assign(window.NebulaNestApp.methods, {
-  formatMcpEndpoint(server) {
-    if (!server) return "";
-    if (server.url) return server.url;
-    return [server.command, ...(server.args || [])].filter(Boolean).join(" ");
-  },
-
   async loadRuntimeConfig() {
     this.configLoading = true;
     try {
@@ -25,55 +19,11 @@ Object.assign(window.NebulaNestApp.methods, {
       const response = await fetch("/runtime-config/refresh", { method: "POST" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       await this.loadRuntimeConfig();
-      this.notify("MCP 工具和 Skills catalog 已刷新");
+      this.notify("资源目录已刷新，将在下一条消息中加载");
     } catch (error) {
       this.notify(`刷新失败：${error.message}`);
     } finally {
       this.configLoading = false;
-    }
-  },
-
-  async addMcpServer() {
-    try {
-      const headers = JSON.parse(this.mcpForm.headers || "{}");
-      const env = JSON.parse(this.mcpForm.env || "{}");
-      const body = {
-        name: this.mcpForm.name.trim(),
-        transport: this.mcpForm.transport,
-        url: this.mcpForm.url.trim(),
-        command: this.mcpForm.command.trim(),
-        args: this.mcpForm.args.split(/\s+/).filter(Boolean),
-        headers,
-        env,
-        enabled: this.mcpForm.enabled,
-      };
-      const response = await fetch("/runtime-config/mcp", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
-      this.runtimeConfig = data.config || this.runtimeConfig;
-      this.mcpForm = {
-        name: "", transport: "streamable_http", url: "", command: "",
-        args: "", headers: "{}", env: "{}", enabled: true,
-      };
-      this.notify("MCP server 已保存并完成工具发现");
-    } catch (error) {
-      this.notify(`保存 MCP 失败：${error.message}`);
-    }
-  },
-
-  async deleteMcpServer(name) {
-    if (!confirm(`删除 MCP server「${name}」并重新加载主 Agent？`)) return;
-    try {
-      const response = await fetch(`/runtime-config/mcp/${encodeURIComponent(name)}`, { method: "DELETE" });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      await this.loadRuntimeConfig();
-      this.notify("MCP server 已删除");
-    } catch (error) {
-      this.notify(`删除 MCP 失败：${error.message}`);
     }
   },
 
@@ -86,11 +36,29 @@ Object.assign(window.NebulaNestApp.methods, {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
-      this.runtimeConfig = data.config || this.runtimeConfig;
+      await this.loadRuntimeConfig();
       this.skillForm = { name: "", description: "", instructions: "", overwrite: false };
-      this.notify("Skill 已保存并重新加载");
+      this.notify("Skill 已保存，将在下一条消息中加载");
     } catch (error) {
       this.notify(`保存 Skill 失败：${error.message}`);
+    }
+  },
+
+  async uploadSkillFile(event) {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = "";
+    if (!file) return;
+    try {
+      const body = new FormData();
+      body.append("skill", file, file.name);
+      body.append("overwrite", String(this.skillForm.overwrite));
+      const response = await fetch("/runtime-config/skills/upload", { method: "POST", body });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
+      await this.loadRuntimeConfig();
+      this.notify(data.message || "Skill 已上传并加载");
+    } catch (error) {
+      this.notify(`上传 Skill 失败：${error.message}`);
     }
   },
 

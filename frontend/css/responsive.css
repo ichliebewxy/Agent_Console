@@ -52,6 +52,8 @@
     gap: 20px;
   }
 
+  .workspace-bar { grid-template-columns: 1fr; padding: 10px 16px; }
+
   .from-user .message-bubble {
     max-width: 88%;
   }
@@ -93,6 +95,8 @@
 }
 
 @media (max-width: 520px) {
+  .workspace-actions { flex-wrap: wrap; }
+  .workspace-actions input { flex-basis: 100%; }
   .config-stats {
     grid-template-columns: 1fr 1fr;
     gap: 10px;

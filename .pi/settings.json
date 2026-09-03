@@ -1,0 +1,12 @@
+{
+  "packages": [
+    "npm:@hypabolic/pi-hypa@0.1.14",
+    "npm:pi-web-access@0.27.0",
+    "npm:pi-subagents@0.63.0",
+    "npm:@juicesharp/rpiv-ask-user-question@2.8.0",
+    "npm:pi-lens@4.0.0",
+    "npm:@gotgenes/pi-permission-system@30.0.0",
+    "npm:pi-memory@0.4.2",
+    "npm:@getpipher/vision@0.5.2"
+  ]
+}

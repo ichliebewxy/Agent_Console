@@ -1,11 +1,10 @@
 [project]
 name = "agent-console"
 version = "0.1.0"
-description = "A local LangChain agent console with lazy subagents, hybrid RAG, and startup-discovered MCP tools."
+description = "Knowledge and memory sidecar for the Pi-based Ergouzi assistant."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "rich>=14.2.0",
     "fastapi>=0.115.0",
     "uvicorn>=0.30.0",
     "python-dotenv>=1.0.1",
@@ -13,29 +12,24 @@ dependencies = [
     "pymilvus>=2.5.0",
     "python-multipart>=0.0.9",
     "pydantic>=2.8.0",
-    "pyyaml>=6.0.2",
     "langchain>=0.2.14",
     "langchain-core>=0.2.37",
     "langchain-community>=0.2.12",
+    "dashscope>=1.25.18",
     "langchain-text-splitters>=0.2.2",
     "langchain-openai>=0.1.22",
     "langchain-huggingface>=0.1.0",
-    "langchain-mcp-adapters>=0.1.0",
     "langgraph>=0.2.31",
-    "pypdf>=4.3.1",
-    "docx2txt>=0.8",
-    "websockets>=16.0",
     "PyMuPDF",
     "python-pptx",
     "python-docx",
+    "pandas>=2.2.0",
+    "openpyxl>=3.1.5",
+    "xlrd>=2.0.1",
     "pywin32>=306; sys_platform == 'win32'",
     "langchain_deepseek",
     "sentence-transformers>=3.0.0",
     # —— mem0 长期记忆（本地化）——
-    # 注意：mem0ai 目前在 PyPI 上仍声明 protobuf<7.0.0，而本项目的
-    # Milvus/gRPC 栈需要 protobuf>=7。为避免破坏 RAG，请用
-    # `uv pip install --no-deps mem0ai==2.0.18` 安装 mem0ai 本体，
-    # 并单独安装下列其余依赖（其余均无版本冲突）。
     "mem0ai>=2.0.18",
     "qdrant-client>=1.12.0",
     "posthog>=7.14.0",
@@ -46,10 +40,3 @@ dependencies = [
 [[tool.uv.index]]
 url = "https://pypi.tuna.tsinghua.edu.cn/simple"
 default = true
-
-[project.optional-dependencies]
-study = [
-    "langchain-classic>=0.2.0",
-    "chromadb>=0.5.5",
-    "bilibili-api-python>=17.0.0",
-]

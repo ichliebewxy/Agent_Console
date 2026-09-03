@@ -5,6 +5,10 @@ window.NebulaNestApp = {
     return {
       messages: [],
       userInput: "",
+      chatImages: [],
+      pendingDialog: null,
+      dialogAnswer: "",
+      dialogSubmitting: false,
       isLoading: false,
       activeView: "chat",
       abortController: null,
@@ -13,22 +17,15 @@ window.NebulaNestApp = {
       sessions: [],
       runtimeConfig: null,
       configLoading: false,
-      mcpForm: {
-        name: "",
-        transport: "streamable_http",
-        url: "",
-        command: "",
-        args: "",
-        headers: "{}",
-        env: "{}",
-        enabled: true,
-      },
       skillForm: {
         name: "",
         description: "",
         instructions: "",
         overwrite: false,
       },
+      workspacePath: "",
+      workspaceDraft: "",
+      workspaceLoading: false,
       documents: [],
       documentsLoading: false,
       selectedFile: null,
@@ -53,9 +50,9 @@ window.NebulaNestApp = {
     },
     viewTitle() {
       const titles = {
-        chat: { eyebrow: "Chat", title: "可追踪的 Agent 对话" },
+        chat: { eyebrow: "Pi Workspace", title: "工作区交付模式" },
         knowledge: { eyebrow: "Knowledge", title: "知识库与混合检索" },
-        config: { eyebrow: "Runtime Config", title: "MCP、Skills 与 Bash 权限" },
+        config: { eyebrow: "Runtime Config", title: "Pi 插件、Skills 与权限" },
         memory: { eyebrow: "Memory", title: "用户长期记忆（mem0）" },
       };
       return titles[this.activeView] || titles.chat;
@@ -66,6 +63,7 @@ window.NebulaNestApp = {
     this.configureMarked();
     this.restoreIdentity();
     this.restoreState();
+    this.loadWorkspace();
     this.$nextTick(() => this.scrollToBottom());
   },
 
@@ -136,7 +134,7 @@ window.NebulaNestApp = {
     },
 
     parseMarkdown(text) {
-      return marked.parse(text || "");
+      return DOMPurify.sanitize(marked.parse(text || ""));
     },
 
     createId() {
@@ -187,8 +185,10 @@ window.NebulaNestApp = {
     },
 
     handleNewChat() {
+      if (this.isLoading) { this.notify("请先停止或等待当前任务"); return; }
       this.messages = [];
       this.userInput = "";
+      this.chatImages = [];
       this.sessionId = "session_" + Date.now();
       this.activeView = "chat";
       this.showHistorySidebar = false;
@@ -196,6 +196,7 @@ window.NebulaNestApp = {
     },
 
     handleClearChat() {
+      if (this.isLoading) { this.notify("请先停止或等待当前任务"); return; }
       if (!confirm("确定清空当前会话吗？")) return;
       this.messages = [];
       this.persistState();
@@ -211,6 +212,8 @@ window.NebulaNestApp = {
         el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
       });
     },
+
+
   },
 
   watch: {

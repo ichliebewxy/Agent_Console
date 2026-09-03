@@ -1,0 +1,51 @@
+{
+  "name": "ergouzi-pi-assistant",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "二狗子助手：基于 pi SDK 的 Web Agent，复用本地 Milvus 混合知识库。",
+  "scripts": {
+    "dev": "concurrently -k -n RAG,PI -c yellow,cyan \"npm:dev:rag\" \"npm:dev:pi\"",
+    "dev:pi": "tsx watch src/main.ts",
+    "dev:rag": "uv run uvicorn backend.rag_app:app --host 127.0.0.1 --port 8091",
+    "start": "tsx src/main.ts",
+    "start:rag": "uv run uvicorn backend.rag_app:app --host 127.0.0.1 --port 8091",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "check": "npm run typecheck && npm test",
+    "format": "prettier --write src tests vitest.config.ts",
+    "test:rag": "uv run python -m unittest discover -s backend/tests -v"
+  },
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "0.84.4",
+    "@getpipher/vision": "0.5.2",
+    "@gotgenes/pi-permission-system": "30.0.0",
+    "@hypabolic/pi-hypa": "0.1.14",
+    "@juicesharp/rpiv-ask-user-question": "2.8.0",
+    "adm-zip": "0.6.0",
+    "cors": "2.8.5",
+    "dompurify": "3.4.14",
+    "dotenv": "17.2.2",
+    "express": "5.1.0",
+    "multer": "2.3.0",
+    "pi-lens": "4.0.0",
+    "pi-memory": "0.4.2",
+    "pi-subagents": "0.63.0",
+    "pi-web-access": "0.27.0",
+    "typebox": "1.1.38",
+    "undici": "8.10.1",
+    "yaml": "2.9.0"
+  },
+  "devDependencies": {
+    "@types/adm-zip": "0.5.7",
+    "@types/cors": "2.8.19",
+    "@types/express": "5.0.3",
+    "@types/multer": "2.0.0",
+    "@types/node": "24.3.0",
+    "concurrently": "9.2.4",
+    "prettier": "3.9.6",
+    "tsx": "4.20.5",
+    "typescript": "5.9.2",
+    "vitest": "3.2.7"
+  }
+}

@@ -1,28 +1,64 @@
-# Python-generated files
-__pycache__/
-*.py[oc]
-build/
+# Secrets: keep the shareable template, never real credentials or backups.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Application state, user data, generated files, and cleanup backups.
+/tmp/*
+!/tmp/.gitkeep
+/data/
+/volumes/
+/extracted_images/
+/backend/tmp/
+/backend/data/
+/.tmp*/
+.pi/agent/
+.pi/npm/
+.pi/git/
+
+# Node dependencies, builds, tests, and package-manager caches.
+node_modules/
 dist/
+build/
+coverage/
+.nyc_output/
+.cache/
+.parcel-cache/
+*.tsbuildinfo
+.npm/
+.pnpm-store/
+
+# Python environments, bytecode, test/lint caches, and packaging outputs.
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+*.egg-info/
 wheels/
-*.egg-info
 
-# Virtual environments
-.venv
-.env    
-
-#docker files
-volumes/
-
-# Runtime outputs
-backend/*.log
-extracted_images/
-
-# OS files
+# Logs, editors, and operating-system metadata.
+*.log
+*.log.*
+*.swp
+*.swo
+*~
+.idea/
+.vs/
 .DS_Store
-data/
+Thumbs.db
+Desktop.ini
 
-# Local Agent runtime artifacts (skill packages remain tracked)
-backend/tmp/*
-!backend/tmp/.gitkeep
-
-/.tmp_probe
+# package-lock.json and uv.lock are intentionally versioned.

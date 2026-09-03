@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#122b22">
-  <title>NebulaNest Agent Console</title>
+  <title>二狗子助手 · Pi 工作台</title>
   <link rel="stylesheet" href="style.css">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -19,10 +19,10 @@
   <div id="app" class="shell">
     <aside class="rail">
       <div class="brand">
-        <div class="brand-mark">NN</div>
+        <div class="brand-mark">二狗</div>
         <div>
-          <h1>NebulaNest</h1>
-          <p>Agent Console</p>
+          <h1>二狗子助手</h1>
+          <p>Pi Workspace</p>
         </div>
       </div>
 
@@ -67,11 +67,22 @@
       </header>
 
       <section v-show="activeView === 'chat'" class="chat-layout">
+        <div class="workspace-bar">
+          <div class="workspace-current" :title="workspacePath">
+            <i class="fas fa-folder-open"></i>
+            <span><small>当前工作区</small><b>{{ workspacePath || '正在读取…' }}</b></span>
+          </div>
+          <div class="workspace-actions">
+            <input v-model="workspaceDraft" type="text" aria-label="工作区绝对路径" placeholder="输入本机文件夹的绝对路径" @keyup.enter="saveWorkspace">
+            <button type="button" class="secondary-action inline" :disabled="workspaceLoading" @click="saveWorkspace"><i class="fas fa-check"></i>应用</button>
+            <button type="button" class="primary-action" :disabled="workspaceLoading" @click="pickWorkspace"><i class="fas fa-folder-plus"></i>选择文件夹</button>
+          </div>
+        </div>
         <div class="chat-stream" ref="chatContainer" :aria-busy="isLoading">
           <div v-if="messages.length === 0" class="empty-state">
             <i class="fas fa-compass"></i>
-            <h3>从一个问题开始</h3>
-            <p>支持主 Agent 委派、小 Agent 按需调用、RAG 过程追踪和会话状态恢复。</p>
+            <h3>让二狗子在工作区里干活</h3>
+            <p>任务会在上方选定的本机文件夹中执行，生成文件也直接交付到该工作区。</p>
             <div class="empty-suggestions">
               <button type="button" @click="useSuggestion('帮我总结一下知识库里最新文档的要点')">
                 <i class="fas fa-file-lines"></i><span>总结知识库最新文档的要点</span>
@@ -191,6 +202,9 @@
             </aside>
 
             <div v-if="msg.isUser || msg.text" class="message-bubble" v-html="msg.isUser ? escapeHtml(msg.text) : parseMarkdown(msg.text)"></div>
+            <div v-if="msg.isUser && msg.imageNames && msg.imageNames.length" class="message-images">
+              <span v-for="name in msg.imageNames" :key="name"><i class="fas fa-image"></i>{{ name }}</span>
+            </div>
 
             <div v-if="!msg.isUser && msg.artifacts && msg.artifacts.length" class="artifact-panel">
               <div class="artifact-title">
@@ -243,8 +257,12 @@
           </article>
         </div>
 
+        <div v-if="chatImages.length" class="composer-attachments">
+          <span v-for="(image, index) in chatImages" :key="`${image.name}-${index}`"><i class="fas fa-image"></i>{{ image.name }}<button type="button" @click="removeChatImage(index)" title="移除图片"><i class="fas fa-xmark"></i></button></span>
+        </div>
         <form class="composer" @submit.prevent="handleSend">
-          <button type="button" title="知识库" aria-label="打开知识库" @click="switchView('knowledge')"><i class="fas fa-paperclip"></i></button>
+          <input ref="chatImageInput" type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple hidden @change="handleChatImageSelect">
+          <button type="button" title="添加图片" aria-label="添加图片" @click="$refs.chatImageInput.click()"><i class="fas fa-image"></i></button>
           <textarea
             v-model="userInput"
             ref="textarea"
@@ -257,7 +275,7 @@
             @input="autoResize"
           ></textarea>
           <button v-if="isLoading" type="button" class="stop" title="终止" aria-label="终止回答" @click="handleStop"><i class="fas fa-stop"></i></button>
-          <button v-else type="submit" title="发送" aria-label="发送消息" :disabled="!userInput.trim()"><i class="fas fa-paper-plane"></i></button>
+          <button v-else type="submit" title="发送" aria-label="发送消息" :disabled="!userInput.trim() && !chatImages.length"><i class="fas fa-paper-plane"></i></button>
         </form>
       </section>
 
@@ -301,7 +319,7 @@
         <div class="section-head">
           <div>
             <h3>长期记忆</h3>
-            <p>基于 mem0 的用户长期记忆，跨会话本地持久化。Agent 每轮对话会先检索相关记忆、再自动沉淀新记忆。</p>
+            <p>管理原有 mem0 记忆数据。Pi 对话的记忆由 pi-memory 插件独立维护，存放在 tmp/pi-memory。</p>
           </div>
           <button class="secondary-action inline" @click="loadMemories"><i class="fas fa-rotate"></i>刷新</button>
         </div>
@@ -339,8 +357,8 @@
       <section v-show="activeView === 'config'" class="panel-view config-view">
         <div class="section-head">
           <div>
-            <h3>MCP、Skills 与权限配置</h3>
-            <p>内容持久化到 backend/config.json；保存后会重新发现工具并热加载主 Agent。</p>
+            <h3>Pi 插件、Skills 与权限配置</h3>
+            <p>运行时基于 Pi SDK {{ runtimeConfig?.runtime?.version || '加载中' }}；用户 Skill 保存到 tmp/user-skills，并在下一轮任务中加载。</p>
           </div>
           <button class="secondary-action inline" :disabled="configLoading" @click="refreshRuntimeCatalog">
             <i class="fas fa-arrows-rotate"></i>{{ configLoading ? '刷新中' : '重新解析' }}
@@ -348,40 +366,31 @@
         </div>
 
         <div v-if="runtimeConfig" class="config-stats">
-          <article><small>MCP Servers</small><strong>{{ Object.keys(runtimeConfig.mcpServers || {}).length }}</strong></article>
-          <article><small>MCP Tools</small><strong>{{ Object.values(runtimeConfig.mcpServers || {}).reduce((sum, item) => sum + ((item.tools || []).length), 0) }}</strong></article>
-          <article><small>Skills</small><strong>{{ (runtimeConfig.skills || []).length }}</strong></article>
+          <article><small>Pi Packages</small><strong>{{ (runtimeConfig.plugins || []).length }}</strong></article>
+          <article><small>Runtime</small><strong>{{ runtimeConfig.runtime && runtimeConfig.runtime.version || '-' }}</strong></article>
+          <article><small>用户 Skills</small><strong>{{ (runtimeConfig.skills || []).length }}</strong></article>
           <article><small>最近解析</small><strong class="config-time">{{ runtimeConfig.discovery && runtimeConfig.discovery.updated_at ? new Date(runtimeConfig.discovery.updated_at).toLocaleString() : '尚未解析' }}</strong></article>
         </div>
 
         <div class="config-grid">
           <section class="config-card">
-            <header><div><h4>MCP Servers</h4><p>启动时解析工具 schema，主 Agent 直接获得已发现工具。</p></div></header>
-            <form class="config-form" @submit.prevent="addMcpServer">
-              <label>名称<input v-model="mcpForm.name" required pattern="[A-Za-z0-9_.-]+" placeholder="github"></label>
-              <label>Transport
-                <select v-model="mcpForm.transport"><option value="streamable_http">streamable_http</option><option value="sse">sse</option><option value="stdio">stdio</option></select>
-              </label>
-              <label v-if="mcpForm.transport !== 'stdio'" class="wide">URL<input v-model="mcpForm.url" required placeholder="https://example.com/mcp"></label>
-              <label v-else>Command<input v-model="mcpForm.command" required placeholder="npx"></label>
-              <label v-if="mcpForm.transport === 'stdio'">Args<input v-model="mcpForm.args" placeholder="-y package-name"></label>
-              <label class="wide">Headers JSON<textarea v-model="mcpForm.headers" rows="3" spellcheck="false"></textarea></label>
-              <label v-if="mcpForm.transport === 'stdio'" class="wide">Env JSON<textarea v-model="mcpForm.env" rows="3" spellcheck="false"></textarea></label>
-              <label class="check-line"><input v-model="mcpForm.enabled" type="checkbox"> 启用并参与发现</label>
-              <button class="primary-action" type="submit">保存并解析</button>
-            </form>
+            <header><div><h4>已启用 Pi Packages</h4><p>按照功能热度选择并锁定版本，在任务启动时由宿主加载；视觉包通过独立适配器接入。</p></div></header>
             <div class="config-items">
-              <article v-for="(server, name) in (runtimeConfig && runtimeConfig.mcpServers || {})" :key="name" class="config-item">
-                <header><div><strong>{{ name }}</strong><small>{{ server.transport }} · {{ server.enabled ? 'enabled' : 'disabled' }}</small></div><button class="icon-danger" @click="deleteMcpServer(name)" title="删除"><i class="fas fa-trash"></i></button></header>
-                <p>{{ formatMcpEndpoint(server) }}</p>
-                <p v-if="server.error" class="config-error">发现失败：{{ server.error }}</p>
-                <div v-else class="tool-chips"><span v-for="tool in (server.tools || [])" :key="tool.runtime_name" :title="tool.description">{{ tool.runtime_name }}</span><em v-if="!(server.tools || []).length">暂无工具</em></div>
+              <article v-for="plugin in (runtimeConfig && runtimeConfig.plugins || [])" :key="plugin.package" class="config-item">
+                <header><div><strong>{{ plugin.feature }}</strong><small>{{ plugin.package }}</small></div><i class="fas fa-circle-check"></i></header>
+                <p>已配置；任务启动时加载，加载失败会明确报错</p>
               </article>
+              <article v-for="error in (runtimeConfig && runtimeConfig.pluginErrors || [])" :key="error.package" class="config-item config-error"><strong>{{ error.package }}</strong><p>{{ error.error }}</p></article>
             </div>
           </section>
 
           <section class="config-card">
-            <header><div><h4>Skills Catalog</h4><p>Skills 小 Agent 读取 catalog 后自行选择并按需加载正文。</p></div></header>
+            <header><div><h4>Skills Catalog</h4><p>支持网页创建，也支持直接上传 SKILL.md 或包含 Skill 目录的 ZIP。</p></div></header>
+            <div class="upload-band skill-upload">
+              <input ref="skillFileInput" type="file" accept=".md,.zip" hidden @change="uploadSkillFile">
+              <button class="secondary-action inline" type="button" @click="$refs.skillFileInput.click()"><i class="fas fa-file-arrow-up"></i>上传 Skill</button>
+              <span>接受 SKILL.md / ZIP；“覆盖同名 Skill”同时作用于上传。</span>
+            </div>
             <form class="config-form" @submit.prevent="addSkill">
               <label>名称<input v-model="skillForm.name" required pattern="[a-z0-9-]+" placeholder="my-skill"></label>
               <label class="wide">描述<input v-model="skillForm.description" required placeholder="说明功能以及何时使用"></label>
@@ -402,12 +411,8 @@
         </div>
 
         <section v-if="runtimeConfig && runtimeConfig.permissions" class="config-card permission-card">
-          <header><div><h4>Bash 自动审查</h4><p>优先级固定为 deny → allow → default deny；所有决策写入 Bash audit。</p></div></header>
-          <div class="permission-columns">
-            <div><strong>拒绝规则</strong><span v-for="rule in runtimeConfig.permissions.bash.deny" :key="rule.id"><b>{{ rule.id }}</b>{{ rule.description }}</span></div>
-            <div><strong>需明确授权</strong><span v-for="rule in (runtimeConfig.permissions.bash.authorize || [])" :key="rule.id"><b>{{ rule.id }}</b>{{ rule.description }}</span></div>
-            <div><strong>允许规则</strong><span v-for="rule in runtimeConfig.permissions.bash.allow" :key="rule.id"><b>{{ rule.id }}</b>{{ rule.description }}</span></div>
-          </div>
+          <header><div><h4>工作区权限边界</h4><p>{{ runtimeConfig.permissions.mode }}；所有判定写入本地审计目录。</p></div></header>
+          <div class="tool-chips"><span v-for="pattern in runtimeConfig.permissions.protected" :key="pattern">拒绝 {{ pattern }}</span><em>审计：{{ runtimeConfig.permissions.auditPath }}</em></div>
         </section>
       </section>
 
@@ -426,10 +431,26 @@
       </aside>
     </main>
 
+    <div v-if="pendingDialog" class="dialog-backdrop">
+      <section class="agent-dialog" role="dialog" aria-modal="true" aria-labelledby="agent-dialog-title">
+        <h3 id="agent-dialog-title">二狗子需要你的选择</h3>
+        <p class="dialog-question">{{ pendingDialog.title }}</p>
+        <div v-if="pendingDialog.options" class="dialog-options">
+          <button v-for="option in pendingDialog.options" :key="option" :disabled="dialogSubmitting" @click="answerDialog(option)">{{ option }}</button>
+        </div>
+        <template v-else>
+          <textarea v-model="dialogAnswer" :placeholder="pendingDialog.placeholder || '输入你的回答'" rows="4"></textarea>
+          <button class="primary-action" :disabled="dialogSubmitting" @click="answerDialog(dialogAnswer)">提交回答</button>
+        </template>
+        <button :disabled="dialogSubmitting" @click="answerDialog(null)">取消本次询问</button>
+      </section>
+    </div>
     <div v-if="toast" class="toast" role="status" aria-live="polite">{{ toast }}</div>
   </div>
 
+  <script src="/vendor/purify.min.js"></script>
   <script src="js/app-core.js"></script>
+  <script src="js/workspace.js"></script>
   <script src="js/chat.js"></script>
   <script src="js/knowledge.js"></script>
   <script src="js/config.js"></script>

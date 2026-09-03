@@ -1,5 +1,4 @@
 import io
-import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -8,11 +7,7 @@ from unittest.mock import patch
 from fastapi import HTTPException, UploadFile
 
 
-BACKEND_DIR = Path(__file__).resolve().parents[1]
-if str(BACKEND_DIR) not in sys.path:
-    sys.path.insert(0, str(BACKEND_DIR))
-
-import routes_documents
+import backend.api.routes_documents as routes_documents
 
 
 class DocumentRouteTests(unittest.IsolatedAsyncioTestCase):
@@ -26,8 +21,8 @@ class DocumentRouteTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             upload = UploadFile(filename="large.doc", file=io.BytesIO(b"12345"))
             with (
-                patch("routes_documents.UPLOAD_DIR", Path(directory)),
-                patch("routes_documents.MAX_UPLOAD_SIZE", 4),
+                patch("backend.api.routes_documents.UPLOAD_DIR", Path(directory)),
+                patch("backend.api.routes_documents.MAX_UPLOAD_SIZE", 4),
             ):
                 with self.assertRaises(HTTPException) as context:
                     await routes_documents._save_upload(upload, upload.filename)
@@ -41,7 +36,7 @@ class DocumentRouteTests(unittest.IsolatedAsyncioTestCase):
             existing_path.write_bytes(b"old source")
             upload = UploadFile(filename="report.doc", file=io.BytesIO(b"bad replacement"))
             with (
-                patch("routes_documents.UPLOAD_DIR", upload_directory),
+                patch("backend.api.routes_documents.UPLOAD_DIR", upload_directory),
                 patch.object(
                     routes_documents.loader,
                     "load_document",

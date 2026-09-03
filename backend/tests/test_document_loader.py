@@ -1,18 +1,17 @@
-import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-BACKEND_DIR = Path(__file__).resolve().parents[1]
-if str(BACKEND_DIR) not in sys.path:
-    sys.path.insert(0, str(BACKEND_DIR))
-
-from document_loader import DocumentLoader
+from backend.config.runtime_data import TMP_ROOT
+from backend.knowledge.document_loader import DocumentLoader
 
 
 class DocumentLoaderWordTests(unittest.TestCase):
     def setUp(self):
+        self.key_patch = patch.dict("os.environ", {"DASHSCOPE_API_KEY": ""})
+        self.key_patch.start()
+        self.addCleanup(self.key_patch.stop)
         self.temp_directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp_directory.cleanup)
         self.loader = DocumentLoader(image_output_dir=self.temp_directory.name)
@@ -72,6 +71,45 @@ class DocumentLoaderWordTests(unittest.TestCase):
         normalized = self.loader._normalize_word_text("\x01标题\r正文\x07单元格\x0c下一页")
 
         self.assertEqual(normalized, "标题\n正文\t单元格\x0c下一页")
+
+    def test_default_image_directory_is_under_project_tmp(self):
+        loader = DocumentLoader()
+        self.assertEqual(Path(loader.image_output_dir), TMP_ROOT / "knowledge" / "extracted_images")
+
+    def test_txt_preserves_three_level_parent_child_links(self):
+        file_path = Path(self.temp_directory.name) / "hierarchy.txt"
+        file_path.write_text("知识库文件切分与父子关系验证。\n" * 150, encoding="utf-8")
+        chunks = self.loader.load_document(str(file_path), file_path.name)
+        by_id = {chunk["chunk_id"]: chunk for chunk in chunks}
+        self.assertEqual(len(by_id), len(chunks))
+        self.assertEqual({chunk["chunk_level"] for chunk in chunks}, {1, 2, 3})
+        for chunk in chunks:
+            self.assertEqual(by_id[chunk["root_chunk_id"]]["chunk_level"], 1)
+            if chunk["chunk_level"] > 1:
+                parent = by_id[chunk["parent_chunk_id"]]
+                self.assertEqual(parent["chunk_level"], chunk["chunk_level"] - 1)
+                self.assertIn(chunk["text"], parent["text"])
+
+    def test_xlsx_parser_dependencies_are_available(self):
+        from openpyxl import Workbook
+
+        file_path = Path(self.temp_directory.name) / "table.xlsx"
+        workbook = Workbook()
+        workbook.active.append(["产品", "数量"])
+        workbook.active.append(["知识库", 3])
+        workbook.save(file_path)
+        workbook.close()
+        chunks = self.loader.load_document(str(file_path), file_path.name)
+        self.assertTrue(chunks)
+        self.assertTrue(all(chunk["file_type"] == "Excel" for chunk in chunks))
+        self.assertIn("知识库", chunks[0]["text"])
+
+    def test_optional_ocr_dependency_is_available(self):
+        from dashscope import MultiModalConversation
+        from xlrd import open_workbook
+
+        self.assertTrue(callable(MultiModalConversation.call))
+        self.assertTrue(callable(open_workbook))
 
 
 if __name__ == "__main__":
