@@ -1,13 +1,17 @@
 """LangGraph RAG orchestration."""
+import logging
+
 from langgraph.graph import END, StateGraph
 
 from backend.retrieval.chat_models import build_chat_model
-from backend.common.event_stream import emit_rag_step
 from backend.retrieval.query_expansion import generate_hypothetical_document, step_back_expand
 from backend.retrieval.rag_expanded import retrieve_expanded
-from backend.retrieval.rag_state import GRADE_PROMPT, GradeDocuments, RAGState, RewriteStrategy, empty_rag_state, format_docs
+from backend.retrieval.rag_state import GRADE_PROMPT, RAGState, RewriteStrategy, empty_rag_state, format_docs
 from backend.retrieval.rag_utils import retrieve_documents
 from backend.config.settings import CHAT_API_KEY, CHAT_MODEL, GRADE_MODEL
+
+logger = logging.getLogger(__name__)
+
 
 _grader_model = None
 _router_model = None
@@ -33,17 +37,13 @@ def _get_router_model():
 
 def retrieve_initial(state: RAGState) -> RAGState:
     query = state["question"]
-    emit_rag_step("🔍", "正在检索知识库...", f"查询: {query[:50]}")
+    logger.debug('%s %s %s', "🔍", "正在检索知识库...", f"查询: {query[:50]}")
     retrieved = retrieve_documents(query, top_k=5)
     results = retrieved.get("docs", [])
     meta = retrieved.get("meta", {})
-    emit_rag_step("🧱", "三级分块检索", f"叶子层 L{meta.get('leaf_retrieve_level', 3)} 召回，候选 {meta.get('candidate_k', 0)}")
-    emit_rag_step(
-        "🧩",
-        "Auto-merging 合并",
-        f"启用: {bool(meta.get('auto_merge_enabled'))}，应用: {bool(meta.get('auto_merge_applied'))}",
-    )
-    emit_rag_step("✅", f"检索完成，找到 {len(results)} 个片段", f"模式: {meta.get('retrieval_mode', 'hybrid')}")
+    logger.debug('%s %s %s', "🧱", "三级分块检索", f"叶子层 L{meta.get('leaf_retrieve_level', 3)} 召回，候选 {meta.get('candidate_k', 0)}")
+    logger.debug('%s %s %s', "🧩", "Auto-merging 合并", f"启用: {bool(meta.get('auto_merge_enabled'))}，应用: {bool(meta.get('auto_merge_applied'))}")
+    logger.debug('%s %s %s', "✅", f"检索完成，找到 {len(results)} 个片段", f"模式: {meta.get('retrieval_mode', 'hybrid')}")
     rag_trace = {
         "tool_used": True,
         "tool_name": "search_knowledge_base",
@@ -66,9 +66,9 @@ def retrieve_initial(state: RAGState) -> RAGState:
 
 def grade_documents_node(state: RAGState) -> RAGState:
     if not state.get("docs"):
-        emit_rag_step("⚠️", "未检索到片段，准备改写查询")
+        logger.debug('%s %s', "⚠️", "未检索到片段，准备改写查询")
         return _grade_update(state, "no_docs", "rewrite_question")
-    emit_rag_step("📊", "正在评估文档相关性...")
+    logger.debug('%s %s', "📊", "正在评估文档相关性...")
     grader = _get_grader_model()
     if not grader:
         return _grade_update(state, "unknown", "rewrite_question")
@@ -79,7 +79,7 @@ def grade_documents_node(state: RAGState) -> RAGState:
     try:
         response = grader.invoke([{"role": "user", "content": prompt}])
     except Exception as exc:
-        emit_rag_step("!", "Document grading failed; using retrieved chunks", str(exc)[:180])
+        logger.debug('%s %s %s', "!", "Document grading failed; using retrieved chunks", str(exc)[:180])
         return _grade_update(state, "error", "generate_answer", str(exc))
     content = getattr(response, "content", response)
     if isinstance(content, list):
@@ -95,7 +95,7 @@ def grade_documents_node(state: RAGState) -> RAGState:
     else:
         score = "unknown"
     route = "generate_answer" if score == "yes" else "rewrite_question"
-    emit_rag_step("✅" if route == "generate_answer" else "⚠️", "文档相关性评估完成", f"评分: {score}")
+    logger.debug('%s %s %s', "✅" if route == "generate_answer" else "⚠️", "文档相关性评估完成", f"评分: {score}")
     return _grade_update(state, score, route)
 
 
@@ -132,7 +132,7 @@ def _choose_strategy(question: str) -> str:
 def rewrite_question_node(state: RAGState) -> RAGState:
     question = state["question"]
     strategy = _choose_strategy(question)
-    emit_rag_step("✏️", "正在重写查询...", f"策略: {strategy}")
+    logger.debug('%s %s %s', "✏️", "正在重写查询...", f"策略: {strategy}")
     expanded_query = question
     step_back_question = ""
     step_back_answer = ""
@@ -144,7 +144,7 @@ def rewrite_question_node(state: RAGState) -> RAGState:
         step_back_answer = step_back.get("step_back_answer", "")
         expanded_query = step_back.get("expanded_query", question)
     if strategy in ("hyde", "complex"):
-        emit_rag_step("📝", "HyDE 假设性文档生成中...")
+        logger.debug('%s %s', "📝", "HyDE 假设性文档生成中...")
         hypothetical_doc = generate_hypothetical_document(question)
 
     rag_trace = state.get("rag_trace", {}) or {}

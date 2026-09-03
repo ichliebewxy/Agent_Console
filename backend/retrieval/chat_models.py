@@ -1,10 +1,4 @@
-"""Shared LangChain chat-model factory.
-
-Every chat model in the project targets an OpenAI-compatible DeepSeek endpoint
-and differs only by model name, temperature, and usage tracking. A single
-factory keeps those calls consistent across the main Agent, the RAG grader and
-router, and the query-expansion helpers.
-"""
+"""DeepSeek model factory for RAG grading and query expansion only."""
 
 from langchain.chat_models import init_chat_model
 

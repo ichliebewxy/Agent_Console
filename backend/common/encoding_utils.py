@@ -2,16 +2,6 @@
 import sys
 
 
-def configure_stdio_encoding():
-    """Prevent console logging from crashing on characters outside the active codepage."""
-    for stream in (sys.stdout, sys.stderr):
-        if hasattr(stream, "reconfigure"):
-            try:
-                stream.reconfigure(errors="backslashreplace")
-            except Exception:
-                pass
-
-
 def safe_print(message: object = ""):
     """Print without letting UnicodeEncodeError escape into request handling."""
     text = str(message)

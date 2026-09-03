@@ -31,13 +31,6 @@ window.NebulaNestApp = {
       selectedFile: null,
       isUploading: false,
       uploadProgress: "",
-      memories: [],
-      memoriesLoading: false,
-      memoriesAdding: false,
-      memoryForm: {
-        memory: "",
-        infer: false,
-      },
       showHistorySidebar: false,
       isComposing: false,
       toast: "",
@@ -53,7 +46,6 @@ window.NebulaNestApp = {
         chat: { eyebrow: "Pi Workspace", title: "工作区交付模式" },
         knowledge: { eyebrow: "Knowledge", title: "知识库与混合检索" },
         config: { eyebrow: "Runtime Config", title: "Pi 插件、Skills 与权限" },
-        memory: { eyebrow: "Memory", title: "用户长期记忆（mem0）" },
       };
       return titles[this.activeView] || titles.chat;
     },
@@ -96,7 +88,7 @@ window.NebulaNestApp = {
         const saved = JSON.parse(raw);
         this.sessionId = saved.sessionId || this.sessionId;
         const restoredView = saved.activeView || "chat";
-        this.activeView = ["chat", "knowledge", "config", "memory"].includes(restoredView)
+        this.activeView = ["chat", "knowledge", "config"].includes(restoredView)
           ? restoredView
           : "chat";
         this.userInput = saved.userInput || "";
@@ -129,7 +121,6 @@ window.NebulaNestApp = {
       this.showHistorySidebar = false;
       if (view === "knowledge") this.loadDocuments();
       if (view === "config") this.loadRuntimeConfig();
-      if (view === "memory") this.loadMemories();
       this.persistState();
     },
 

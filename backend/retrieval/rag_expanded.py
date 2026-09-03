@@ -1,10 +1,14 @@
 """Expanded-query retrieval node for the RAG graph."""
+import logging
+
 from typing import List
 
 from backend.retrieval.query_expansion import generate_hypothetical_document
 from backend.retrieval.rag_state import RAGState, format_docs
 from backend.retrieval.rag_utils import retrieve_documents
-from backend.common.event_stream import emit_rag_step
+
+
+logger = logging.getLogger(__name__)
 
 
 def _init_meta() -> dict:
@@ -60,22 +64,16 @@ def _dedupe(results: List[dict]) -> List[dict]:
 def _retrieve_branch(label: str, query: str, meta: dict) -> List[dict]:
     retrieved = retrieve_documents(query, top_k=5)
     branch_meta = retrieved.get("meta", {})
-    emit_rag_step(
-        "🧱",
-        f"{label} 三级检索",
-        (
-            f"L{branch_meta.get('leaf_retrieve_level', 3)} 召回，"
+    logger.debug('%s %s %s', "🧱", f"{label} 三级检索", f"L{branch_meta.get('leaf_retrieve_level', 3)} 召回，"
             f"候选 {branch_meta.get('candidate_k', 0)}，"
-            f"合并替换 {branch_meta.get('auto_merge_replaced_chunks', 0)}"
-        ),
-    )
+            f"合并替换 {branch_meta.get('auto_merge_replaced_chunks', 0)}")
     _merge_meta(meta, branch_meta, label.lower())
     return retrieved.get("docs", [])
 
 
 def retrieve_expanded(state: RAGState) -> RAGState:
     strategy = state.get("expansion_type") or "step_back"
-    emit_rag_step("🔄", "使用扩展查询重新检索...", f"策略: {strategy}")
+    logger.debug('%s %s %s', "🔄", "使用扩展查询重新检索...", f"策略: {strategy}")
     results: List[dict] = []
     meta = _init_meta()
 
@@ -88,7 +86,7 @@ def retrieve_expanded(state: RAGState) -> RAGState:
         results.extend(_retrieve_branch("Step-back", step_query, meta))
 
     deduped = _dedupe(results)
-    emit_rag_step("✅", f"扩展检索完成，共 {len(deduped)} 个片段")
+    logger.debug('%s %s', "✅", f"扩展检索完成，共 {len(deduped)} 个片段")
     rag_trace = state.get("rag_trace", {}) or {}
     rag_trace.update({
         "expanded_query": state.get("expanded_query") or state["question"],

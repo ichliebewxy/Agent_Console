@@ -25,6 +25,26 @@ async function start() {
   return { base: `http://127.0.0.1:${address.port}`, chat };
 }
 describe("HTTP routing without a model runtime", () => {
+  it("serves the workbench while retired endpoints and assets return 404", async () => {
+    const { base } = await start();
+    const page = await fetch(base);
+    expect(page.status).toBe(200);
+    expect(await page.text()).toContain("二狗子助手");
+    for (const [method, route] of [
+      ["GET", "/memory/status"],
+      ["GET", "/memory/test_user"],
+      ["POST", "/memory/test_user"],
+      ["PUT", "/memory/test_entry"],
+      ["DELETE", "/memory/test_entry"],
+      ["DELETE", "/memory/user/test_user"],
+      ["GET", "/js/memory.js"],
+    ]) {
+      const response = await fetch(`${base}${route}`, { method });
+      expect(response.status, `${method} ${route}`).toBe(404);
+      expect(await response.json()).toEqual({ detail: "接口或资源不存在" });
+    }
+  });
+
   it("streams application events through an injected agent", async () => {
     const { base, chat } = await start();
     const response = await fetch(`${base}/chat/stream`, {

@@ -49,10 +49,6 @@ class DocumentLoader:
             return "".join([item.get("text", "") for item in content if isinstance(item, dict)]).strip()
         return str(content).strip()
 
-    @staticmethod
-    def _normalize_word_text(text: str) -> str:
-        return WordDocumentReader.normalize_text(text)
-
     def _extract_docx_text(self, file_path: str) -> str:
         return self._word_reader.extract_docx_text(file_path)
 
@@ -171,7 +167,7 @@ class DocumentLoader:
                     documents.extend(chunks)
 
             # 3. PPTX 处理（含文字和形状内的图片）
-            elif file_lower.endswith((".pptx", ".ppt")):
+            elif file_lower.endswith(".pptx"):
                 prs = pptx.Presentation(file_path)
                 for i, slide in enumerate(prs.slides):
                     slide_texts = []
@@ -224,23 +220,3 @@ class DocumentLoader:
             return documents
         except Exception as e:
             raise Exception(f"处理文档失败 ({filename}): {str(e)}")
-
-    def load_documents_from_folder(self, folder_path: str) -> list[dict]:
-        """批量遍历处理目录结构"""
-        all_documents = []
-        valid_exts = (".pdf", ".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls", ".csv", ".txt")
-        
-        for filename in os.listdir(folder_path):
-            file_lower = filename.lower()
-            if not file_lower.endswith(valid_exts):
-                continue
-            file_path = os.path.join(folder_path, filename)
-            try:
-                safe_print(f"开始加载文档: {filename}")
-                documents = self.load_document(file_path, filename)
-                all_documents.extend(documents)
-            except Exception as e:
-                safe_print(f"跳过文件 {filename}, 错误: {e}")
-                continue
-                
-        return all_documents

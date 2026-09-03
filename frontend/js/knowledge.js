@@ -17,7 +17,7 @@ Object.assign(window.NebulaNestApp.methods, {
     const [file] = event.target.files || [];
     if (!file) return;
     const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
-    const allowed = [".pdf", ".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls", ".csv", ".txt"];
+    const allowed = [".pdf", ".docx", ".doc", ".pptx", ".xlsx", ".xls", ".csv", ".txt"];
     if (!allowed.includes(ext)) {
       this.notify(`不支持的文件类型：${ext}`);
       event.target.value = "";

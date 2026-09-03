@@ -12,14 +12,6 @@ export function sidecarRoutes() {
     try {
       const upstream = await fetch(`${ragBaseUrl}${targetPath}`, {
         method: request.method,
-        headers:
-          request.method === "GET" || request.method === "DELETE"
-            ? undefined
-            : { "Content-Type": "application/json" },
-        body:
-          request.method === "GET" || request.method === "DELETE"
-            ? undefined
-            : JSON.stringify(request.body || {}),
       });
       response
         .status(upstream.status)
@@ -69,45 +61,6 @@ export function sidecarRoutes() {
       }
     },
   );
-
-  router.get("/memory/status", (req, res) => {
-    void proxyJson(req, res, "/memory/status");
-  });
-  router.get("/memory/:userId", (req, res) => {
-    void proxyJson(
-      req,
-      res,
-      `/memory/${encodeURIComponent(req.params.userId)}`,
-    );
-  });
-  router.post("/memory/:userId", (req, res) => {
-    void proxyJson(
-      req,
-      res,
-      `/memory/${encodeURIComponent(req.params.userId)}`,
-    );
-  });
-  router.put("/memory/:memoryId", (req, res) => {
-    void proxyJson(
-      req,
-      res,
-      `/memory/${encodeURIComponent(req.params.memoryId)}`,
-    );
-  });
-  router.delete("/memory/user/:userId", (req, res) => {
-    void proxyJson(
-      req,
-      res,
-      `/memory/user/${encodeURIComponent(req.params.userId)}`,
-    );
-  });
-  router.delete("/memory/:memoryId", (req, res) => {
-    void proxyJson(
-      req,
-      res,
-      `/memory/${encodeURIComponent(req.params.memoryId)}`,
-    );
-  });
 
   return router;
 }

@@ -59,7 +59,7 @@ export function createApplication(agentService: AgentService, port: number) {
   );
   app.use(express.static(frontendDir, { etag: false, maxAge: 0 }));
   app.use((_request, response) =>
-    response.sendFile(path.join(frontendDir, "index.html")),
+    response.status(404).json({ detail: "接口或资源不存在" }),
   );
 
   return app;

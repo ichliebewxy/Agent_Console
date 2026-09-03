@@ -36,7 +36,6 @@ describe("architecture boundaries", () => {
       "common",
       "knowledge",
       "retrieval",
-      "memory",
     ]) {
       for (const file of await sources(`backend/${folder}`, ".py")) {
         expect(await readFile(file, "utf8"), file).not.toMatch(

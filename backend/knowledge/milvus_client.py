@@ -58,16 +58,6 @@ class MilvusManager:
             client = self._reset_client()
             return operation(client)
 
-    def close(self):
-        """显式关闭底层 Milvus 连接，避免进程退出时因 atexit/GC 关闭通道而报错。"""
-        with self._client_lock:
-            if self.client is not None:
-                try:
-                    self.client.close()
-                except Exception:
-                    pass
-                self.client = None
-
     def _get_dense_dim(self) -> int | None:
         description = self._call(lambda client: client.describe_collection(self.collection_name, timeout=self.timeout))
         for field in description.get("fields", []):
@@ -166,22 +156,6 @@ class MilvusManager:
             )
         )
 
-    def get_chunks_by_ids(self, chunk_ids: list[str]) -> list[dict]:
-        """根据 chunk_id 批量查询分块（用于检索后 Auto-merging 向上拉取父块）"""
-        ids = [item for item in chunk_ids if item]
-        if not ids:
-            return []
-        quoted_ids = ", ".join([f'"{item}"' for item in ids])
-        filter_expr = f"chunk_id in [{quoted_ids}]"
-        return self.query(
-            filter_expr=filter_expr,
-            output_fields=[
-                "text", "filename", "file_type", "page_number", 
-                "chunk_id", "parent_chunk_id", "root_chunk_id", "chunk_level", "chunk_idx"
-            ],
-            limit=len(ids),
-        )
-
     def hybrid_retrieve(self, dense_embedding: list[float], sparse_embedding: dict, top_k: int = 5, rrf_k: int = 60, filter_expr: str = "") -> list[dict]:
         """混合检索 - 使用 RRF 融合密集和稀疏向量的检索结果"""
         output_fields = [
@@ -212,27 +186,6 @@ class MilvusManager:
                 reqs=[dense_search, sparse_search],
                 ranker=reranker,
                 limit=top_k,
-                output_fields=output_fields,
-                timeout=self.timeout,
-            )
-        )
-
-        return self._format_search_results(results)
-
-    def dense_retrieve(self, dense_embedding: list[float], top_k: int = 5, filter_expr: str = "") -> list[dict]:
-        """Dense vector fallback retrieval."""
-        output_fields = [
-            "text", "filename", "file_type", "page_number",
-            "chunk_id", "parent_chunk_id", "root_chunk_id", "chunk_level", "chunk_idx"
-        ]
-        results = self._call(
-            lambda client: client.search(
-                collection_name=self.collection_name,
-                data=[dense_embedding],
-                anns_field="dense_embedding",
-                search_params={"metric_type": "IP", "params": {"ef": 128}},
-                limit=top_k,
-                filter=filter_expr,
                 output_fields=output_fields,
                 timeout=self.timeout,
             )

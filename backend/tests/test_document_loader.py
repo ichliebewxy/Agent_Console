@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from backend.config.runtime_data import TMP_ROOT
 from backend.knowledge.document_loader import DocumentLoader
+from backend.knowledge.word_document_reader import WordDocumentReader
 
 
 class DocumentLoaderWordTests(unittest.TestCase):
@@ -68,7 +69,7 @@ class DocumentLoaderWordTests(unittest.TestCase):
         docx_reader.assert_called_once_with(str(file_path))
 
     def test_word_control_characters_are_normalized(self):
-        normalized = self.loader._normalize_word_text("\x01标题\r正文\x07单元格\x0c下一页")
+        normalized = WordDocumentReader.normalize_text("\x01标题\r正文\x07单元格\x0c下一页")
 
         self.assertEqual(normalized, "标题\n正文\t单元格\x0c下一页")
 

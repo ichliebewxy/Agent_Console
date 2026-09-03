@@ -73,7 +73,7 @@ class EmbeddingService:
                     if EMBEDDING_LOCAL_FILES_ONLY:
                         hint = (
                             " EMBEDDING_LOCAL_FILES_ONLY=true，但本地未找到完整模型缓存。"
-                            "请先运行 `python backend/preload_embedding_model.py` 完成一次性下载，"
+                            "请先运行 `uv run python -m backend.preload_embedding_model` 完成一次性下载，"
                             "或临时在 .env 中关闭该开关后再启动。"
                         )
                     raise Exception(f"BGE 嵌入模型加载失败: {exc}{hint}") from exc

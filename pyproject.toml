@@ -1,7 +1,7 @@
 [project]
 name = "agent-console"
 version = "0.1.0"
-description = "Knowledge and memory sidecar for the Pi-based Ergouzi assistant."
+description = "Document ingestion and hybrid knowledge retrieval for the Pi-based Ergouzi assistant."
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -17,7 +17,6 @@ dependencies = [
     "langchain-community>=0.2.12",
     "dashscope>=1.25.18",
     "langchain-text-splitters>=0.2.2",
-    "langchain-openai>=0.1.22",
     "langchain-huggingface>=0.1.0",
     "langgraph>=0.2.31",
     "PyMuPDF",
@@ -29,13 +28,10 @@ dependencies = [
     "pywin32>=306; sys_platform == 'win32'",
     "langchain_deepseek",
     "sentence-transformers>=3.0.0",
-    # —— mem0 长期记忆（本地化）——
-    "mem0ai>=2.0.18",
-    "qdrant-client>=1.12.0",
-    "posthog>=7.14.0",
-    "pytz>=2024.1",
-    "portalocker>=2.7.0",
 ]
+
+[dependency-groups]
+dev = ["httpx>=0.27.0"]
 
 [[tool.uv.index]]
 url = "https://pypi.tuna.tsinghua.edu.cn/simple"

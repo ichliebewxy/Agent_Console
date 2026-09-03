@@ -1,7 +1,7 @@
 """Shared RAG pipeline state and schemas."""
 from typing import List, Literal, Optional, TypedDict
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 GRADE_PROMPT = (
@@ -11,10 +11,6 @@ GRADE_PROMPT = (
     "If the document contains keywords or semantic meaning related to the question, "
     "grade it as relevant. Give a binary score 'yes' or 'no'."
 )
-
-
-class GradeDocuments(BaseModel):
-    binary_score: str = Field(description="Relevance score: 'yes' or 'no'")
 
 
 class RewriteStrategy(BaseModel):

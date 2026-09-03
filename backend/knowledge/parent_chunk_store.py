@@ -9,7 +9,6 @@ class ParentChunkStore:
     """基于本地 JSON 的父级分块存储。"""
 
     def __init__(self, store_path: Path | None = None):
-        base_dir = Path(__file__).resolve().parent
         self.store_path = store_path or migrate_file(PROJECT_ROOT / "data" / "parent_chunks.json", TMP_ROOT / "knowledge" / "parent_chunks.json")
         self.store_path.parent.mkdir(parents=True, exist_ok=True)
 

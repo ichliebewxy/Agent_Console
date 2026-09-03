@@ -16,7 +16,7 @@ from backend.common.schemas import DocumentDeleteResponse, DocumentInfo, Documen
 
 BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = BASE_DIR.parent.parent / "tmp" / "knowledge" / "documents"
-VALID_EXTS = (".pdf", ".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls", ".csv", ".txt")
+VALID_EXTS = (".pdf", ".docx", ".doc", ".pptx", ".xlsx", ".xls", ".csv", ".txt")
 MAX_UPLOAD_SIZE = 50 * 1024 * 1024
 UPLOAD_CHUNK_SIZE = 1024 * 1024
 WINDOWS_RESERVED_NAMES = {
@@ -57,6 +57,8 @@ async def list_documents():
 @router.post("/documents/upload", response_model=DocumentUploadResponse)
 async def upload_document(file: UploadFile = File(...)):
     filename = _validated_filename(file.filename or "")
+    if filename.lower().endswith(".ppt"):
+        raise HTTPException(status_code=400, detail="旧版 .ppt 请先另存为 .pptx 后上传")
     if not filename.lower().endswith(VALID_EXTS):
         raise HTTPException(status_code=400, detail=f"不支持的文件格式。仅支持: {', '.join(VALID_EXTS)}")
     staged_path = None
