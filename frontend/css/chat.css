@@ -364,10 +364,14 @@
   border: 1px solid oklch(31% 0.02 205);
   border-radius: var(--radius-lg);
   background: var(--code-bg);
+  color: var(--code-fg);
   box-shadow: var(--shadow-sm), inset 0 1px 0 color-mix(in oklch, white 5%, transparent);
 }
 
 .message-bubble pre code {
+  /* 高亮未生效时也保持可读，并统一高亮前后的代码框底色。 */
+  background: transparent;
+  color: var(--code-fg);
   font-family: var(--font-mono);
   font-size: 0.82rem;
   line-height: 1.6;

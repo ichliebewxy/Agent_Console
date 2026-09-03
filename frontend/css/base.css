@@ -27,6 +27,7 @@
   --rail-gradient: linear-gradient(168deg, oklch(24% 0.03 168) 0%, oklch(19% 0.026 185) 58%, oklch(17% 0.02 205) 100%);
   --danger-gradient: linear-gradient(135deg, oklch(58% 0.15 37), oklch(52% 0.13 20));
   --code-bg: oklch(23% 0.018 205);
+  --code-fg: #e6edf3;
 
   /* ── 阴影 ───────────────────────────────────────────── */
   --shadow-sm: 0 1px 2px color-mix(in oklch, var(--ink) 5%, transparent),
