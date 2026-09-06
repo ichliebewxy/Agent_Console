@@ -4,6 +4,11 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 
+type PackageManifest = {
+  name?: string;
+  pi?: { extensions?: unknown; skills?: unknown; prompts?: unknown };
+};
+
 export const selectedPackages = [
   { feature: "上下文压缩", package: "@hypabolic/pi-hypa" },
   { feature: "网页与外部资料", package: "pi-web-access" },
@@ -31,7 +36,7 @@ function entries(value: unknown): string[] {
 
 async function packageManifest(
   packageName: string,
-): Promise<{ path: string; manifest: any }> {
+): Promise<{ path: string; manifest: PackageManifest }> {
   try {
     const manifestPath = require.resolve(`${packageName}/package.json`);
     return {

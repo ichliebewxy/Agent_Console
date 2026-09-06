@@ -1,6 +1,6 @@
 import { Type } from "typebox";
 import { defineTool } from "@earendil-works/pi-coding-agent";
-import { ragBaseUrl } from "../config/index.js";
+import { requestKnowledge } from "../integrations/rag/client.js";
 
 export type RagTrace = Record<string, unknown>;
 
@@ -45,7 +45,7 @@ export function createKnowledgeTool(onTrace?: (trace: RagTrace) => void) {
         };
       }
       used = true;
-      const response = await fetch(`${ragBaseUrl}/knowledge/search`, {
+      const response = await requestKnowledge("/knowledge/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ query: params.query }),

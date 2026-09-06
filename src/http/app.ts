@@ -1,15 +1,17 @@
+import { handleHttpError } from "./errors.js";
+import { healthRoutes } from "./routes/health.js";
 import path from "node:path";
 import cors from "cors";
 import express from "express";
-import type { AgentService } from "../agent/agent-service.js";
-import { frontendDir, projectRoot, ragBaseUrl } from "../config/index.js";
+import type { AgentGateway } from "../contracts/chat.js";
+import { frontendDir, projectRoot } from "../config/paths.js";
 import { workspaceRoutes } from "./routes/workspace.js";
 import { chatRoutes } from "./routes/chat.js";
 import { sessionsRoutes } from "./routes/sessions.js";
 import { configurationRoutes } from "./routes/configuration.js";
 import { sidecarRoutes } from "./routes/sidecar.js";
 
-export function createApplication(agentService: AgentService, port: number) {
+export function createApplication(agentService: AgentGateway, port: number) {
   const app = express();
   const localOrigins = new Set([
     `http://localhost:${port}`,
@@ -27,19 +29,7 @@ export function createApplication(agentService: AgentService, port: number) {
   app.use(cors({ origin: [...localOrigins], credentials: true }));
   app.use(express.json({ limit: "2mb" }));
 
-  app.get("/health", async (_request, response) => {
-    let rag = false;
-    try {
-      rag = (
-        await fetch(`${ragBaseUrl}/health`, {
-          signal: AbortSignal.timeout(3000),
-        })
-      ).ok;
-    } catch {
-      /* sidecar may still be starting */
-    }
-    response.json({ ok: true, service: "pi-web", rag });
-  });
+  app.use(healthRoutes());
 
   app.use(workspaceRoutes(agentService));
   app.use(chatRoutes(agentService));
@@ -62,5 +52,6 @@ export function createApplication(agentService: AgentService, port: number) {
     response.status(404).json({ detail: "接口或资源不存在" }),
   );
 
+  app.use(handleHttpError);
   return app;
 }

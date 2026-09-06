@@ -1,19 +1,14 @@
+import { skillRoutes } from "./skills.js";
+import { sendHttpError } from "../errors.js";
 import { Router } from "express";
-import { assertRuntimeId } from "../../config/index.js";
-import type { AgentService } from "../../agent/agent-service.js";
-import { errorMessage, upload } from "../shared.js";
+import type { AgentGateway } from "../../contracts/chat.js";
 import {
   resolvePluginResources,
   selectedPackages,
 } from "../../integrations/pi/plugin-resources.js";
-import {
-  createSkill,
-  deleteSkill,
-  listUploadedSkills,
-  uploadSkill,
-} from "../../services/skill-service.js";
+import { listUploadedSkills } from "../../services/skill-service.js";
 
-export function configurationRoutes(agentService: AgentService) {
+export function configurationRoutes(agentService: AgentGateway) {
   const router = Router();
   router.get("/runtime-config", async (_request, response) => {
     const plugins = await resolvePluginResources();
@@ -49,60 +44,10 @@ export function configurationRoutes(agentService: AgentService) {
         mcp_errors: {},
       });
     } catch (error) {
-      response.status(500).json({ detail: errorMessage(error) });
+      sendHttpError(response, error, 500);
     }
   });
 
-  router.post("/runtime-config/skills", async (request, response) => {
-    try {
-      await createSkill(request.body || {});
-      await agentService.reloadSkills();
-      response.json({
-        config: {
-          skills: await listUploadedSkills(),
-          mcpServers: {},
-          discovery: { updated_at: new Date().toISOString() },
-        },
-      });
-    } catch (error) {
-      response
-        .status(errorMessage(error) === "Skill 已存在" ? 409 : 422)
-        .json({ detail: errorMessage(error) });
-    }
-  });
-
-  router.post(
-    "/runtime-config/skills/upload",
-    upload.single("skill"),
-    async (request, response) => {
-      try {
-        if (!request.file) throw new Error("请选择 SKILL.md 或 ZIP");
-        const skill = await uploadSkill(
-          request.file,
-          String(request.body?.overwrite || "") === "true",
-        );
-        await agentService.reloadSkills();
-        response.json({
-          skill,
-          message: `Skill ${skill.name} 已上传，将在下一条消息中加载`,
-        });
-      } catch (error) {
-        response
-          .status(errorMessage(error) === "Skill 已存在" ? 409 : 422)
-          .json({ detail: errorMessage(error) });
-      }
-    },
-  );
-
-  router.delete("/runtime-config/skills/:name", async (request, response) => {
-    try {
-      await deleteSkill(request.params.name);
-      await agentService.reloadSkills();
-      response.json({ message: `Removed Skill: ${request.params.name}` });
-    } catch (error) {
-      response.status(422).json({ detail: errorMessage(error) });
-    }
-  });
-
+  router.use(skillRoutes(agentService));
   return router;
 }

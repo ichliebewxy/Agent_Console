@@ -114,4 +114,4 @@ RERANK_API_KEY=填写你的重排服务密钥
 
 宿主默认运行数据位于项目 `tmp/`，文件任务使用用户选定的工作区，二者是不同概念。Docker 默认把数据写入项目 `volumes/`；通过 Compose 的 `DOCKER_VOLUME_DIRECTORY` 可改变挂载根目录。
 
-模型、权限、网页插件和子 Agent 的宿主配置由 `src/config/index.ts` 生成；扩展环境由 `src/main.ts` 初始化。新增高级配置时同步更新实现、`.env.example`（若属于常用项）和本文。
+模型、权限、网页插件和子 Agent 的宿主配置由 `src/config/runtime-layout.ts` 调用各配置构建器生成；`config/index.ts` 保留原导出。扩展环境由 `src/bootstrap/environment.ts` 初始化。新增高级配置时同步更新实现、`.env.example`（若属于常用项）和本文。

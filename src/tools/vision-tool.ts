@@ -1,7 +1,7 @@
 import { defineTool, type ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { createVisionAdapter } from "../integrations/vision/adapter.js";
 import { Type } from "typebox";
-import { agentDir } from "../config/index.js";
+import { agentDir } from "../config/paths.js";
 import { resolveImagePath } from "../services/upload-service.js";
 
 type VisionDetails = {

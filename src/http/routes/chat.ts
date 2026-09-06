@@ -1,11 +1,14 @@
+import { sendHttpError } from "../errors.js";
 import { Router, type Request, type Response } from "express";
-import { assertRuntimeId } from "../../config/index.js";
-import type { AgentService } from "../../agent/agent-service.js";
-import { errorMessage, upload, sendSse } from "../shared.js";
+import { assertRuntimeId } from "../../shared/runtime-id.js";
+import type { AgentGateway } from "../../contracts/chat.js";
+import { errorMessage } from "../../shared/errors.js";
+import { upload } from "../upload.js";
+import { sendSse } from "../sse.js";
 import { getWorkspace } from "../../services/workspace-service.js";
 import { saveChatImages } from "../../services/upload-service.js";
 
-export function chatRoutes(agentService: AgentService) {
+export function chatRoutes(agentService: AgentGateway) {
   const router = Router();
   router.post(
     "/chat/stream",
@@ -41,9 +44,6 @@ export function chatRoutes(agentService: AgentService) {
         const images = await saveChatImages(
           (request.files as Express.Multer.File[] | undefined) || [],
         );
-        response.once("close", () => {
-          if (!finished) agentService.abort(userId, sessionId);
-        });
         await agentService.chat({
           userId,
           sessionId,
@@ -80,7 +80,7 @@ export function chatRoutes(agentService: AgentService) {
       );
       response.status(accepted ? 200 : 410).json({ accepted });
     } catch (error) {
-      response.status(400).json({ detail: errorMessage(error) });
+      sendHttpError(response, error, 400);
     }
   });
 

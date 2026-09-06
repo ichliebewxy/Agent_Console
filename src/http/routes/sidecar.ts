@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from "express";
-import { errorMessage, upload } from "../shared.js";
-import { ragBaseUrl } from "../../config/index.js";
+import { errorMessage } from "../../shared/errors.js";
+import { upload } from "../upload.js";
+import { requestKnowledge } from "../../integrations/rag/client.js";
 
 export function sidecarRoutes() {
   const router = Router();
@@ -10,7 +11,7 @@ export function sidecarRoutes() {
     targetPath: string,
   ): Promise<void> {
     try {
-      const upstream = await fetch(`${ragBaseUrl}${targetPath}`, {
+      const upstream = await requestKnowledge(targetPath, {
         method: request.method,
       });
       response
@@ -48,7 +49,7 @@ export function sidecarRoutes() {
           }),
           request.file.originalname,
         );
-        const upstream = await fetch(`${ragBaseUrl}/documents/upload`, {
+        const upstream = await requestKnowledge("/documents/upload", {
           method: "POST",
           body: form,
         });

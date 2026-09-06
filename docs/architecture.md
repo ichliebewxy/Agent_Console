@@ -2,6 +2,8 @@
 
 使用步骤见根目录 [README](../README.md)，参数默认值见 [配置说明](configuration.md)。本文解释当前模块为什么保留、数据如何流动，以及二次开发应在哪一层修改。
 
+2026-09-03 完成 TypeScript 职责拆分。最新目录映射、前后耦合对比、生命周期、功能对照与验证结果见 [重构交付记录](refactoring.md)，逐文件说明见 [源码清单](source-inventory.md)，完整树见 [file-tree.md](file-tree.md)。下文的三端运行边界和 Python 流程保持适用。
+
 ## 1. 职责划分
 
 项目有三个运行边界：浏览器展示、Node Agent 宿主、Python 文档知识库。Pi 插件属于 Node 运行时；Milvus 是知识库的数据服务。
@@ -33,8 +35,8 @@ knowledge tool → Python API → retrieval / knowledge
 pi-memory extension → tmp/pi-memory（不经过 Python）
 ```
 
-- 路由处理协议和入口校验，通过注入的 AgentService 调用会话，不直接构造模型。
-- AgentService 编排生命周期，不接收 Express 请求 / 响应对象。
+- 路由处理协议和入口校验，通过注入的 AgentGateway 接口调用会话，不依赖 AgentService 实现或直接构造模型。
+- AgentService 管理请求与取消，RuntimeRegistry 管理会话，runtime-factory 装配 Pi，chat-turn 处理一轮消息；均不接收 Express 请求 / 响应对象。
 - 文件、Skill 和存储服务不依赖 Pi 或 Express，可以独立测试。
 - 视觉插件的版本兼容集中在 `src/integrations/vision/adapter.ts`，不修改 `node_modules`。
 - Python 使用 `backend.*` 全限定导入，避免同一模块重复初始化不同的 embedding 单例。

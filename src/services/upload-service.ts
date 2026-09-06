@@ -1,7 +1,9 @@
+import type { UploadedImage } from "../contracts/uploads.js";
+import type { ChatImage } from "../contracts/chat.js";
 import { randomUUID } from "node:crypto";
 import { mkdir, writeFile, realpath, stat } from "node:fs/promises";
 import path from "node:path";
-import { uploadDir } from "../config/index.js";
+import { uploadDir } from "../config/paths.js";
 
 export async function resolveImagePath(
   workspace: string,
@@ -27,8 +29,8 @@ export async function resolveImagePath(
   return target;
 }
 export async function saveChatImages(
-  files: Express.Multer.File[],
-): Promise<Array<{ path: string; name: string; mimeType: string }>> {
+  files: UploadedImage[],
+): Promise<ChatImage[]> {
   await mkdir(uploadDir, { recursive: true });
   return Promise.all(
     files.map(async (file) => {

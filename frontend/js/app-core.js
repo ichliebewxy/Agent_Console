@@ -11,6 +11,8 @@ window.NebulaNestApp = {
       dialogSubmitting: false,
       isLoading: false,
       activeView: "chat",
+      activePlan: null,
+      planExpanded: true,
       abortController: null,
       userId: "user_" + Math.random().toString(36).slice(2, 11),
       sessionId: "session_" + Date.now(),
@@ -93,6 +95,8 @@ window.NebulaNestApp = {
           : "chat";
         this.userInput = saved.userInput || "";
         this.messages = Array.isArray(saved.messages) ? saved.messages : [];
+        this.activePlan = saved.activePlan || null;
+        this.planExpanded = saved.planExpanded !== false;
       } catch (error) {
         console.warn("State restore failed", error);
       }
@@ -104,6 +108,8 @@ window.NebulaNestApp = {
         activeView: this.activeView,
         userInput: this.userInput,
         messages: this.messages.slice(-80),
+        activePlan: this.activePlan,
+        planExpanded: this.planExpanded,
       };
       localStorage.setItem(this.stateKey, JSON.stringify(state));
     },
@@ -180,6 +186,8 @@ window.NebulaNestApp = {
       this.messages = [];
       this.userInput = "";
       this.chatImages = [];
+      this.activePlan = null;
+      this.planExpanded = true;
       this.sessionId = "session_" + Date.now();
       this.activeView = "chat";
       this.showHistorySidebar = false;

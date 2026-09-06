@@ -53,6 +53,9 @@
   }
 
   .workspace-bar { grid-template-columns: 1fr; padding: 10px 16px; }
+  .active-plan-shell { padding: 9px 16px; }
+  .active-plan-title > span { max-width: 42vw; }
+  .plan-heading .plan-overall-status { display: none; }
 
   .from-user .message-bubble {
     max-width: 88%;
@@ -109,6 +112,11 @@
   .status-pill {
     display: none;
   }
+
+  .active-plan-title > span { max-width: 52vw; }
+  .plan-resume-row { align-items: stretch; flex-direction: column; }
+  .plan-resume-row > span:first-child { margin-right: 0; }
+  .plan-resume-row button { justify-content: center; }
 
   .empty-suggestions button {
     font-size: 0.84rem;

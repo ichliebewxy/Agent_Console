@@ -1,0 +1,376 @@
+[
+  {
+    "name": "defaults",
+    "env": {},
+    "outputs": {
+      "<project>/tmp/pi-lens/config.json": {
+        "format": {
+          "enabled": false
+        },
+        "autofix": {
+          "enabled": false
+        },
+        "ignore": [
+          "tmp/**",
+          "node_modules/**",
+          ".venv/**"
+        ]
+      },
+      "<project>/tmp/pi-agent/extensions/subagent/config.json": {
+        "artifactDir": "temp",
+        "defaultSessionDir": "<project>/tmp/subagent-sessions"
+      },
+      "<project>/tmp/pi-agent/web-search.json": {
+        "workflow": "none",
+        "autoOpenBrowser": false,
+        "allowBrowserCookies": false,
+        "searchRouting": {
+          "providers": [
+            "exa",
+            "duckduckgo"
+          ],
+          "fallbackOn": [
+            "unsupported",
+            "transient",
+            "quota",
+            "network",
+            "invalid-response"
+          ]
+        },
+        "githubClone": {
+          "enabled": true,
+          "clonePath": "<project>/tmp/web-repos",
+          "cloneTimeoutSeconds": 30
+        }
+      },
+      "<project>/tmp/pi-agent/models.json": {
+        "providers": {
+          "ergouzi": {
+            "baseUrl": "https://api.deepseek.com",
+            "api": "openai-completions",
+            "apiKey": "$CHAT_API_KEY",
+            "models": [
+              {
+                "id": "deepseek-chat",
+                "name": "二狗子主模型 (deepseek-chat)",
+                "reasoning": true,
+                "input": [
+                  "text"
+                ],
+                "contextWindow": 128000,
+                "maxTokens": 16384
+              },
+              {
+                "id": "deepseek-v4-flash-vision-exp",
+                "name": "二狗子视觉模型 (deepseek-v4-flash-vision-exp)",
+                "reasoning": true,
+                "input": [
+                  "text",
+                  "image"
+                ],
+                "contextWindow": 128000,
+                "maxTokens": 16384
+              }
+            ]
+          }
+        }
+      },
+      "<project>/tmp/pi-agent/vision.json": {
+        "enabled": true,
+        "provider": "ergouzi",
+        "model": "deepseek-v4-flash-vision-exp",
+        "textOnlyPasteMode": "auto",
+        "cacheEnabled": true,
+        "cachePersist": true,
+        "auditLog": true,
+        "auditLogPath": "<project>/tmp/vision-audit.jsonl"
+      },
+      "<project>/tmp/pi-agent/extensions/pi-permission-system/config.json": {
+        "debugLog": false,
+        "permissionReviewLog": true,
+        "yoloMode": false,
+        "permission": {
+          "*": "allow",
+          "path": {
+            "*": "allow",
+            "*.env": "deny",
+            "*.env.*": "deny",
+            "*.env.example": "allow",
+            "*.pem": "deny",
+            "*.key": "deny"
+          },
+          "read": "allow",
+          "write": "allow",
+          "edit": "allow",
+          "bash": {
+            "*": "allow",
+            "rm -rf /": "deny",
+            "rm -rf ~": "deny",
+            "git push --force *": "deny"
+          },
+          "mcp": {
+            "*": "allow"
+          },
+          "skill": {
+            "*": "allow"
+          },
+          "external_directory": {
+            "*": "deny"
+          },
+          "external_directory_read": {
+            "D:/project/tmp/uploads": "allow",
+            "D:/project/tmp/uploads/*": "allow",
+            "D:/project/tmp/user-skills": "allow",
+            "D:/project/tmp/user-skills/*": "allow",
+            "D:/project/.pi/skills": "allow",
+            "D:/project/.pi/skills/*": "allow",
+            "D:/project/agent_workspace/skills": "allow",
+            "D:/project/agent_workspace/skills/*": "allow"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "same-vision-model",
+    "env": {
+      "CHAT_MODEL": "multimodal",
+      "VISION_MODEL": "multimodal",
+      "CHAT_MODEL_SUPPORTS_IMAGES": "true",
+      "CHAT_CONTEXT_WINDOW": "64000",
+      "CHAT_MAX_TOKENS": "8000"
+    },
+    "outputs": {
+      "<project>/tmp/pi-lens/config.json": {
+        "format": {
+          "enabled": false
+        },
+        "autofix": {
+          "enabled": false
+        },
+        "ignore": [
+          "tmp/**",
+          "node_modules/**",
+          ".venv/**"
+        ]
+      },
+      "<project>/tmp/pi-agent/extensions/subagent/config.json": {
+        "artifactDir": "temp",
+        "defaultSessionDir": "<project>/tmp/subagent-sessions"
+      },
+      "<project>/tmp/pi-agent/web-search.json": {
+        "workflow": "none",
+        "autoOpenBrowser": false,
+        "allowBrowserCookies": false,
+        "searchRouting": {
+          "providers": [
+            "exa",
+            "duckduckgo"
+          ],
+          "fallbackOn": [
+            "unsupported",
+            "transient",
+            "quota",
+            "network",
+            "invalid-response"
+          ]
+        },
+        "githubClone": {
+          "enabled": true,
+          "clonePath": "<project>/tmp/web-repos",
+          "cloneTimeoutSeconds": 30
+        }
+      },
+      "<project>/tmp/pi-agent/models.json": {
+        "providers": {
+          "ergouzi": {
+            "baseUrl": "https://api.deepseek.com",
+            "api": "openai-completions",
+            "apiKey": "$CHAT_API_KEY",
+            "models": [
+              {
+                "id": "multimodal",
+                "name": "二狗子主模型 (multimodal)",
+                "reasoning": true,
+                "input": [
+                  "text",
+                  "image"
+                ],
+                "contextWindow": 64000,
+                "maxTokens": 8000
+              }
+            ]
+          }
+        }
+      },
+      "<project>/tmp/pi-agent/vision.json": {
+        "enabled": true,
+        "provider": "ergouzi",
+        "model": "multimodal",
+        "textOnlyPasteMode": "auto",
+        "cacheEnabled": true,
+        "cachePersist": true,
+        "auditLog": true,
+        "auditLogPath": "<project>/tmp/vision-audit.jsonl"
+      },
+      "<project>/tmp/pi-agent/extensions/pi-permission-system/config.json": {
+        "debugLog": false,
+        "permissionReviewLog": true,
+        "yoloMode": false,
+        "permission": {
+          "*": "allow",
+          "path": {
+            "*": "allow",
+            "*.env": "deny",
+            "*.env.*": "deny",
+            "*.env.example": "allow",
+            "*.pem": "deny",
+            "*.key": "deny"
+          },
+          "read": "allow",
+          "write": "allow",
+          "edit": "allow",
+          "bash": {
+            "*": "allow",
+            "rm -rf /": "deny",
+            "rm -rf ~": "deny",
+            "git push --force *": "deny"
+          },
+          "mcp": {
+            "*": "allow"
+          },
+          "skill": {
+            "*": "allow"
+          },
+          "external_directory": {
+            "*": "deny"
+          },
+          "external_directory_read": {
+            "D:/project/tmp/uploads": "allow",
+            "D:/project/tmp/uploads/*": "allow",
+            "D:/project/tmp/user-skills": "allow",
+            "D:/project/tmp/user-skills/*": "allow",
+            "D:/project/.pi/skills": "allow",
+            "D:/project/.pi/skills/*": "allow",
+            "D:/project/agent_workspace/skills": "allow",
+            "D:/project/agent_workspace/skills/*": "allow"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "text-provider",
+    "env": {
+      "CHAT_BASE_URL": "https://provider.example/v1/",
+      "RAG_BASE_URL": "http://127.0.0.1:8099/"
+    },
+    "outputs": {
+      "<project>/tmp/pi-lens/config.json": {
+        "format": {
+          "enabled": false
+        },
+        "autofix": {
+          "enabled": false
+        },
+        "ignore": [
+          "tmp/**",
+          "node_modules/**",
+          ".venv/**"
+        ]
+      },
+      "<project>/tmp/pi-agent/extensions/subagent/config.json": {
+        "artifactDir": "temp",
+        "defaultSessionDir": "<project>/tmp/subagent-sessions"
+      },
+      "<project>/tmp/pi-agent/web-search.json": {
+        "workflow": "none",
+        "autoOpenBrowser": false,
+        "allowBrowserCookies": false,
+        "searchRouting": {
+          "providers": [
+            "exa",
+            "duckduckgo"
+          ],
+          "fallbackOn": [
+            "unsupported",
+            "transient",
+            "quota",
+            "network",
+            "invalid-response"
+          ]
+        },
+        "githubClone": {
+          "enabled": true,
+          "clonePath": "<project>/tmp/web-repos",
+          "cloneTimeoutSeconds": 30
+        }
+      },
+      "<project>/tmp/pi-agent/models.json": {
+        "providers": {
+          "ergouzi": {
+            "baseUrl": "https://provider.example/v1",
+            "api": "openai-completions",
+            "apiKey": "$CHAT_API_KEY",
+            "models": [
+              {
+                "id": "deepseek-chat",
+                "name": "二狗子主模型 (deepseek-chat)",
+                "reasoning": true,
+                "input": [
+                  "text"
+                ],
+                "contextWindow": 128000,
+                "maxTokens": 16384
+              }
+            ]
+          }
+        }
+      },
+      "<project>/tmp/pi-agent/extensions/pi-permission-system/config.json": {
+        "debugLog": false,
+        "permissionReviewLog": true,
+        "yoloMode": false,
+        "permission": {
+          "*": "allow",
+          "path": {
+            "*": "allow",
+            "*.env": "deny",
+            "*.env.*": "deny",
+            "*.env.example": "allow",
+            "*.pem": "deny",
+            "*.key": "deny"
+          },
+          "read": "allow",
+          "write": "allow",
+          "edit": "allow",
+          "bash": {
+            "*": "allow",
+            "rm -rf /": "deny",
+            "rm -rf ~": "deny",
+            "git push --force *": "deny"
+          },
+          "mcp": {
+            "*": "allow"
+          },
+          "skill": {
+            "*": "allow"
+          },
+          "external_directory": {
+            "*": "deny"
+          },
+          "external_directory_read": {
+            "D:/project/tmp/uploads": "allow",
+            "D:/project/tmp/uploads/*": "allow",
+            "D:/project/tmp/user-skills": "allow",
+            "D:/project/tmp/user-skills/*": "allow",
+            "D:/project/.pi/skills": "allow",
+            "D:/project/.pi/skills/*": "allow",
+            "D:/project/agent_workspace/skills": "allow",
+            "D:/project/agent_workspace/skills/*": "allow"
+          }
+        }
+      }
+    }
+  }
+]

@@ -1,0 +1,198 @@
+flowchart TD
+  m0["src/agent/agent-service.ts"]
+  m1["src/agent/chat-turn.ts"]
+  m2["src/agent/collect-artifacts.ts"]
+  m3["src/agent/event-bridge.ts"]
+  m4["src/agent/prompt-images.ts"]
+  m5["src/agent/restore-messages.ts"]
+  m6["src/agent/runtime-factory.ts"]
+  m7["src/agent/runtime-registry.ts"]
+  m8["src/agent/runtime-types.ts"]
+  m9["src/agent/system-prompt.ts"]
+  m10["src/agent/web-ui.ts"]
+  m11["src/bootstrap/environment.ts"]
+  m12["src/bootstrap/proxy.ts"]
+  m13["src/config/index.ts"]
+  m14["src/config/model-config.ts"]
+  m15["src/config/models.ts"]
+  m16["src/config/paths.ts"]
+  m17["src/config/permission-config.ts"]
+  m18["src/config/plugin-config.ts"]
+  m19["src/config/runtime-layout.ts"]
+  m20["src/contracts/artifacts.ts"]
+  m21["src/contracts/chat.ts"]
+  m22["src/contracts/sessions.ts"]
+  m23["src/contracts/uploads.ts"]
+  m24["src/http/app.ts"]
+  m25["src/http/errors.ts"]
+  m26["src/http/routes/artifacts.ts"]
+  m27["src/http/routes/chat.ts"]
+  m28["src/http/routes/configuration.ts"]
+  m29["src/http/routes/health.ts"]
+  m30["src/http/routes/sessions.ts"]
+  m31["src/http/routes/sidecar.ts"]
+  m32["src/http/routes/skills.ts"]
+  m33["src/http/routes/workspace.ts"]
+  m34["src/http/shared.ts"]
+  m35["src/http/sse.ts"]
+  m36["src/http/upload.ts"]
+  m37["src/integrations/pi/plugin-resources.ts"]
+  m38["src/integrations/pi/shell-config.ts"]
+  m39["src/integrations/rag/client.ts"]
+  m40["src/integrations/system/folder-picker.ts"]
+  m41["src/integrations/vision/adapter.ts"]
+  m42["src/main.ts"]
+  m43["src/server.ts"]
+  m44["src/services/artifact-service.ts"]
+  m45["src/services/skill-service.ts"]
+  m46["src/services/skills/archive.ts"]
+  m47["src/services/skills/catalog.ts"]
+  m48["src/services/skills/installer.ts"]
+  m49["src/services/skills/metadata.ts"]
+  m50["src/services/skills/types.ts"]
+  m51["src/services/upload-service.ts"]
+  m52["src/services/workspace-service.ts"]
+  m53["src/shared/errors.ts"]
+  m54["src/shared/runtime-id.ts"]
+  m55["src/storage/json-store.ts"]
+  m56["src/storage/session-store.ts"]
+  m57["src/tools/delivery-tool.ts"]
+  m58["src/tools/knowledge-tool.ts"]
+  m59["src/tools/vision-tool.ts"]
+  m0 --> m21
+  m0 --> m1
+  m0 --> m7
+  m0 --> m8
+  m0 --> m6
+  m1 --> m15
+  m1 --> m56
+  m1 --> m4
+  m1 --> m2
+  m1 --> m21
+  m1 --> m8
+  m2 --> m44
+  m2 --> m21
+  m2 --> m8
+  m3 --> m21
+  m4 --> m15
+  m4 --> m21
+  m5 --> m22
+  m5 --> m15
+  m6 --> m16
+  m6 --> m15
+  m6 --> m58
+  m6 --> m37
+  m6 --> m56
+  m6 --> m9
+  m6 --> m59
+  m6 --> m10
+  m6 --> m38
+  m6 --> m44
+  m6 --> m57
+  m6 --> m21
+  m6 --> m8
+  m6 --> m3
+  m6 --> m5
+  m7 --> m21
+  m7 --> m8
+  m8 --> m10
+  m8 --> m20
+  m8 --> m21
+  m13 --> m16
+  m13 --> m15
+  m13 --> m19
+  m13 --> m54
+  m14 --> m15
+  m17 --> m16
+  m18 --> m16
+  m19 --> m16
+  m19 --> m15
+  m19 --> m14
+  m19 --> m17
+  m19 --> m18
+  m22 --> m20
+  m22 --> m21
+  m24 --> m25
+  m24 --> m29
+  m24 --> m21
+  m24 --> m16
+  m24 --> m33
+  m24 --> m27
+  m24 --> m30
+  m24 --> m28
+  m24 --> m31
+  m25 --> m53
+  m26 --> m54
+  m26 --> m25
+  m26 --> m56
+  m26 --> m44
+  m27 --> m25
+  m27 --> m54
+  m27 --> m21
+  m27 --> m53
+  m27 --> m36
+  m27 --> m35
+  m27 --> m52
+  m27 --> m51
+  m28 --> m32
+  m28 --> m25
+  m28 --> m21
+  m28 --> m37
+  m28 --> m45
+  m29 --> m39
+  m30 --> m26
+  m30 --> m25
+  m30 --> m54
+  m30 --> m56
+  m31 --> m53
+  m31 --> m36
+  m31 --> m39
+  m32 --> m21
+  m32 --> m36
+  m32 --> m25
+  m32 --> m45
+  m33 --> m25
+  m33 --> m54
+  m33 --> m21
+  m33 --> m52
+  m34 --> m36
+  m34 --> m35
+  m34 --> m53
+  m39 --> m15
+  m42 --> m12
+  m42 --> m11
+  m42 --> m43
+  m43 --> m19
+  m43 --> m0
+  m43 --> m24
+  m44 --> m20
+  m45 --> m23
+  m45 --> m50
+  m45 --> m49
+  m45 --> m48
+  m45 --> m46
+  m45 --> m47
+  m46 --> m49
+  m46 --> m50
+  m47 --> m16
+  m47 --> m49
+  m47 --> m50
+  m48 --> m16
+  m48 --> m53
+  m48 --> m49
+  m48 --> m50
+  m49 --> m50
+  m51 --> m23
+  m51 --> m21
+  m51 --> m16
+  m52 --> m16
+  m52 --> m55
+  m52 --> m40
+  m56 --> m16
+  m56 --> m55
+  m56 --> m22
+  m57 --> m44
+  m58 --> m39
+  m59 --> m41
+  m59 --> m16
+  m59 --> m51

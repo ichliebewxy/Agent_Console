@@ -1,23 +1,13 @@
 import path from "node:path";
-import { sessionDataDir } from "../config/index.js";
+import { sessionDataDir } from "../config/paths.js";
 import { readJson, writeJson, withJsonLock } from "./json-store.js";
-import type { Artifact } from "../services/artifact-service.js";
 
-export type StoredMessage = {
-  type: "human" | "ai";
-  content: string;
-  timestamp: string;
-  workspace?: string;
-  artifacts?: Artifact[];
-  rag_trace?: Record<string, unknown> | null;
-  images?: Array<{ name: string; mimeType: string; path: string }>;
-};
-
-type SessionRecord = {
-  workspace: string;
-  updated_at: string;
-  messages: StoredMessage[];
-};
+import type {
+  StoredMessage,
+  SessionRecord,
+  TaskPlan,
+} from "../contracts/sessions.js";
+export type { StoredMessage } from "../contracts/sessions.js";
 
 type UserSessions = Record<string, SessionRecord>;
 
@@ -56,12 +46,39 @@ export async function appendMessages(
   });
 }
 
+/** Save plan progress independently of messages so every completed step is resumable. */
+export async function savePlan(
+  userId: string,
+  sessionId: string,
+  workspace: string,
+  plan: TaskPlan | null,
+): Promise<void> {
+  return withJsonLock(userFile(userId), async () => {
+    const sessions = await readJson<UserSessions>(userFile(userId), {});
+    const record = (Object.hasOwn(sessions, sessionId)
+      ? sessions[sessionId]
+      : null) || {
+      workspace,
+      updated_at: new Date().toISOString(),
+      messages: [],
+    };
+    record.workspace = workspace;
+    record.updated_at = new Date().toISOString();
+    record.plan = plan;
+    sessions[sessionId] = record;
+    await writeJson(userFile(userId), sessions);
+  });
+}
+
 export async function listSessions(userId: string): Promise<
   Array<{
     session_id: string;
     updated_at: string;
     message_count: number;
     workspace: string;
+    plan_status?: TaskPlan["status"];
+    plan_objective?: string;
+    plan_progress?: { done: number; total: number };
   }>
 > {
   const sessions = await readJson<UserSessions>(userFile(userId), {});
@@ -71,6 +88,18 @@ export async function listSessions(userId: string): Promise<
       updated_at: value.updated_at,
       message_count: value.messages.length,
       workspace: value.workspace,
+      ...(value.plan
+        ? {
+            plan_status: value.plan.status,
+            plan_objective: value.plan.objective,
+            plan_progress: {
+              done: value.plan.steps.filter((step) =>
+                ["done", "skipped"].includes(step.status),
+              ).length,
+              total: value.plan.steps.length,
+            },
+          }
+        : {}),
     }))
     .sort((a, b) => b.updated_at.localeCompare(a.updated_at));
 }

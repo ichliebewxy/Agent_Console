@@ -1,12 +1,8 @@
 import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
 
-export type Artifact = {
-  name: string;
-  path: string;
-  size: number;
-  download_url: string;
-};
+import type { Artifact } from "../contracts/artifacts.js";
+export type { Artifact } from "../contracts/artifacts.js";
 
 export async function resolveWorkspaceFile(
   workspace: string,

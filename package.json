@@ -14,7 +14,10 @@
     "test": "vitest run",
     "check": "npm run typecheck && npm test",
     "format": "prettier --write src tests vitest.config.ts",
-    "test:rag": "uv run python -m unittest discover -s backend/tests -v"
+    "test:rag": "uv run python -m unittest discover -s backend/tests -v",
+    "test:architecture": "vitest run tests/architecture.test.ts",
+    "test:smoke": "tsx scripts/smoke.ts",
+    "export:source": "tsx scripts/export-source.ts"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "0.84.4",
