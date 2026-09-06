@@ -6,6 +6,46 @@ import {
 } from "../src/tools/plan-tool.js";
 
 describe("durable plan tool", () => {
+  it("serializes provider-compatible object parameters instead of a root union", () => {
+    const { tool } = createPlanTool(
+      null,
+      vi.fn(async () => {}),
+    );
+    const parameters = JSON.parse(JSON.stringify(tool.parameters));
+    expect(parameters.type).toBe("object");
+    expect(parameters.anyOf).toBeUndefined();
+    expect(parameters.oneOf).toBeUndefined();
+    expect(parameters.properties).toHaveProperty("action");
+    expect(parameters.properties).toHaveProperty("objective");
+    expect(parameters.properties).toHaveProperty("steps");
+    expect(parameters.required).toEqual(["action"]);
+  });
+
+  it.each([
+    { action: "replace" },
+    { action: "replace", objective: "目标" },
+    { action: "replace", objective: "目标", steps: [] },
+    {
+      action: "replace",
+      objective: "  ",
+      steps: [{ id: "one", title: "步骤", status: "pending" }],
+    },
+  ])(
+    "rejects incomplete replacements without overwriting saved progress: %j",
+    async (params) => {
+      const save = vi.fn(async () => {});
+      const initial = normalizePlan("已有目标", [
+        { id: "one", title: "步骤", status: "pending" },
+      ]);
+      const planner = createPlanTool(initial, save);
+      await expect(
+        (planner.tool.execute as any)("call", params),
+      ).rejects.toThrow("replace 必须提供");
+      expect(save).not.toHaveBeenCalled();
+      expect(planner.getPlan()).toBe(initial);
+    },
+  );
+
   it("saves full snapshots, pauses unfinished work and clears completed state", async () => {
     const save = vi.fn(async () => {});
     const planner = createPlanTool(null, save);

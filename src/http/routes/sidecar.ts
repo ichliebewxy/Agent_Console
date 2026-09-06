@@ -1,4 +1,6 @@
 import { Router, type Request, type Response } from "express";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { errorMessage } from "../../shared/errors.js";
 import { upload } from "../upload.js";
 import { requestKnowledge } from "../../integrations/rag/client.js";
@@ -52,12 +54,36 @@ export function sidecarRoutes() {
         const upstream = await requestKnowledge("/documents/upload", {
           method: "POST",
           body: form,
+          headers: { Accept: request.get("accept") || "application/json" },
         });
+        if (
+          upstream.headers.get("content-type")?.includes("text/event-stream") &&
+          upstream.body
+        ) {
+          response.status(upstream.status).set({
+            "Content-Type": "text/event-stream; charset=utf-8",
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+          });
+          response.flushHeaders();
+          // Forward each event immediately, without buffering the full upload.
+          await pipeline(
+            Readable.fromWeb(
+              upstream.body as import("node:stream/web").ReadableStream,
+            ),
+            response,
+          );
+          return;
+        }
         response
           .status(upstream.status)
           .type("application/json")
           .send(Buffer.from(await upstream.arrayBuffer()));
       } catch (error) {
+        if (response.headersSent) {
+          response.destroy(error instanceof Error ? error : undefined);
+          return;
+        }
         response.status(503).json({ detail: errorMessage(error) });
       }
     },

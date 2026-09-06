@@ -71,6 +71,149 @@
   font-size: 0.84rem;
 }
 
+.ingestion-card {
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-lg);
+  padding: 22px;
+  background: var(--surface-raised);
+  box-shadow: var(--shadow-sm);
+  display: grid;
+  gap: 18px;
+}
+
+.ingestion-card.success {
+  border-color: var(--green);
+}
+.ingestion-card.error {
+  border-color: var(--coral);
+}
+.ingestion-heading,
+.ingestion-next,
+.ingestion-stats {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.ingestion-heading > div {
+  min-width: 0;
+  flex: 1;
+}
+.ingestion-heading strong {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+.ingestion-heading i {
+  color: var(--green);
+}
+.ingestion-card.error .ingestion-heading i {
+  color: var(--coral);
+}
+.ingestion-filename {
+  display: block;
+  margin-top: 7px;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.ingestion-time {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+.ingestion-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.ingestion-steps li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 2px solid var(--line);
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+.ingestion-steps li > span {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--surface-soft);
+  font-size: 0.72rem;
+}
+.ingestion-steps .active,
+.ingestion-steps .done {
+  border-color: var(--green);
+  color: var(--green-dark);
+}
+.ingestion-steps .active > span {
+  background: var(--green);
+  color: white;
+}
+.ingestion-steps .done > span {
+  background: var(--success-bg);
+}
+.ingestion-steps .error {
+  border-color: var(--coral);
+  color: var(--coral);
+}
+.ingestion-steps .error > span {
+  background: var(--danger-bg);
+}
+.ingestion-message,
+.ingestion-help {
+  margin: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.6;
+  font-size: 0.88rem;
+}
+.ingestion-help {
+  color: var(--muted);
+}
+.ingestion-card.error .ingestion-message {
+  color: var(--coral);
+}
+.ingestion-meter progress {
+  display: block;
+  width: 100%;
+  height: 8px;
+  accent-color: var(--green);
+}
+.ingestion-stats {
+  justify-content: flex-start;
+  gap: 24px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+.ingestion-stats strong {
+  margin-left: 7px;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.ingestion-next {
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+  font-size: 0.86rem;
+  color: var(--green-dark);
+}
+@media (max-width: 640px) {
+  .ingestion-card {
+    padding: 16px;
+  }
+  .ingestion-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 /* ── 文档表格 ───────────────────────────────────────── */
 .table-list {
   overflow: hidden;
@@ -153,7 +296,9 @@
   padding: 17px 18px;
   display: grid;
   gap: 6px;
-  transition: transform 0.16s ease, box-shadow 0.16s ease;
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease;
 }
 
 .config-stats article:hover {
@@ -261,7 +406,9 @@
   background: var(--surface-raised);
   color: var(--ink);
   font-weight: 400;
-  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease;
 }
 
 .config-form input:focus,
@@ -313,7 +460,9 @@
   background: var(--surface-soft);
   display: grid;
   gap: 9px;
-  transition: border-color 0.16s ease, background 0.16s ease;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease;
 }
 
 .config-item:hover {

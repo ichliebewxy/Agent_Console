@@ -17,6 +17,7 @@ class DocumentListResponse(BaseModel):
 class DocumentUploadResponse(BaseModel):
     filename: str
     chunks_processed: int
+    parent_chunks_processed: int = 0
     message: str
 
 

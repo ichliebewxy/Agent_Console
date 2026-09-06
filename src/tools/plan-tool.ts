@@ -1,10 +1,6 @@
 import { Type } from "typebox";
 import { defineTool } from "@earendil-works/pi-coding-agent";
-import type {
-  PlanStatus,
-  PlanStep,
-  TaskPlan,
-} from "../contracts/sessions.js";
+import type { PlanStatus, PlanStep, TaskPlan } from "../contracts/sessions.js";
 
 const stepSchema = Type.Object({
   id: Type.String({
@@ -24,16 +20,26 @@ const stepSchema = Type.Object({
   result: Type.Optional(Type.String({ maxLength: 4000 })),
 });
 
-const parameters = Type.Union([
-  Type.Object({
-    action: Type.Literal("replace"),
-    objective: Type.String({ minLength: 1, maxLength: 500 }),
-    steps: Type.Array(stepSchema, { minItems: 1, maxItems: 30 }),
-  }),
-  Type.Object({
-    action: Type.Literal("clear"),
-  }),
-]);
+// Chat-completions providers require the function parameters' root to be an
+// object. A root Type.Union serializes to anyOf without type and rejects every
+// chat request, even when the model never calls this tool.
+const parameters = Type.Object({
+  action: Type.Union([Type.Literal("replace"), Type.Literal("clear")]),
+  objective: Type.Optional(
+    Type.String({
+      minLength: 1,
+      maxLength: 500,
+      description: "replace 时必填：计划目标",
+    }),
+  ),
+  steps: Type.Optional(
+    Type.Array(stepSchema, {
+      minItems: 1,
+      maxItems: 30,
+      description: "replace 时必填：完整步骤清单",
+    }),
+  ),
+});
 
 export type PlanChangeHandler = (plan: TaskPlan | null) => Promise<void>;
 
@@ -129,6 +135,13 @@ export function createPlanTool(
           content: [{ type: "text", text: "已清除当前执行计划" }],
           details: { plan: null },
         };
+      }
+      if (params.action !== "replace")
+        throw new Error("计划操作必须是 replace 或 clear");
+      if (!params.objective?.trim() || !params.steps?.length) {
+        throw new Error(
+          "replace 必须提供计划目标 objective 和非空步骤清单 steps",
+        );
       }
       const plan = normalizePlan(params.objective, params.steps);
       await commit(plan);

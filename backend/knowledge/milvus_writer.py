@@ -1,4 +1,5 @@
 """Write document chunks to Milvus with dense and sparse embeddings."""
+from collections.abc import Callable
 from backend.common.encoding_utils import safe_print
 from backend.knowledge.embedding import EmbeddingService, embedding_service as default_embedding_service
 from backend.knowledge.milvus_client import MilvusManager
@@ -15,7 +16,10 @@ class MilvusWriter:
         self.embedding_service = embedding_service or default_embedding_service
         self.milvus_manager = milvus_manager or MilvusManager()
 
-    def write_documents(self, documents: list[dict], batch_size: int = 50):
+    def write_documents(
+        self, documents: list[dict], batch_size: int = 50,
+        on_progress: Callable[[int, int], None] | None = None,
+    ):
         if not documents:
             return
 
@@ -54,3 +58,5 @@ class MilvusWriter:
 
             progress = min(i + batch_size, total)
             safe_print(f"   -> write progress: {progress} / {total} ({progress / total:.1%})")
+            if on_progress:
+                on_progress(progress, total)

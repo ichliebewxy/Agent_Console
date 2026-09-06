@@ -19,7 +19,7 @@
 .pi/agent/
 .pi/npm/
 .pi/git/
-
+.pi_tmp/
 # Node dependencies, builds, tests, and package-manager caches.
 node_modules/
 dist/

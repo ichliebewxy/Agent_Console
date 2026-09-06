@@ -91,7 +91,8 @@
               ><i class="fas fa-circle"></i> 服务在线</span
             >
             <span class="session-pill" :title="sessionId"
-              ><i class="fas fa-message"></i>会话 {{ sessionId.slice(-6) }}</span
+              ><i class="fas fa-message"></i>会话 {{ sessionId.slice(-6)
+              }}</span
             >
           </div>
         </header>
@@ -601,10 +602,15 @@
               ref="fileInput"
               type="file"
               accept=".pdf,.doc,.docx,.pptx,.xls,.xlsx,.csv,.txt"
+              :disabled="isUploading"
               @change="handleFileSelect"
               hidden
             />
-            <button class="primary-action" @click="$refs.fileInput.click()">
+            <button
+              class="primary-action"
+              :disabled="isUploading"
+              @click="$refs.fileInput.click()"
+            >
               <i class="fas fa-cloud-arrow-up"></i>选择文件
             </button>
             <span v-if="selectedFile">{{ selectedFile.name }}</span>
@@ -614,9 +620,99 @@
               :disabled="isUploading"
               @click="uploadDocument"
             >
-              <i class="fas fa-upload"></i>{{ isUploading ? '处理中' : '入库' }}
+              <i
+                :class="isUploading ? 'fas fa-spinner fa-spin' : 'fas fa-upload'"
+              ></i
+              >{{ isUploading ? '正在入库…' : uploadStatus === 'error' ?
+              '重新入库' : '开始入库' }}
             </button>
-            <p v-if="uploadProgress">{{ uploadProgress }}</p>
+            <p v-if="uploadStatus === 'idle'">
+              选择文件后点击「开始入库」，处理进度将在下方显示。单个文件最大
+              50MB。
+            </p>
+          </div>
+
+          <div
+            v-if="uploadStatus !== 'idle'"
+            class="ingestion-card"
+            :class="uploadStatus"
+            :aria-busy="isUploading"
+          >
+            <div class="ingestion-heading">
+              <div>
+                <strong
+                  ><i
+                    :class="uploadStatus === 'success' ? 'fas fa-circle-check' : uploadStatus === 'error' ? 'fas fa-circle-exclamation' : 'fas fa-spinner fa-spin'"
+                  ></i
+                  >{{ uploadStatus === 'success' ? '入库完成' : uploadStatus ===
+                  'error' ? '入库未完成' : '正在将文档加入知识库' }}</strong
+                >
+                <span class="ingestion-filename">{{ uploadFilename }}</span>
+              </div>
+              <span class="ingestion-time"
+                >{{ isUploading ? '已用时' : '耗时' }} {{ uploadElapsed }}
+                秒</span
+              >
+            </div>
+            <ol class="ingestion-steps" aria-label="入库处理阶段">
+              <li
+                v-for="(step, index) in uploadStages"
+                :key="step.id"
+                :class="uploadStepState(step.id)"
+                :aria-current="uploadStage === step.id ? 'step' : null"
+              >
+                <span
+                  ><i
+                    v-if="uploadStepState(step.id) === 'done'"
+                    class="fas fa-check"
+                    aria-label="已完成"
+                  ></i
+                  ><i
+                    v-else-if="uploadStepState(step.id) === 'error'"
+                    class="fas fa-exclamation"
+                    aria-label="失败"
+                  ></i
+                  ><template v-else>{{ index + 1 }}</template></span
+                >
+                {{ step.label }}
+              </li>
+            </ol>
+            <p class="ingestion-message" role="status" aria-live="polite">
+              {{ uploadProgress }}
+            </p>
+            <div v-if="isUploading" class="ingestion-meter">
+              <progress
+                v-if="uploadStage === 'indexing' && uploadChunksTotal"
+                :value="uploadChunksProcessed"
+                :max="uploadChunksTotal"
+                aria-label="已写入的检索片段"
+              ></progress>
+              <progress v-else aria-label="正在处理文档"></progress>
+            </div>
+            <div
+              v-if="uploadChunksTotal && uploadStatus !== 'error'"
+              class="ingestion-stats"
+            >
+              <span
+                >检索片段
+                <strong
+                  >{{ uploadChunksProcessed }} / {{ uploadChunksTotal }}</strong
+                ></span
+              >
+              <span>上下文片段 <strong>{{ uploadParentChunks }}</strong></span>
+            </div>
+            <div v-if="uploadStatus === 'success'" class="ingestion-next">
+              <span>文档已加入知识库，可以在对话中提问。</span>
+              <button
+                class="secondary-action inline"
+                @click="switchView('chat')"
+              >
+                去提问<i class="fas fa-arrow-right"></i>
+              </button>
+            </div>
+            <p v-else-if="uploadStatus === 'error'" class="ingestion-help">
+              文件已保留选择。请根据提示处理后，点击「重新入库」。
+            </p>
           </div>
 
           <div class="table-list">
@@ -644,6 +740,7 @@
               <span
                 ><button
                   class="icon-danger"
+                  :disabled="isUploading"
                   @click="deleteDocument(doc.filename)"
                   title="删除"
                 >
