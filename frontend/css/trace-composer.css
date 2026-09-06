@@ -104,15 +104,16 @@
 
 /* ── 输入区（悬浮胶囊） ─────────────────────────────── */
 .composer {
-  margin: 2px auto 22px;
-  width: min(calc(var(--content-w) - 48px), calc(100% - 32px));
+  grid-row: 5;
+  margin: 2px auto 18px;
+  width: min(920px, calc(100% - 48px));
   flex: 0 0 auto;
   padding: 8px;
   min-height: 62px;
   border: 1px solid var(--line);
-  border-radius: var(--radius-xl);
+  border-radius: 20px;
   background: var(--surface-raised);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-md);
   display: grid;
   grid-template-columns: 44px 1fr 44px;
   gap: 8px;
@@ -122,7 +123,7 @@
 
 .composer:focus-within {
   border-color: color-mix(in oklch, var(--green) 48%, transparent);
-  box-shadow: 0 0 0 4px color-mix(in oklch, var(--green) 13%, transparent), var(--shadow-lg);
+  box-shadow: 0 0 0 4px color-mix(in oklch, var(--green) 13%, transparent), var(--shadow-md);
 }
 
 .composer button {

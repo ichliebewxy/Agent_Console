@@ -7,16 +7,21 @@
 }
 
 .workspace-bar {
-  padding: 10px max(24px, calc((100% - var(--content-w)) / 2));
+  grid-row: 1;
+  padding: 9px max(28px, calc((100% - var(--content-w)) / 2));
   border-bottom: 1px solid var(--line);
   background: color-mix(in oklch, var(--surface-raised) 82%, transparent);
   display: grid;
-  grid-template-columns: minmax(220px, 0.8fr) minmax(360px, 1.2fr);
+  grid-template-columns: minmax(320px, 1fr) auto;
   align-items: center;
-  gap: 14px;
+  gap: 12px;
 }
 
-.workspace-current,
+.active-plan-shell {
+  grid-row: 2;
+}
+
+.workspace-path-field,
 .workspace-actions {
   min-width: 0;
   display: flex;
@@ -24,37 +29,41 @@
   gap: 10px;
 }
 
-.workspace-current > i {
+.workspace-path-field > span {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.workspace-path-field > span i {
   color: var(--green);
 }
-.workspace-current span {
-  min-width: 0;
-  display: grid;
-}
-.workspace-current small {
-  color: var(--muted);
-  font-size: 0.68rem;
-}
-.workspace-current b {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font: 600 0.76rem var(--font-mono);
-}
-.workspace-actions input {
+
+.workspace-path-field input {
   min-width: 0;
   flex: 1;
-  height: 38px;
+  height: 40px;
   padding: 0 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface-raised);
   color: var(--ink);
   font: 0.76rem var(--font-mono);
+  transition: border-color 0.16s ease, box-shadow 0.16s ease;
+}
+
+.workspace-path-field input:focus {
+  outline: 0;
+  border-color: color-mix(in oklch, var(--green) 48%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--green) 12%, transparent);
 }
 .workspace-actions button {
   white-space: nowrap;
-  min-height: 38px;
+  min-height: 40px;
 }
 
 .message-images,
@@ -75,6 +84,7 @@
 }
 
 .composer-attachments {
+  grid-row: 4;
   width: min(calc(var(--content-w) - 48px), calc(100% - 32px));
   margin: 4px auto 0;
 }
@@ -89,11 +99,12 @@
 
 /* ── 消息流：居中阅读栏 ─────────────────────────────── */
 .chat-stream {
+  grid-row: 3;
   min-height: 0;
   height: 100%;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 34px max(24px, calc((100% - var(--content-w)) / 2)) 28px;
+  padding: 0 max(28px, calc((100% - var(--content-w)) / 2)) 28px;
   display: flex;
   flex-direction: column;
   gap: 26px;
@@ -101,25 +112,43 @@
 
 /* ── 空状态 ─────────────────────────────────────────── */
 .empty-state {
-  max-width: 520px;
-  margin: auto;
-  text-align: center;
+  width: 100%;
+  max-width: 960px;
+  margin: clamp(28px, 6vh, 64px) auto auto;
   color: var(--muted);
 }
 
-.empty-state > i {
-  width: 78px;
-  height: 78px;
+.empty-intro {
+  max-width: 720px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  align-items: center;
+  gap: 20px;
+  text-align: left;
+}
+
+.empty-intro > i {
+  width: 64px;
+  height: 64px;
   display: inline-grid;
   place-items: center;
-  border-radius: 24px;
+  border-radius: 20px;
   background: var(--accent-gradient);
   color: oklch(99% 0.005 160);
-  font-size: 1.7rem;
+  font-size: 1.35rem;
   box-shadow:
     0 14px 34px color-mix(in oklch, var(--teal) 36%, transparent),
     inset 0 1px 0 color-mix(in oklch, white 30%, transparent);
   animation: float-y 4.6s ease-in-out infinite;
+}
+
+.empty-intro > div > span {
+  color: var(--green-dark);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
 @keyframes float-y {
@@ -133,40 +162,40 @@
 }
 
 .empty-state h3 {
-  margin: 22px 0 10px;
+  margin: 4px 0 6px;
   color: var(--ink);
   font-family: var(--font-display);
-  font-size: 1.6rem;
+  font-size: 1.52rem;
   font-weight: 600;
   letter-spacing: -0.015em;
 }
 
 .empty-state p {
-  max-width: 52ch;
-  margin: 0 auto;
-  line-height: 1.7;
-  font-size: 0.94rem;
+  margin: 0;
+  line-height: 1.6;
+  font-size: 0.9rem;
 }
 
 .empty-suggestions {
-  margin-top: 26px;
+  margin-top: 28px;
   display: grid;
-  gap: 10px;
-  justify-items: center;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
 }
 
 .empty-suggestions button {
-  width: min(440px, 100%);
-  min-height: 48px;
-  padding: 10px 18px;
+  width: 100%;
+  min-height: 78px;
+  padding: 14px 16px;
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   background: var(--surface-raised);
   color: var(--ink);
   display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 0.9rem;
+  align-items: flex-start;
+  gap: 11px;
+  font-size: 0.86rem;
+  line-height: 1.5;
   text-align: left;
   box-shadow: var(--shadow-sm);
   transition:
@@ -177,9 +206,14 @@
 
 .empty-suggestions button i {
   color: var(--green);
-  font-size: 0.86rem;
-  width: 18px;
-  text-align: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  border-radius: 10px;
+  background: var(--success-bg);
+  display: inline-grid;
+  place-items: center;
+  font-size: 0.78rem;
   transition: color 0.16s ease;
 }
 
@@ -190,18 +224,23 @@
 }
 
 .empty-actions {
-  margin-top: 22px;
+  margin-top: 16px;
   display: flex;
   justify-content: center;
   flex-wrap: wrap;
   gap: 10px;
 }
 
+.empty-actions > span {
+  align-self: center;
+  font-size: 0.78rem;
+}
+
 .empty-actions button {
-  min-height: 38px;
-  border: 1px solid var(--line);
+  min-height: 34px;
+  border: 0;
   border-radius: 999px;
-  padding: 0 16px;
+  padding: 0 10px;
   background: transparent;
   color: var(--muted);
   font-size: 0.84rem;

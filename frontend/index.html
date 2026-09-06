@@ -88,22 +88,18 @@
           </div>
           <div class="topbar-status">
             <span class="status-pill"
-              ><i class="fas fa-circle"></i> SSE 在线</span
+              ><i class="fas fa-circle"></i> 服务在线</span
             >
-            <span class="session-pill" :title="sessionId">{{ sessionId }}</span>
+            <span class="session-pill" :title="sessionId"
+              ><i class="fas fa-message"></i>会话 {{ sessionId.slice(-6) }}</span
+            >
           </div>
         </header>
 
         <section v-show="activeView === 'chat'" class="chat-layout">
           <div class="workspace-bar">
-            <div class="workspace-current" :title="workspacePath">
-              <i class="fas fa-folder-open"></i>
-              <span
-                ><small>当前工作区</small
-                ><b>{{ workspacePath || '正在读取…' }}</b></span
-              >
-            </div>
-            <div class="workspace-actions">
+            <label class="workspace-path-field" :title="workspacePath">
+              <span><i class="fas fa-folder-open"></i>当前工作区</span>
               <input
                 v-model="workspaceDraft"
                 type="text"
@@ -111,6 +107,8 @@
                 placeholder="输入本机文件夹的绝对路径"
                 @keyup.enter="saveWorkspace"
               />
+            </label>
+            <div class="workspace-actions">
               <button
                 type="button"
                 class="secondary-action inline"
@@ -214,11 +212,16 @@
           </section>
           <div class="chat-stream" ref="chatContainer" :aria-busy="isLoading">
             <div v-if="messages.length === 0" class="empty-state">
-              <i class="fas fa-compass"></i>
-              <h3>让二狗子在工作区里干活</h3>
-              <p>
-                任务会在上方选定的本机文件夹中执行，生成文件也直接交付到该工作区。
-              </p>
+              <div class="empty-intro">
+                <i class="fas fa-compass"></i>
+                <div>
+                  <span>从一个任务开始</span>
+                  <h3>让二狗子在工作区里干活</h3>
+                  <p>
+                    读取项目、处理资料或生成文件，结果会直接交付到当前工作区。
+                  </p>
+                </div>
+              </div>
               <div class="empty-suggestions">
                 <button
                   type="button"
@@ -243,11 +246,12 @@
                 </button>
               </div>
               <div class="empty-actions">
+                <span>也可以先</span>
                 <button @click="switchView('knowledge')" type="button">
-                  <i class="fas fa-folder-tree"></i>检查知识库
+                  <i class="fas fa-folder-tree"></i>查看知识库
                 </button>
                 <button @click="switchView('config')" type="button">
-                  <i class="fas fa-sliders"></i>配置工具
+                  <i class="fas fa-sliders"></i>检查配置
                 </button>
               </div>
             </div>

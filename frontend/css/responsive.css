@@ -2,6 +2,10 @@
   .config-grid {
     grid-template-columns: 1fr;
   }
+
+  .empty-suggestions {
+    gap: 10px;
+  }
 }
 
 @media (max-width: 900px) {
@@ -53,6 +57,8 @@
   }
 
   .workspace-bar { grid-template-columns: 1fr; padding: 10px 16px; }
+  .workspace-path-field > span { min-width: 116px; }
+  .workspace-actions { justify-content: flex-end; }
   .active-plan-shell { padding: 9px 16px; }
   .active-plan-title > span { max-width: 42vw; }
   .plan-heading .plan-overall-status { display: none; }
@@ -67,6 +73,20 @@
 
   .empty-state h3 {
     font-size: 1.3rem;
+  }
+
+  .empty-state {
+    max-width: 600px;
+    margin-top: 28px;
+  }
+
+  .empty-suggestions {
+    grid-template-columns: 1fr;
+  }
+
+  .empty-suggestions button {
+    min-height: 54px;
+    align-items: center;
   }
 
   .panel-view {
@@ -97,9 +117,99 @@
   }
 }
 
+@media (max-width: 720px) {
+  .shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: minmax(0, 1fr) 64px;
+  }
+
+  .workspace {
+    grid-column: 1;
+    grid-row: 1;
+    height: 100%;
+  }
+
+  .rail {
+    grid-column: 1;
+    grid-row: 2;
+    z-index: 20;
+    overflow: hidden;
+    padding: 8px 10px;
+    flex-direction: row;
+    gap: 8px;
+  }
+
+  .brand,
+  .rail-actions .danger-action {
+    display: none;
+  }
+
+  .nav-list {
+    flex: 1;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px;
+  }
+
+  .nav-list button {
+    min-height: 48px;
+  }
+
+  .rail-actions {
+    margin: 0;
+    display: block;
+  }
+
+  .rail-actions .secondary-action {
+    width: 48px;
+    height: 48px;
+  }
+
+  .topbar {
+    padding-inline: 16px;
+  }
+
+  .workspace-bar {
+    gap: 8px;
+  }
+
+  .workspace-path-field {
+    display: grid;
+    gap: 6px;
+  }
+
+  .workspace-path-field > span {
+    min-width: 0;
+  }
+
+  .workspace-actions {
+    justify-content: stretch;
+  }
+
+  .workspace-actions button {
+    flex: 1;
+  }
+
+  .chat-stream {
+    padding-inline: 16px;
+  }
+
+  .empty-intro {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    gap: 12px;
+    text-align: center;
+  }
+
+  .empty-state p {
+    max-width: 44ch;
+  }
+
+  .empty-actions > span {
+    width: 100%;
+  }
+}
+
 @media (max-width: 520px) {
-  .workspace-actions { flex-wrap: wrap; }
-  .workspace-actions input { flex-basis: 100%; }
   .config-stats {
     grid-template-columns: 1fr 1fr;
     gap: 10px;
@@ -111,6 +221,17 @@
 
   .status-pill {
     display: none;
+  }
+
+  .workspace-actions .inline {
+    flex: 0 0 46px;
+    padding: 0;
+    font-size: 0;
+  }
+
+  .workspace-actions .inline i {
+    margin: 0;
+    font-size: 0.9rem;
   }
 
   .active-plan-title > span { max-width: 52vw; }

@@ -45,9 +45,9 @@ window.NebulaNestApp = {
     },
     viewTitle() {
       const titles = {
-        chat: { eyebrow: "Pi Workspace", title: "工作区交付模式" },
-        knowledge: { eyebrow: "Knowledge", title: "知识库与混合检索" },
-        config: { eyebrow: "Runtime Config", title: "Pi 插件、Skills 与权限" },
+        chat: { eyebrow: "Workspace", title: "工作区助手" },
+        knowledge: { eyebrow: "Knowledge", title: "知识库" },
+        config: { eyebrow: "Settings", title: "运行配置" },
       };
       return titles[this.activeView] || titles.chat;
     },
@@ -176,7 +176,7 @@ window.NebulaNestApp = {
     },
 
     scrollToBottom() {
-      if (this.$refs.chatContainer) {
+      if (this.messages.length && this.$refs.chatContainer) {
         this.$refs.chatContainer.scrollTop = this.$refs.chatContainer.scrollHeight;
       }
     },

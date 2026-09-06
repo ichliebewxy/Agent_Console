@@ -7,6 +7,11 @@
 之后可在 .env 中设置 EMBEDDING_LOCAL_FILES_ONLY=true，让服务完全离线加载。
 """
 import os
+import sys
+from pathlib import Path
+
+# 把项目根目录 D:\project 添加到Python搜索路径
+sys.path.append(str(Path(__file__).parent.parent))
 
 # 与 embedding.py 保持一致，优先走镜像。
 os.environ.setdefault("HF_ENDPOINT", "https://hf-mirror.com")
