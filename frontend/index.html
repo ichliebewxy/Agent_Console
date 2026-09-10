@@ -100,20 +100,23 @@
         <section v-show="activeView === 'chat'" class="chat-layout">
           <div class="workspace-bar">
             <label class="workspace-path-field" :title="workspacePath">
-              <span><i class="fas fa-folder-open"></i>当前工作区</span>
+              <span><i class="fas fa-folder-open"></i>{{ workspacePath ? "当前工作区" : "网页对话" }}</span>
               <input
                 v-model="workspaceDraft"
                 type="text"
                 aria-label="工作区绝对路径"
-                placeholder="输入本机文件夹的绝对路径"
+                placeholder="无需选择文件夹即可聊天，也可输入工作区路径"
                 @keyup.enter="saveWorkspace"
               />
             </label>
             <div class="workspace-actions">
+              <button type="button" class="secondary-action inline"
+                :disabled="workspaceLoading || isLoading || !workspacePath"
+                @click="useChatMode">网页对话</button>
               <button
                 type="button"
                 class="secondary-action inline"
-                :disabled="workspaceLoading"
+                :disabled="workspaceLoading || isLoading"
                 @click="saveWorkspace"
               >
                 <i class="fas fa-check"></i>应用
@@ -121,7 +124,7 @@
               <button
                 type="button"
                 class="primary-action"
-                :disabled="workspaceLoading"
+                :disabled="workspaceLoading || isLoading"
                 @click="pickWorkspace"
               >
                 <i class="fas fa-folder-plus"></i>选择文件夹

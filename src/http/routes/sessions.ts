@@ -1,3 +1,4 @@
+import { isChatWorkspace } from "../../services/workspace-service.js";
 import { artifactRoutes } from "./artifacts.js";
 import { sendHttpError } from "../errors.js";
 import { Router } from "express";
@@ -32,7 +33,7 @@ export function sessionsRoutes() {
       if (!record) return response.status(404).json({ detail: "会话不存在" });
       response.json({
         messages: record.messages,
-        workspace: record.workspace,
+        workspace: isChatWorkspace(record.workspace) ? "" : record.workspace,
         plan: record.plan || null,
       });
     } catch (error) {

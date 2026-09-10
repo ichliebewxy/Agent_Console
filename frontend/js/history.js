@@ -23,7 +23,7 @@ Object.assign(window.NebulaNestApp.methods, {
       const response = await fetch(`/sessions/${this.userId}/${sessionId}`);
       if (!response.ok) throw new Error("Failed to load session messages");
       const data = await response.json();
-      if (data.workspace && data.workspace !== this.workspacePath) {
+      if (typeof data.workspace === "string" && data.workspace !== this.workspacePath) {
         const workspaceResponse = await fetch(`/workspace/${this.userId}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },

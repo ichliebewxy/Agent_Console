@@ -4,6 +4,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { tmpRoot } from "../src/config/index.js";
 import {
   getWorkspace,
+  isChatWorkspace,
   setWorkspace,
   validateWorkspace,
 } from "../src/services/workspace-service.js";
@@ -16,6 +17,23 @@ afterAll(async () => {
 });
 
 describe("workspace service", () => {
+  it("supports web chat with stable, isolated session directories and switching back", async () => {
+    const chatUser = `${userId}_chat`;
+    expect(await getWorkspace(chatUser)).toBe("");
+    const first = await getWorkspace(chatUser, "first");
+    const second = await getWorkspace(chatUser, "second");
+    expect(isChatWorkspace(first)).toBe(true);
+    expect(second).not.toBe(first);
+    expect(await getWorkspace(chatUser, "first")).toBe(first);
+    await mkdir(fixture, { recursive: true });
+    await setWorkspace(chatUser, fixture);
+    expect(await getWorkspace(chatUser, "first")).toBe(fixture);
+    expect(await setWorkspace(chatUser, "")).toBe("");
+    expect(await getWorkspace(chatUser, "first")).toBe(first);
+    await expect(getWorkspace(chatUser, "../escape")).rejects.toThrow("ID");
+    await rm(path.dirname(first), { recursive: true, force: true });
+  });
+
   it("rejects relative workspace paths", async () => {
     await expect(validateWorkspace("tmp")).rejects.toThrow("绝对路径");
   });

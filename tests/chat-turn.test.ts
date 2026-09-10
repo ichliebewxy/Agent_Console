@@ -37,6 +37,8 @@ describe("chat turn persistence and cleanup", () => {
       runtime.emit({ type: "content", content: " world " });
       runtime.emit({ type: "trace", rag_trace: trace });
       runtime.writtenPaths.add("result.txt");
+      runtime.writtenPaths.add("intermediate.py");
+      runtime.artifacts.set(artifact.path, artifact);
     });
     const request = options();
     await runChatTurn(runtime, request);
@@ -71,9 +73,30 @@ describe("chat turn persistence and cleanup", () => {
       type: "artifacts",
       artifacts: [artifact],
     });
+    expect(describeArtifact).toHaveBeenCalledTimes(1);
     const count = vi.mocked(request.emit).mock.calls.length;
     runtime.emit({ type: "content", content: "late" });
     expect(request.emit).toHaveBeenCalledTimes(count);
+  });
+
+  it("does not deliver written files unless explicitly registered", async () => {
+    const { runtime, session } = fakeRuntime();
+    session.prompt.mockImplementation(async () => {
+      runtime.writtenPaths.add("scratch.txt");
+      runtime.writtenPaths.add("helper.py");
+    });
+    const request = options();
+    await runChatTurn(runtime, request);
+    expect(describeArtifact).not.toHaveBeenCalled();
+    expect(appendMessages).toHaveBeenLastCalledWith(
+      "user",
+      "session",
+      "workspace",
+      [expect.objectContaining({ artifacts: [] })],
+    );
+    expect(request.emit).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "artifacts" }),
+    );
   });
 
   it("persists a partial reply before rethrowing a failed prompt", async () => {

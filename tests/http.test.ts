@@ -1,3 +1,7 @@
+import { writeFile } from "node:fs/promises";
+import path from "node:path";
+import { appendMessages, deleteSession } from "../src/storage/session-store.js";
+import { describeArtifact } from "../src/services/artifact-service.js";
 import { once } from "node:events";
 import type { Server } from "node:http";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -63,6 +67,54 @@ describe("HTTP routing without a model runtime", () => {
     expect(text).toContain("[DONE]");
     expect(chat).toHaveBeenCalledOnce();
   });
+  it("chats without a folder, restores chat mode and downloads only registered results", async () => {
+    const { base, chat } = await start();
+    const userId = `web_chat_${Date.now()}`;
+    const sessionId = "download";
+    const setting = await fetch(`${base}/workspace/${userId}`);
+    expect((await setting.json()).workspace).toBe("");
+    const response = await fetch(`${base}/chat/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        user_id: userId,
+        session_id: sessionId,
+        message: "生成文件",
+      }),
+    });
+    await response.text();
+    const workspace = chat.mock.calls[0][0].workspace;
+    await writeFile(path.join(workspace, "result.txt"), "final result");
+    await writeFile(path.join(workspace, "scratch.txt"), "intermediate");
+    const artifact = await describeArtifact(
+      workspace,
+      "result.txt",
+      userId,
+      sessionId,
+    );
+    await appendMessages(userId, sessionId, workspace, [
+      {
+        type: "ai",
+        content: "完成",
+        timestamp: new Date().toISOString(),
+        artifacts: [artifact],
+      },
+    ]);
+    try {
+      const history = await fetch(`${base}/sessions/${userId}/${sessionId}`);
+      expect((await history.json()).workspace).toBe("");
+      const download = await fetch(`${base}${artifact.download_url}`);
+      expect(download.status).toBe(200);
+      expect(await download.text()).toBe("final result");
+      const scratch = await fetch(
+        `${base}/artifacts/${userId}/${sessionId}?path=scratch.txt`,
+      );
+      expect(scratch.status).toBe(404);
+    } finally {
+      await deleteSession(userId, sessionId);
+    }
+  });
+
   it("rejects cross-origin requests before they reach business services", async () => {
     const { base, chat } = await start();
     const response = await fetch(`${base}/chat/stream`, {

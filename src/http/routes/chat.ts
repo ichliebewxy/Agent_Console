@@ -40,7 +40,7 @@ export function chatRoutes(agentService: AgentGateway) {
           !(request.files as Express.Multer.File[] | undefined)?.length
         )
           throw new Error("消息不能为空");
-        const workspace = await getWorkspace(userId);
+        const workspace = await getWorkspace(userId, sessionId);
         const images = await saveChatImages(
           (request.files as Express.Multer.File[] | undefined) || [],
         );

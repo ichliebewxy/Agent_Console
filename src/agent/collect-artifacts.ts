@@ -6,7 +6,7 @@ export async function collectArtifacts(
   runtime: Runtime,
   options: Pick<ChatOptions, "workspace" | "userId" | "sessionId">,
 ): Promise<void> {
-  for (const relative of runtime.writtenPaths) {
+  for (const relative of runtime.artifacts.keys()) {
     try {
       const file = await describeArtifact(
         options.workspace,
@@ -16,7 +16,7 @@ export async function collectArtifacts(
       );
       runtime.artifacts.set(file.path, file);
     } catch {
-      /* Deleted or non-deliverable files are not exposed. */
+      runtime.artifacts.delete(relative); // Never add intermediate files implicitly.
     }
   }
 }

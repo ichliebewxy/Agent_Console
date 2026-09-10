@@ -14,9 +14,14 @@ Object.assign(window.NebulaNestApp.methods, {
       }
     },
 
+    async useChatMode() {
+      this.workspaceDraft = "";
+      await this.saveWorkspace();
+    },
+
     async saveWorkspace() {
       const target = this.workspaceDraft.trim();
-      if (!target || this.workspaceLoading) return;
+      if (this.workspaceLoading || this.isLoading) return;
       this.workspaceLoading = true;
       try {
         const response = await fetch(`/workspace/${encodeURIComponent(this.userId)}`, {
@@ -29,7 +34,7 @@ Object.assign(window.NebulaNestApp.methods, {
         this.workspacePath = data.workspace;
         this.workspaceDraft = data.workspace;
         this.handleNewChat();
-        this.notify("工作区已切换，后续文件会交付到该目录");
+        this.notify(target ? "工作区已切换，后续文件会交付到该目录" : "已切换为网页对话，可直接聊天并下载生成的文件");
       } catch (error) {
         this.notify(`切换工作区失败：${error.message}`);
       } finally {
