@@ -10,6 +10,7 @@ Agent Console 是一个面向本地可信环境的 LangChain 多 Agent + RAG 工
 
 - [核心亮点](#核心亮点)
 - [系统架构](#系统架构)
+- [运行逻辑](#运行逻辑)
 - [OpenCLI Skill 详解](#opencli-skill-详解)
 - [目录与文件职责](#目录与文件职责)
 - [运行数据与持久化文件](#运行数据与持久化文件)
@@ -163,6 +164,80 @@ flowchart TD
 ```
 
 文档上传的原子性规则：先把内容写入临时文件，成功解析并生成 L3 叶子块后才替换 `data/documents/<filename>`；随后删除同名旧向量并写入新向量。解析或入库失败时不会提前删除旧源文件，向量写入失败也会回滚同名新向量。支持格式为 `.pdf`、`.docx`、`.doc`、`.pptx`、`.ppt`、`.xlsx`、`.xls`、`.csv`、`.txt`。
+
+## 运行逻辑
+
+本节按“时间顺序”描述一轮对话从浏览器到模型/工具、再回到浏览器的完整运行路径，并画出**多轮上下文如何在同一个会话里保持连贯**。图中的分支对应 `agent.py` 里的 `_should_plan_execute()` 门控：简单问答走单次 Agent 循环，多步骤任务走可持久化的 plan-and-execute 工作流。
+
+### 端到端运行时序
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as 用户/浏览器
+    participant F as 前端 chat.js
+    participant R as FastAPI /chat/stream
+    participant A as 主 Agent (agent.py)
+    participant W as 工作流 (workflow_graph)
+    participant T as 工具层 (Core/MCP/RAG/Skill)
+    participant S as ConversationStorage
+    participant M as mem0 长期记忆
+
+    U->>F: 输入消息
+    F->>R: POST /chat/stream(message, user_id, session_id)
+    R->>A: chat_with_agent_stream()
+    A->>S: load(user_id, session_id) 读取历史
+    S-->>A: 历史消息（超过 50 条则先摘要旧消息）
+    A->>M: search_for_context 检索长期记忆
+    M-->>A: 相关记忆（仅本轮注入，不写入历史）
+    alt 简单问答（未命中多步骤门控）
+        A->>T: create_agent 循环（历史 + 当前消息）
+        loop 工具调用（上限 AGENT_TOOL_CALL_LIMIT）
+            T-->>A: tool_step / rag_step 事件
+        end
+        A-->>R: SSE content / content_boundary
+    else 多步骤任务（plan-and-execute）
+        A->>W: initial_workflow_state(history) + astream
+        W->>W: 规划(带历史) → 选择步骤 → 事务 → 执行步骤(带历史)
+        loop 每个子任务
+            W->>T: execute_workflow_step(历史 + step 指令) → agent.ainvoke
+            T-->>W: 步骤结果 / tool_events
+        end
+        W->>W: 校验 → 提交或补偿 → 反省 → 收尾
+        W-->>A: SSE plan / execute / reflect / content
+    end
+    A->>S: save(历史 + 当前 + 回答) 持久化
+    A->>M: 后台蒸馏写入长期记忆
+    A-->>R: SSE trace(如有RAG) / artifacts / [DONE]
+    R-->>F: 流式事件（text/event-stream）
+    F-->>U: 渲染回答 + 工具/RAG 轨迹
+```
+
+### 多轮上下文流转
+
+```mermaid
+flowchart TD
+    A[用户输入 与 session_id] --> B[_prepare_messages]
+    B --> C{历史长度超过 50}
+    C -->|是| D[最早消息摘要后拼接近期消息]
+    C -->|否| E[保留完整历史]
+    D --> F[_augment_with_memory 注入长期记忆]
+    E --> F
+    F --> G{_should_plan_execute}
+    G -->|否| H[create_agent 直接调用 带历史]
+    G -->|是| I[initial_workflow_state 携带 history]
+    I --> J[规划器与每个步骤执行器 均读取 history]
+    H --> K[_persist_response 保存 历史+当前+回答]
+    J --> K
+    K --> L[下一轮 ConversationStorage.load 重载]
+    L --> B
+```
+
+要点：
+
+- **历史持久化**：`ConversationStorage` 只保存真实对话轮次（用户 + 助手）；`_augment_with_memory` 注入的长期记忆是“本轮临时上下文”，不随历史落库，避免逐轮累积脏上下文。
+- **上下文的两个消费者**：简单问答把完整消息序列直接交给 `create_agent`；多步骤任务把历史序列化进 `WorkflowState.history`，再由规划器和每个步骤执行器分别读取，保证跨步骤、跨轮次的起点/目的地/已确认选择不丢失。
+- **工具轨迹**：核心工具、MCP、知识库检索、Skill/子代理调用都经 `tool_instrumentation.py` 包装成 `tool_step` / `rag_step` 事件推送 SSE，前端据此叠加渲染“检索与调用轨迹”。
 
 ## OpenCLI Skill 详解
 
