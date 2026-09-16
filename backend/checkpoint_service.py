@@ -26,7 +26,9 @@ _RUN_INDEX_LOCK = asyncio.Lock()
 
 
 def workflow_config(run_id: str, checkpoint_id: str | None = None) -> dict:
-    configurable = {"thread_id": run_id}
+    # LangGraph can infer the root namespace for invoke(), but update_state()
+    # requires it to be explicit when restoring a historical snapshot.
+    configurable = {"thread_id": run_id, "checkpoint_ns": ""}
     if checkpoint_id:
         configurable["checkpoint_id"] = checkpoint_id
     return {"configurable": configurable}
@@ -177,6 +179,8 @@ async def resume_run(run_id: str, payload: dict) -> dict:
             durability="sync",
         )
     else:
+        if snapshot.values.get("run_status") in {"completed", "failed"}:
+            raise ValueError("该工作流已经结束，无法继续恢复。")
         action = str(payload.get("action") or "retry")
         config = snapshot.config
         if action == "abort":
@@ -241,8 +245,18 @@ async def fork_run(
             snapshot_step,
             committed=False,
         )
-    update = {"last_error": None, "run_status": "running", **_state_patch(patch or {})}
-    fork_config = await workflow.aupdate_state(source.config, update)
-    if continue_run:
+    source_has_next = bool(source.next)
+    update = {
+        "last_error": None,
+        "run_status": "running" if source_has_next else values.get("run_status", "completed"),
+        **_state_patch(patch or {}),
+    }
+    source_config = dict(source.config or {})
+    configurable = dict(source_config.get("configurable") or {})
+    configurable.setdefault("thread_id", run_id)
+    configurable.setdefault("checkpoint_ns", "")
+    source_config["configurable"] = configurable
+    fork_config = await workflow.aupdate_state(source_config, update)
+    if continue_run and source_has_next:
         await workflow.ainvoke(None, fork_config, durability="sync")
     return await get_run_state(run_id)

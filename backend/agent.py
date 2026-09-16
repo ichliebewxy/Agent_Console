@@ -224,12 +224,16 @@ async def chat_with_agent(
         if _should_plan_execute(user_text):
             run_id = str(uuid4())
             initial = initial_workflow_state(run_id, user_id, session_id, user_text)
-            await register_run(initial)
-            await get_workflow().ainvoke(
-                initial,
-                workflow_config(run_id),
-                durability="sync",
-            )
+            # Step staging protects individual mutations. Serializing full
+            # workflow runs per session also protects the shared visible
+            # workspace when two browser tabs submit tasks at once.
+            async with session_async_lock(user_id, session_id):
+                await register_run(initial)
+                await get_workflow().ainvoke(
+                    initial,
+                    workflow_config(run_id),
+                    durability="sync",
+                )
             workflow_data = await get_run_state(run_id)
             plan_data = {
                 "objective": workflow_data.get("objective", ""),
@@ -380,10 +384,11 @@ async def _chat_with_agent_stream_bound(
                 session_id,
                 user_text,
             )
-            async for event in stream_workflow_events(initial):
-                if event.get("type") == "content":
-                    full_response += event.get("content", "")
-                yield _sse_event(event)
+            async with session_async_lock(user_id, session_id):
+                async for event in stream_workflow_events(initial):
+                    if event.get("type") == "content":
+                        full_response += event.get("content", "")
+                    yield _sse_event(event)
             workflow_data = await get_run_state(workflow_run_id)
             plan_data = {
                 "objective": workflow_data.get("objective", ""),

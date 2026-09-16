@@ -17,6 +17,7 @@ from schemas import (
     WorkflowRunListResponse,
     WorkflowStateResponse,
 )
+from runtime_context import session_async_lock
 
 router = APIRouter(prefix="/runs", tags=["workflow-runs"])
 
@@ -54,7 +55,9 @@ async def get_checkpoints(run_id: str, limit: int = Query(100, ge=1, le=500)):
 @router.post("/{run_id}/resume", response_model=WorkflowStateResponse)
 async def resume(run_id: str, request: WorkflowActionRequest):
     try:
-        state = await resume_run(run_id, request.model_dump(exclude_none=True))
+        current = await get_run_state(run_id)
+        async with session_async_lock(current["user_id"], current["session_id"]):
+            state = await resume_run(run_id, request.model_dump(exclude_none=True))
         _project_to_conversation(state)
         return WorkflowStateResponse(state=state)
     except KeyError:
@@ -66,12 +69,14 @@ async def resume(run_id: str, request: WorkflowActionRequest):
 @router.post("/{run_id}/fork", response_model=WorkflowStateResponse)
 async def fork(run_id: str, request: WorkflowForkRequest):
     try:
-        state = await fork_run(
-            run_id,
-            request.checkpoint_id,
-            request.patch,
-            continue_run=request.continue_run,
-        )
+        current = await get_run_state(run_id)
+        async with session_async_lock(current["user_id"], current["session_id"]):
+            state = await fork_run(
+                run_id,
+                request.checkpoint_id,
+                request.patch,
+                continue_run=request.continue_run,
+            )
         _project_to_conversation(state)
         return WorkflowStateResponse(state=state)
     except KeyError:
