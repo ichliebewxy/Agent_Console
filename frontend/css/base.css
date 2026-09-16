@@ -167,20 +167,13 @@ a:focus-visible {
   height: 44px;
   flex: 0 0 auto;
   border-radius: 13px;
-  background: var(--accent-gradient);
-  color: oklch(99% 0.005 160);
-  display: grid;
-  place-items: center;
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 0.98rem;
-  letter-spacing: 0.02em;
+  display: block;
+  object-fit: cover;
   box-shadow: 0 6px 18px color-mix(in oklch, var(--teal) 38%, transparent),
     inset 0 1px 0 color-mix(in oklch, white 30%, transparent);
 }
 
-.brand h1,
-.brand p {
+.brand h1 {
   margin: 0;
 }
 
@@ -189,14 +182,6 @@ a:focus-visible {
   font-size: 1.08rem;
   font-weight: 600;
   letter-spacing: 0.01em;
-}
-
-.brand p {
-  margin-top: 2px;
-  color: color-mix(in oklch, oklch(96% 0.014 142) 62%, transparent);
-  font-size: 0.74rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
 }
 
 .nav-list {
