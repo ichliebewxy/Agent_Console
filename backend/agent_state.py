@@ -10,25 +10,45 @@ from typing import Optional
 
 from settings import AGENT_TOOL_CALL_LIMIT
 
-_LAST_RAG_CONTEXT: Optional[dict] = None
+_LAST_RAG_CONTEXT: ContextVar[Optional[dict]] = ContextVar(
+    "agent_last_rag_context",
+    default=None,
+)
 _TOOL_CALL_STATE: ContextVar[dict | None] = ContextVar("agent_tool_call_state", default=None)
+_TOOL_EVENT_LOG: ContextVar[list[dict] | None] = ContextVar(
+    "agent_tool_event_log",
+    default=None,
+)
 
 
 def set_last_rag_context(context: dict) -> None:
-    global _LAST_RAG_CONTEXT
-    _LAST_RAG_CONTEXT = context
+    _LAST_RAG_CONTEXT.set(context)
 
 
 def get_last_rag_context(clear: bool = True) -> Optional[dict]:
-    global _LAST_RAG_CONTEXT
-    context = _LAST_RAG_CONTEXT
+    context = _LAST_RAG_CONTEXT.get()
     if clear:
-        _LAST_RAG_CONTEXT = None
+        _LAST_RAG_CONTEXT.set(None)
     return context
 
 
 def reset_tool_call_guards() -> None:
     _TOOL_CALL_STATE.set({"count": 0, "knowledge_count": 0})
+    _TOOL_EVENT_LOG.set([])
+
+
+def record_tool_event(event: dict) -> None:
+    events = _TOOL_EVENT_LOG.get()
+    if events is None:
+        events = []
+        _TOOL_EVENT_LOG.set(events)
+    events.append(dict(event))
+
+
+def consume_tool_events() -> list[dict]:
+    events = list(_TOOL_EVENT_LOG.get() or [])
+    _TOOL_EVENT_LOG.set([])
+    return events
 
 
 def current_tool_call_state() -> dict:

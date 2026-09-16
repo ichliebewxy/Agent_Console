@@ -6,7 +6,7 @@ import subprocess
 from pathlib import Path
 
 from ops_store import record_tool_failure
-from runtime_context import current_runtime_context, session_async_lock, session_files_dir
+from runtime_context import active_workspace_dir, current_runtime_context, session_async_lock
 from settings import (
     LOCAL_RUN_COMMAND_MAX_CHARS,
     LOCAL_RUN_OUTPUT_MAX_CHARS,
@@ -135,7 +135,7 @@ async def run_local_command(command: str) -> str:
 
     context = current_runtime_context()
     async with session_async_lock(context.user_id, context.session_id):
-        workspace = session_files_dir(create=True)
+        workspace = active_workspace_dir(create=True)
         before = await asyncio.to_thread(_snapshot, workspace)
         process = None
         stdout_task = None

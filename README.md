@@ -39,7 +39,7 @@ Agent Console 是一个面向本地可信环境的 LangChain 多 Agent + RAG 工
 | 工具安全 | Bash 默认拒绝，执行顺序为 deny → authorize → allow → default deny；阻止路径逃逸、shell 拼接、危险系统命令和高风险 OpenCLI。 |
 | 可观察但不扰人 | 前端展示当前对话实际产生的工具/RAG 轨迹和引用；没有引用时不展示检索轨迹。旧的“运行回调”只读页面和公开回调接口不再提供，失败记录仅留在服务端诊断文件。 |
 | 调用上限 | 每轮对话最多执行 `AGENT_TOOL_CALL_LIMIT` 次工具调用，默认 250 次；达到上限会停止继续调用并整理已有结果。 |
-| Plan-and-Execute | 对多步骤任务，先用规划器一次性拆解为有序子任务，再逐步执行；每完成一步就结合实际结果“反省”，必要时增删改后续计划。 |
+| Durable Plan-and-Execute | 多步骤任务由 LangGraph 状态图执行；每个 run 使用独立 `thread_id` 和 SQLite 检查点，步骤在私有 staging 中事务化执行，失败可重试、修改、跳过、终止或从历史检查点回滚。 |
 | 长期记忆（mem0） | 基于 [mem0](https://github.com/mem0ai/mem0) 的跨会话用户记忆：每轮对话前检索相关记忆注入上下文，对话后自动蒸馏沉淀新记忆；记忆面板支持查看、手动新增、编辑与删除。 |
 
 ## 长期记忆（mem0）
@@ -53,7 +53,7 @@ Agent Console 是一个面向本地可信环境的 LangChain 多 Agent + RAG 工
 
 相关配置（`.env`）：`MEMORY_ENABLED`（总开关）、`MEM0_DIR`（数据目录）、`MEM0_MODEL`（抽取模型，默认复用 `CHAT_MODEL`）、`MEM0_TOP_K`（每轮注入条数）。
 
-> 安装说明：`mem0ai` 目前在 PyPI 上仍声明 `protobuf<7.0.0`，而本项目 Milvus/gRPC 栈需要 `protobuf>=7`。请用 `uv pip install --no-deps mem0ai==2.0.18` 安装 mem0ai 本体，再单独安装 `qdrant-client` / `posthog` / `pytz` / `portalocker`（均已写入 `pyproject.toml`，无版本冲突）。
+> 安装说明：mem0 及其本地 Qdrant 依赖已纳入 `pyproject.toml` 和 `uv.lock`，使用 `uv sync --frozen` 即可按锁定版本安装。
 
 ## 系统架构
 
@@ -268,6 +268,7 @@ Windows 下 URL 中的 `&` 是 `cmd.exe` 的命令分隔符；通过 Bash 执行
 | `backend/routes_documents.py` | 文档上传、列表、删除；扩展名/文件名/50MB 校验、staging、解析和 Milvus 写入。 |
 | `backend/routes_config.py` | MCP/Skill 增删、配置刷新和主 Agent 热重载。 |
 | `backend/routes_sessions.py` | 历史会话列表、消息读取和会话删除；删除时同步清理会话工作区。 |
+| `backend/routes_runs.py` | 工作流状态、检查点历史、人工恢复和回滚/分叉 API。 |
 | `backend/routes_artifacts.py` | Artifact 列表和 HMAC token 校验后的安全下载。 |
 | `backend/encoding_utils.py` | Windows stdout/stderr 编码保护和安全打印，减少中文/emoji 引起的 GBK 日志错误。 |
 
@@ -283,6 +284,9 @@ Windows 下 URL 中的 `&` 是 `cmd.exe` 的命令分隔符；通过 Bash 执行
 | `backend/bash_tool.py` | Bash 权限判定和执行入口；实现 deny/authorize/allow/default-deny、OpenCLI 访问级别和审计。 |
 | `backend/local_runtime_service.py` | 在会话临时目录启动单条本地命令，设置 TMP/TEMP、超时、输出长度和环境变量过滤。 |
 | `backend/runtime_context.py` | 当前 user/session 上下文、会话目录键、异步锁和会话目录删除。 |
+| `backend/workflow_graph.py` | 可持久化的规划、步骤事务、验证、补偿、人工恢复和结束状态图。 |
+| `backend/checkpoint_service.py` | 管理 SQLite checkpointer、run 索引、状态历史、恢复和 time travel。 |
+| `backend/workspace_transaction.py` | 步骤级 staging、快照、提交、补偿回滚与幂等工具回执。 |
 | `backend/subagents.py` | 懒加载 `skills_specialist`，提供 `load_subagent` 和 `delegate_to_skill_agent` 两个主 Agent 网关。 |
 | `backend/tool_instrumentation.py` | 为工具增加调用开始/结果/错误/上限事件，并把事件推送给 SSE。 |
 | `backend/search_tool.py` | `search_knowledge_base` 知识库检索工具与检索状态格式化。 |
@@ -578,6 +582,8 @@ Invoke-RestMethod http://127.0.0.1:8080/documents
 | `PLAN_EXECUTE_ENABLED` | `true` | 为多步骤任务启用“规划 → 执行 → 反省调整”模式；简单问答仍走单次直答。 |
 | `PLAN_EXECUTE_MAX_STEPS` | `6` | 单次任务最多拆解/执行的子任务步数上限。 |
 | `PLAN_EXECUTE_RESULT_MAX_CHARS` | `3000` | 反省时注入“上一步结果”的字符上限。 |
+| `WORKFLOW_CHECKPOINT_PATH` | `data/workflow_checkpoints.sqlite` | LangGraph SQLite 检查点数据库。 |
+| `WORKFLOW_MAX_RETRIES` | `2` | 可判定为瞬时错误时的自动重试上限。 |
 | `DASHSCOPE_MCP_API_KEY` | 空 | 高德地图 MCP 的授权 Key。 |
 | `MCP_DISCOVERY_TIMEOUT` | `30` | 单个 MCP server 工具发现超时（秒）。 |
 | `EMBEDDING_MODEL` | `BAAI/bge-m3` | dense embedding 模型。 |
@@ -640,6 +646,12 @@ Invoke-RestMethod http://127.0.0.1:8080/documents
 | `DELETE` | `/sessions/{user_id}/{session_id}` | 删除会话历史及 `backend/tmp` 对应目录。 |
 | `GET` | `/sessions/{user_id}/{session_id}/artifacts` | 使用 SSE 返回的 token 列出当前会话 `deliverables/` 最终产物。 |
 | `GET` | `/sessions/{user_id}/{session_id}/artifacts/{path}` | 使用 HMAC token 下载会话文件。 |
+| `GET` | `/runs` | 按可选 `user_id/session_id` 查询持久化工作流运行。 |
+| `GET` | `/runs/{run_id}` | 获取当前工作流状态。 |
+| `GET` | `/runs/{run_id}/checkpoints` | 获取该运行的检查点历史。 |
+| `POST` | `/runs/{run_id}/resume` | 使用 `retry/modify/skip/abort` 恢复人工中断的运行。 |
+| `POST` | `/runs/{run_id}/fork` | 从指定检查点更新状态，可选继续执行。 |
+| `POST` | `/runs/{run_id}/rollback` | `/fork` 的显式回滚别名。 |
 | `GET` | `/runtime-config` | 查看脱敏后的 Skills、MCP、发现状态和 Bash 规则。 |
 | `POST` | `/runtime-config/refresh` | 重新扫描 Skills、重新发现 MCP 并热重载主 Agent。 |
 | `POST` | `/runtime-config/mcp` | 新增或更新 MCP server。 |

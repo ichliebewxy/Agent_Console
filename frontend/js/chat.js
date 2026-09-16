@@ -30,6 +30,7 @@ Object.assign(window.NebulaNestApp.methods, {
       isThinking: true,
       thinkingText: "主 Agent 正在规划并选择小 Agent...",
       plan: null,
+      workflow: null,
       ragTrace: null,
       ragSteps: [],
       toolSteps: [],
@@ -114,8 +115,18 @@ Object.assign(window.NebulaNestApp.methods, {
       } else if (data.type === "plan") {
         const botMessage = this.activeAssistantMessage(botMsgIdx);
         if (!botMessage.plan) botMessage.plan = { objective: "", steps: [], reflections: [] };
+        if (data.run_id) botMessage.plan.runId = data.run_id;
         botMessage.plan.objective = data.objective || botMessage.plan.objective;
         if (Array.isArray(data.steps)) botMessage.plan.steps = data.steps;
+      } else if (data.type === "workflow") {
+        const botMessage = this.activeAssistantMessage(botMsgIdx);
+        botMessage.workflow = {
+          ...(botMessage.workflow || {}),
+          run_id: data.run_id || (botMessage.workflow && botMessage.workflow.run_id),
+          run_status: data.status || (botMessage.workflow && botMessage.workflow.run_status),
+          resumable: data.resumable,
+          interrupts: data.interrupts || (botMessage.workflow && botMessage.workflow.interrupts) || [],
+        };
       } else if (data.type === "plan_step") {
         const botMessage = this.activeAssistantMessage(botMsgIdx);
         botMessage.flowSteps = botMessage.flowSteps || [];
@@ -202,6 +213,7 @@ Object.assign(window.NebulaNestApp.methods, {
       isThinking: false,
       thinkingText: "",
       plan: null,
+      workflow: null,
       ragTrace: null,
       ragSteps: [],
       toolSteps: [],
@@ -235,7 +247,8 @@ Object.assign(window.NebulaNestApp.methods, {
         id: this.createId(),
         text: msg.content,
         isUser: msg.type === "human",
-        plan: null,
+        plan: msg.plan || null,
+        workflow: msg.workflow || null,
         ragTrace: msg.rag_trace || null,
         ragSteps: [],
         toolSteps: [],
@@ -246,6 +259,45 @@ Object.assign(window.NebulaNestApp.methods, {
       this.$nextTick(() => this.scrollToBottom());
     } catch (error) {
       this.notify(`加载会话失败：${error.message}`);
+    }
+  },
+
+  async handleWorkflowAction(msg, action) {
+    const runId = msg && msg.workflow && msg.workflow.run_id;
+    if (!runId || this.isLoading) return;
+    const payload = { action };
+    if (action === "modify") {
+      const current = (msg.plan && msg.plan.steps || []).find((step) => step.status === "failed");
+      const detail = window.prompt("请输入修改后的步骤说明", current && current.detail || "");
+      if (detail === null) return;
+      payload.detail = detail.trim();
+    }
+    this.isLoading = true;
+    msg.workflow.run_status = "running";
+    try {
+      const response = await fetch(`/runs/${encodeURIComponent(runId)}/resume`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
+      const state = data.state || {};
+      msg.workflow = state;
+      msg.plan = {
+        ...(msg.plan || {}),
+        objective: state.objective || "",
+        steps: state.steps || [],
+      };
+      if (state.final_response) msg.text = state.final_response;
+      msg.ragTrace = state.rag_trace || msg.ragTrace;
+      this.notify(state.run_status === "completed" ? "工作流已完成" : "工作流状态已更新");
+    } catch (error) {
+      msg.workflow.run_status = "waiting_user";
+      this.notify(`恢复失败：${error.message}`);
+    } finally {
+      this.isLoading = false;
+      this.persistState();
     }
   },
 });

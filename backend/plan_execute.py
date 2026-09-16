@@ -12,6 +12,7 @@ import asyncio
 import json
 import re
 from dataclasses import dataclass, field
+from uuid import uuid4
 
 from chat_models import build_chat_model
 from settings import PLAN_EXECUTE_MAX_STEPS, PLAN_EXECUTE_RESULT_MAX_CHARS
@@ -265,7 +266,7 @@ async def generate_plan(task: str, max_steps: int | None = None) -> Plan:
         items = []
 
     steps: list[PlanStep] = []
-    for i, item in enumerate(items[:limit], start=1):
+    for item in items[:limit]:
         if isinstance(item, str):
             title, detail = item.strip(), ""
         elif isinstance(item, dict):
@@ -277,10 +278,10 @@ async def generate_plan(task: str, max_steps: int | None = None) -> Plan:
             continue
         if not title:
             continue
-        steps.append(PlanStep(id="s" + str(i), title=title, detail=detail))
+        steps.append(PlanStep(id=str(uuid4()), title=title, detail=detail))
 
     if not steps:
-        steps = [PlanStep(id="s1", title="完成用户任务", detail=task)]
+        steps = [PlanStep(id=str(uuid4()), title="完成用户任务", detail=task)]
     return Plan(objective=objective, steps=steps)
 
 
@@ -356,7 +357,7 @@ def apply_reflection(plan: Plan, reflection: Reflection) -> list:
 
         if action == "add":
             new_step = PlanStep(
-                id="s" + str(len(plan.steps) + 1),
+                id=str(uuid4()),
                 title=title or "新增步骤",
                 detail=detail,
             )

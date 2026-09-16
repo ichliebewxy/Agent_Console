@@ -483,6 +483,71 @@
   font-weight: 600;
 }
 
+.workflow-badge {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--info-bg);
+  color: var(--blue);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.workflow-badge.completed {
+  background: var(--success-bg);
+  color: var(--green-dark);
+}
+
+.workflow-badge.waiting_user,
+.workflow-badge.failed {
+  background: var(--danger-bg);
+  color: var(--coral);
+}
+
+.workflow-recovery {
+  padding: 10px;
+  border: 1px solid color-mix(in oklch, var(--coral) 30%, var(--line));
+  border-radius: var(--radius);
+  background: color-mix(in oklch, var(--danger-bg) 55%, var(--surface));
+}
+
+.workflow-recovery p {
+  margin: 0 0 9px;
+  color: var(--ink);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.workflow-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.workflow-actions button {
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-raised);
+  color: var(--ink);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.74rem;
+}
+
+.workflow-actions button:hover:not(:disabled) {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+.workflow-actions button.danger {
+  color: var(--coral);
+}
+
+.workflow-actions button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
 .plan-icon {
   width: 26px;
   height: 26px;

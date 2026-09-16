@@ -19,7 +19,8 @@ from encoding_utils import configure_stdio_encoding
 configure_stdio_encoding()
 
 import api as api_module
-from agent import init_agent_async
+from agent import execute_workflow_step, init_agent_async
+from checkpoint_service import close_checkpoint_service, initialize_checkpoint_service
 from embedding import embedding_service
 import memory_service
 from runtime_catalog_service import refresh_runtime_catalogs
@@ -52,6 +53,7 @@ async def lifespan(app: FastAPI):
     )
     print("正在初始化主 Agent...")
     await init_agent_async()
+    await initialize_checkpoint_service(execute_workflow_step)
     print("主 Agent 初始化完成，应用启动！")
 
     # 后台预热 mem0 长期记忆（加载本地 BGE 模型较重），避免首次对话卡顿。
@@ -66,28 +68,31 @@ async def lifespan(app: FastAPI):
     if memory_service.is_enabled():
         asyncio.create_task(asyncio.to_thread(_warmup_memory))
     
-    yield
-    
-    # 关闭时清理：显式关闭 Milvus 连接，避免进程退出时由于 atexit/GC
-    # 关闭 gRPC 通道而触发 "Cannot invoke RPC on closed channel!"。
-    print("应用正在关闭，释放 Milvus 连接...")
-    milvus_managers = []
     try:
-        from rag_utils import _milvus_manager
-        milvus_managers.append(_milvus_manager)
-    except Exception:
-        pass
-    try:
-        from routes_documents import milvus_manager
-        milvus_managers.append(milvus_manager)
-    except Exception:
-        pass
-    for manager in milvus_managers:
+        yield
+    finally:
+        await close_checkpoint_service()
+
+        # 关闭时清理：显式关闭 Milvus 连接，避免进程退出时由于 atexit/GC
+        # 关闭 gRPC 通道而触发 "Cannot invoke RPC on closed channel!"。
+        print("应用正在关闭，释放 Milvus 连接...")
+        milvus_managers = []
         try:
-            manager.close()
+            from rag_utils import _milvus_manager
+            milvus_managers.append(_milvus_manager)
         except Exception:
             pass
-    print("应用已关闭。")
+        try:
+            from routes_documents import milvus_manager
+            milvus_managers.append(milvus_manager)
+        except Exception:
+            pass
+        for manager in milvus_managers:
+            try:
+                manager.close()
+            except Exception:
+                pass
+        print("应用已关闭。")
 
 
 def create_app() -> FastAPI:

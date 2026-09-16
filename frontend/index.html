@@ -119,6 +119,10 @@
               <div class="plan-heading">
                 <span class="plan-icon"><i class="fas fa-list-check"></i></span>
                 <strong>执行计划</strong>
+                <span
+                  v-if="msg.workflow && msg.workflow.run_status"
+                  :class="['workflow-badge', msg.workflow.run_status]"
+                >{{ workflowStatusLabel(msg.workflow.run_status) }}</span>
                 <small>{{ planStepStats(msg) }}</small>
               </div>
               <ol class="plan-list">
@@ -136,6 +140,18 @@
                   </div>
                 </li>
               </ol>
+              <div
+                v-if="msg.workflow && msg.workflow.run_status === 'waiting_user'"
+                class="workflow-recovery"
+              >
+                <p>{{ (msg.workflow.last_error && msg.workflow.last_error.message) || '当前步骤未通过验证，请选择后续操作。' }}</p>
+                <div class="workflow-actions">
+                  <button type="button" :disabled="isLoading" @click="handleWorkflowAction(msg, 'retry')">重试</button>
+                  <button type="button" :disabled="isLoading" @click="handleWorkflowAction(msg, 'modify')">修改后重试</button>
+                  <button type="button" :disabled="isLoading" @click="handleWorkflowAction(msg, 'skip')">跳过</button>
+                  <button type="button" class="danger" :disabled="isLoading" @click="handleWorkflowAction(msg, 'abort')">终止</button>
+                </div>
+              </div>
               <div v-if="planReflections(msg).length" class="plan-reflections">
                 <div v-for="(refl, rIdx) in planReflections(msg)" :key="rIdx" class="plan-reflection">
                   <i class="fas fa-rotate"></i>

@@ -1,5 +1,6 @@
 """Per-request identity and isolated session workspace resolution."""
 import hashlib
+import re
 import shutil
 import threading
 import weakref
@@ -16,6 +17,8 @@ from settings import BACKEND_TMP_DIR
 class AgentRuntimeContext:
     user_id: str
     session_id: str
+    run_id: str | None = None
+    step_id: str | None = None
 
 
 _RUNTIME_CONTEXT: ContextVar[AgentRuntimeContext | None] = ContextVar(
@@ -29,8 +32,20 @@ _SESSION_LOCKS_GUARD = threading.Lock()
 
 
 @contextmanager
-def bind_runtime_context(user_id: str, session_id: str):
-    token = _RUNTIME_CONTEXT.set(AgentRuntimeContext(user_id=user_id, session_id=session_id))
+def bind_runtime_context(
+    user_id: str,
+    session_id: str,
+    run_id: str | None = None,
+    step_id: str | None = None,
+):
+    token = _RUNTIME_CONTEXT.set(
+        AgentRuntimeContext(
+            user_id=user_id,
+            session_id=session_id,
+            run_id=run_id,
+            step_id=step_id,
+        )
+    )
     try:
         yield
     finally:
@@ -78,6 +93,48 @@ def session_files_dir(
     if create:
         root.mkdir(parents=True, exist_ok=True)
     return root
+
+
+def _safe_workflow_segment(value: str, label: str) -> str:
+    if not re.fullmatch(r"[A-Za-z0-9_.-]{1,128}", value or ""):
+        raise ValueError(f"Invalid workflow {label}.")
+    return value
+
+
+def workflow_step_dir(
+    user_id: str,
+    session_id: str,
+    run_id: str,
+    step_id: str,
+    *,
+    create: bool = True,
+) -> Path:
+    session_root = session_files_dir(user_id, session_id, create=create)
+    run_segment = _safe_workflow_segment(run_id, "run id")
+    step_segment = _safe_workflow_segment(step_id, "step id")
+    root = (session_root / "runs" / run_segment / "steps" / step_segment).resolve()
+    runs_root = (session_root / "runs").resolve()
+    if not root.is_relative_to(runs_root):
+        raise RuntimeError("Resolved workflow step escaped its session workspace.")
+    if create:
+        root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def active_workspace_dir(*, create: bool = True) -> Path:
+    context = current_runtime_context()
+    if context.run_id and context.step_id:
+        root = workflow_step_dir(
+            context.user_id,
+            context.session_id,
+            context.run_id,
+            context.step_id,
+            create=create,
+        ) / "staging"
+        if create:
+            root.mkdir(parents=True, exist_ok=True)
+        return root.resolve()
+    return session_files_dir(context.user_id, context.session_id, create=create).resolve()
 
 
 def delete_session_files(user_id: str, session_id: str) -> None:

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, StringConstraints
-from typing import Annotated, Optional, List, Any, Dict
+from typing import Annotated, Optional, List, Any, Dict, Literal
 
 
 RuntimeId = Annotated[
@@ -84,6 +84,8 @@ class ChatResponse(BaseModel):
     response: str
     rag_trace: Optional[RagTrace] = None
     artifacts: List[ArtifactInfo] = Field(default_factory=list)
+    plan: Optional[Dict[str, Any]] = None
+    workflow: Optional[Dict[str, Any]] = None
 
 
 class MessageInfo(BaseModel):
@@ -92,6 +94,8 @@ class MessageInfo(BaseModel):
     timestamp: str
     rag_trace: Optional[RagTrace] = None
     artifacts: List[ArtifactInfo] = Field(default_factory=list)
+    plan: Optional[Dict[str, Any]] = None
+    workflow: Optional[Dict[str, Any]] = None
 
 
 class SessionMessagesResponse(BaseModel):
@@ -111,6 +115,30 @@ class SessionListResponse(BaseModel):
 class SessionDeleteResponse(BaseModel):
     session_id: str
     message: str
+
+
+class WorkflowActionRequest(BaseModel):
+    action: Literal["retry", "modify", "skip", "abort"] = "retry"
+    title: Optional[str] = None
+    detail: Optional[str] = None
+
+
+class WorkflowForkRequest(BaseModel):
+    checkpoint_id: str
+    patch: Dict[str, Any] = Field(default_factory=dict)
+    continue_run: bool = False
+
+
+class WorkflowStateResponse(BaseModel):
+    state: Dict[str, Any]
+
+
+class WorkflowHistoryResponse(BaseModel):
+    checkpoints: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class WorkflowRunListResponse(BaseModel):
+    runs: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class DocumentInfo(BaseModel):

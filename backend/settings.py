@@ -101,6 +101,11 @@ PLAN_EXECUTE_ENABLED = env_bool("PLAN_EXECUTE_ENABLED", True)
 PLAN_EXECUTE_MAX_STEPS = max(1, env_int("PLAN_EXECUTE_MAX_STEPS", 6))
 # 反省时注入“上一步结果”的字符上限，避免上下文过长。
 PLAN_EXECUTE_RESULT_MAX_CHARS = max(200, env_int("PLAN_EXECUTE_RESULT_MAX_CHARS", 3000))
+WORKFLOW_CHECKPOINT_PATH = env_path(
+    "WORKFLOW_CHECKPOINT_PATH",
+    PROJECT_ROOT / "data" / "workflow_checkpoints.sqlite",
+)
+WORKFLOW_MAX_RETRIES = max(0, env_int("WORKFLOW_MAX_RETRIES", 2))
 
 # ===== mem0 长期记忆（本地持久化）=====
 # 是否启用 mem0 长期记忆。关闭后 Agent 不再检索/写入记忆，记忆接口仍可用。
