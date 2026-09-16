@@ -59,6 +59,7 @@ class WorkflowState(TypedDict, total=False):
     user_id: str
     session_id: str
     request: str
+    history: list[dict]
     created_at: str
     updated_at: str
 
@@ -89,7 +90,13 @@ def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def initial_workflow_state(run_id: str, user_id: str, session_id: str, request: str) -> WorkflowState:
+def initial_workflow_state(
+    run_id: str,
+    user_id: str,
+    session_id: str,
+    request: str,
+    history: list[dict] | None = None,
+) -> WorkflowState:
     now = utc_now()
     return {
         "flow_version": FLOW_VERSION,
@@ -97,6 +104,7 @@ def initial_workflow_state(run_id: str, user_id: str, session_id: str, request: 
         "user_id": user_id,
         "session_id": session_id,
         "request": request,
+        "history": history or [],
         "created_at": now,
         "updated_at": now,
         "objective": request,

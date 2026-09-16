@@ -68,3 +68,22 @@ def consume_tool_call_budget() -> tuple[bool, int]:
     count += 1
     state["count"] = count
     return True, count
+
+
+_CONVERSATION_HISTORY: ContextVar[list | None] = ContextVar(
+    "agent_conversation_history",
+    default=None,
+)
+
+
+def set_conversation_history(history: list) -> None:
+    """记住当前会话到目前为止的对话消息，供工作流的每一步执行器读取。
+
+    工作流（plan-and-execute）把每个子任务作为独立的一次 agent 调用执行，
+    若不显式携带这段历史，执行器就会丢失本轮之前确定的起点、目的地等上下文。
+    """
+    _CONVERSATION_HISTORY.set(history)
+
+
+def get_conversation_history() -> list:
+    return _CONVERSATION_HISTORY.get() or []

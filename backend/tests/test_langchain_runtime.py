@@ -12,10 +12,18 @@ if str(BACKEND_DIR) not in sys.path:
 
 from langchain_core.tools import tool
 
-from core_tools import CORE_TOOLS, edit_file, glob, read_file, review, write_file
+from core_tools import (
+    CORE_TOOLS,
+    _safe_path,
+    edit_file,
+    glob,
+    read_file,
+    review,
+    write_file,
+)
 from mcp_config_service import MCPServerStore
 from mcp_service import discover_configured_mcp_tools
-from runtime_context import bind_runtime_context
+from runtime_context import bind_runtime_context, session_files_dir
 
 
 class CoreLangChainToolTests(unittest.IsolatedAsyncioTestCase):
@@ -51,6 +59,22 @@ class CoreLangChainToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(matches, "src/demo.txt")
         self.assertEqual(final, "alpha\ngamma\n")
         self.assertTrue(escaped.startswith("TOOL_ERROR:"))
+
+    def test_safe_path_without_explicit_root_uses_session_workspace(self):
+        """The default-root branch must resolve via runtime_context, not raise NameError."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            with (
+                patch("runtime_context.BACKEND_TMP_DIR", root),
+                bind_runtime_context("default-root-user", "default-root-session"),
+            ):
+                resolved = _safe_path("notes/demo.txt")
+                expected = (session_files_dir() / "notes" / "demo.txt").resolve()
+                with self.assertRaises(ValueError):
+                    _safe_path("../escape.txt")
+
+        self.assertEqual(resolved, expected)
+        self.assertTrue(resolved.is_relative_to(root))
 
     def test_review_is_non_executing_langchain_tool(self):
         result = json.loads(review.invoke({"command": "shutdown /s"}))

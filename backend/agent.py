@@ -7,7 +7,12 @@ from langchain.agents import create_agent
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, SystemMessage
 
 from agent_prompt import SYSTEM_PROMPT
-from agent_state import consume_tool_events, get_last_rag_context, reset_tool_call_guards
+from agent_state import (
+    consume_tool_events,
+    get_conversation_history,
+    get_last_rag_context,
+    reset_tool_call_guards,
+)
 from artifact_service import list_session_artifacts
 from chat_models import build_chat_model
 from conversation_storage import ConversationStorage
@@ -75,15 +80,61 @@ def summarize_old_messages(chat_model, messages: list) -> str:
     return chat_model.invoke(prompt).content
 
 
-def _prepare_messages(user_text: str, user_id: str, session_id: str) -> list:
-    messages = storage.load(user_id, session_id)
+def _message_text(msg) -> str:
+    """把任意 LangChain 消息的内容安全地压成纯文本。"""
+    content = getattr(msg, "content", "")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict) and block.get("type") == "text":
+                parts.append(str(block.get("text", "")))
+        return "".join(parts)
+    return str(content or "")
+
+
+def _serialize_history(messages: list) -> list[dict]:
+    """把 LangChain 消息列表转成可持久化、可跨工作流节点传递的轻量历史。"""
+    return [
+        {"type": getattr(msg, "type", "system"), "content": _message_text(msg)}
+        for msg in messages
+    ]
+
+
+def _messages_from_history(history: list | None) -> list:
+    """把序列化的历史还原为 LangChain 消息列表。"""
+    messages = []
+    for item in history or []:
+        if not isinstance(item, dict):
+            continue
+        content = item.get("content", "")
+        kind = item.get("type", "ai")
+        if kind == "human":
+            messages.append(HumanMessage(content=content))
+        elif kind == "system":
+            messages.append(SystemMessage(content=content))
+        else:
+            messages.append(AIMessage(content=content))
+    return messages
+
+
+def _prepare_messages(user_text: str, user_id: str, session_id: str):
+    """加载历史并返回 (完整消息序列, 本轮之前的历史)。
+
+    完整消息序列末尾追加当前用户输入，用于简单问答直接回答。历史单独返回，
+    便于序列化后随工作流状态传给规划器与步骤执行器，避免多轮上下文丢失。
+    """
+    history = storage.load(user_id, session_id)
     get_last_rag_context(clear=True)
     reset_tool_call_guards()
-    if len(messages) > 50:
-        summary = summarize_old_messages(model, messages[:40])
-        messages = [SystemMessage(content=f"之前的对话摘要：\n{summary}")] + messages[40:]
-    messages.append(HumanMessage(content=user_text))
-    return messages
+    if len(history) > 50:
+        summary = summarize_old_messages(model, history[:40])
+        history = [SystemMessage(content=f"之前的对话摘要：\n{summary}")] + history[40:]
+    messages = [*history, HumanMessage(content=user_text)]
+    return messages, history
 
 
 def _format_memory_context(memories: list) -> str:
@@ -176,8 +227,12 @@ async def execute_workflow_step(instruction: str) -> dict:
     """Execute one graph step and return serializable evidence for validation."""
     reset_tool_call_guards()
     get_last_rag_context(clear=True)
+    # 步骤执行必须携带本轮之前的会话历史，否则多轮任务会丢失起点、目的地等
+    # 已在上文中确认的信息（该历史由 workflow_graph 在调用前注入 ContextVar）。
+    messages = _messages_from_history(get_conversation_history())
+    messages.append(HumanMessage(content=instruction))
     result = await agent.ainvoke(
-        {"messages": [HumanMessage(content=instruction)]},
+        {"messages": messages},
         config={"recursion_limit": _AGENT_RECURSION_LIMIT},
     )
     rag_context = get_last_rag_context(clear=True)
@@ -216,14 +271,21 @@ async def chat_with_agent(
     if agent is None:
         raise RuntimeError("主 Agent 尚未初始化，请先等待 init_agent_async() 完成。")
     with bind_runtime_context(user_id, session_id):
-        messages = _prepare_messages(user_text, user_id, session_id)
-        messages = await _augment_with_memory(user_text, user_id, messages)
+        messages, history = _prepare_messages(user_text, user_id, session_id)
+        # 记忆只注入本轮调用，不随 messages 一起持久化，避免逐轮累积脏上下文。
+        invoke_messages = await _augment_with_memory(user_text, user_id, messages)
 
         workflow_data = None
         plan_data = None
         if _should_plan_execute(user_text):
             run_id = str(uuid4())
-            initial = initial_workflow_state(run_id, user_id, session_id, user_text)
+            initial = initial_workflow_state(
+                run_id,
+                user_id,
+                session_id,
+                user_text,
+                history=_serialize_history(history),
+            )
             # Step staging protects individual mutations. Serializing full
             # workflow runs per session also protects the shared visible
             # workspace when two browser tabs submit tasks at once.
@@ -248,7 +310,7 @@ async def chat_with_agent(
             set_tool_step_queue(_ToolStepQueueProxy(output_queue))
             try:
                 result = await agent.ainvoke(
-                    {"messages": messages},
+                    {"messages": invoke_messages},
                     config={"recursion_limit": _AGENT_RECURSION_LIMIT},
                 )
                 response = _extract_response(result)
@@ -315,8 +377,9 @@ async def _chat_with_agent_stream_bound(
 ):
     if agent is None:
         raise RuntimeError("主 Agent 尚未初始化，请先等待 init_agent_async() 完成。")
-    messages = _prepare_messages(user_text, user_id, session_id)
-    messages = await _augment_with_memory(user_text, user_id, messages)
+    messages, history = _prepare_messages(user_text, user_id, session_id)
+    # 记忆只注入本轮调用，不随 messages 一起持久化。
+    invoke_messages = await _augment_with_memory(user_text, user_id, messages)
 
     use_workflow = _should_plan_execute(user_text)
     workflow_data = None
@@ -339,7 +402,7 @@ async def _chat_with_agent_stream_bound(
         active_message_id = None
         try:
             async for msg, metadata in agent.astream(
-                {"messages": messages},
+                {"messages": invoke_messages},
                 stream_mode="messages",
                 config={"recursion_limit": _AGENT_RECURSION_LIMIT},
             ):
@@ -383,6 +446,7 @@ async def _chat_with_agent_stream_bound(
                 user_id,
                 session_id,
                 user_text,
+                history=_serialize_history(history),
             )
             async with session_async_lock(user_id, session_id):
                 async for event in stream_workflow_events(initial):

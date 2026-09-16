@@ -9,6 +9,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
 import plan_execute
+from agent_state import set_conversation_history
 from runtime_context import bind_runtime_context
 from settings import PLAN_EXECUTE_MAX_STEPS, WORKFLOW_MAX_RETRIES
 from workflow_state import FLOW_VERSION, WorkflowState, utc_now
@@ -88,6 +89,7 @@ async def _plan(state: WorkflowState) -> dict:
     plan = await plan_execute.generate_plan(
         state.get("request") or "",
         max_steps=PLAN_EXECUTE_MAX_STEPS,
+        history=state.get("history") or [],
     )
     return {
         **_plan_update(plan),
@@ -158,6 +160,9 @@ def _make_execute_node(execute_step: StepExecutor):
             state["run_id"],
             step_id,
         ):
+            # 把本轮之前积累的会话历史注入到步骤执行器里，否则每一步都以
+            # 空白上下文执行，跨轮次的地点/选择等信息会全部丢失。
+            set_conversation_history(state.get("history") or [])
             execution = await execute_step(_build_instruction(state))
         results = dict(state.get("results") or {})
         results[step_id] = {

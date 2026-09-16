@@ -18,7 +18,12 @@ from langchain_core.tools import tool
 
 from bash_tool import bash
 from bash_tool import review_bash_command
-from runtime_context import active_workspace_dir, current_runtime_context, session_async_lock
+from runtime_context import (
+    active_workspace_dir,
+    current_runtime_context,
+    session_async_lock,
+    session_files_dir,
+)
 from settings import WORKSPACE_FILE_MAX_CHARS
 
 

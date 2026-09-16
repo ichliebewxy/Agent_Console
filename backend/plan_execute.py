@@ -204,6 +204,9 @@ _PLAN_PROMPT = """你是任务规划器。把用户任务拆解为按顺序执�
 JSON 格式：
 {{"objective": "一句话总体目标", "steps": [{{"title": "子任务标题", "detail": "本子任务要做什么，以及完成/验收标准"}}]}}
 
+对话上下文（本轮之前与用户已经确定的信息，规划时必须沿用，不要当成待确认项重复询问）：
+{history}
+
 用户任务：
 {task}
 """
@@ -240,11 +243,40 @@ _REFLECT_PROMPT = """你是任务执行的反省器。根据总体目标、当�
 # --------------------------------------------------------------------------- #
 
 
-async def generate_plan(task: str, max_steps: int | None = None) -> Plan:
+def _format_history(history) -> str:
+    """把序列化的会话历史转成给规划器看的一小段纯文本上下文。"""
+    if not history:
+        return "（无）"
+    lines = []
+    for item in history:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("type") or "ai")
+        content = str(item.get("content") or "").strip()
+        if not content:
+            continue
+        if role == "human":
+            lines.append("用户：" + content)
+        elif role == "system":
+            lines.append("系统：" + content)
+        else:
+            lines.append("AI：" + content)
+    return _NL.join(lines) if lines else "（无）"
+
+
+async def generate_plan(
+    task: str,
+    max_steps: int | None = None,
+    history: list | None = None,
+) -> Plan:
     """Ask the planner model once to split the task into ordered sub-tasks."""
     limit = max_steps or PLAN_EXECUTE_MAX_STEPS
     planner = _get_planner()
-    prompt = _PLAN_PROMPT.format(task=task, max_steps=limit)
+    prompt = _PLAN_PROMPT.format(
+        task=task,
+        max_steps=limit,
+        history=_format_history(history),
+    )
     raw = await asyncio.to_thread(_call_model, planner, prompt)
     data = _extract_json_object(raw)
 
