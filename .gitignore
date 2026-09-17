@@ -10,12 +10,16 @@ wheels/
 .venv
 .env    
 
+# uv cache (local override for sandboxed sessions)
+.uv-cache/    
+
 #docker files
 volumes/
 
 # Runtime outputs
 backend/*.log
 extracted_images/
+
 
 # OS files
 .DS_Store
@@ -26,3 +30,7 @@ backend/tmp/*
 !backend/tmp/.gitkeep
 
 /.tmp_probe
+
+
+backend/mcp_servers.json
+backend/config.json

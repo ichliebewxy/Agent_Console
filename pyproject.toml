@@ -5,56 +5,66 @@ description = "A local LangChain agent console with lazy subagents, hybrid RAG, 
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "rich>=14.2.0",
+    # --- Web / API ---
     "fastapi>=0.115.0",
     "uvicorn>=0.30.0",
-    "python-dotenv>=1.0.1",
-    "requests>=2.32.0",
-    "pymilvus>=2.5.0",
     "python-multipart>=0.0.9",
     "pydantic>=2.8.0",
+    "python-dotenv>=1.0.1",
+    "requests>=2.32.0",
     "pyyaml>=6.0.2",
-    "langchain>=0.2.14",
-    "langchain-core>=0.2.37",
-    "langchain-community>=0.2.12",
-    "langchain-text-splitters>=0.2.2",
-    "langchain-openai>=0.1.22",
-    "langchain-huggingface>=0.1.0",
-    "langchain-mcp-adapters>=0.1.0",
-    "langgraph>=0.2.31",
+
+    # --- LangChain / LangGraph ---
+    "langchain>=1.0.0",
+    "langchain-core>=1.0.0",
+    "langchain-community>=0.4.0",
+    "langchain-text-splitters>=1.0.0",
+    "langchain-deepseek>=1.0.0",
+    "langchain-huggingface>=1.0.0",
+    "langchain-mcp-adapters>=0.2.0",
+    "langgraph>=1.0.0",
     "langgraph-checkpoint-sqlite>=3.0.0",
-    "pypdf>=4.3.1",
-    "docx2txt>=0.8",
-    "websockets>=16.0",
-    "PyMuPDF",
-    "python-pptx",
-    "python-docx",
+
+    # --- 向量检索 / 嵌入 ---
+    "pymilvus>=2.5.0",
+    "sentence-transformers>=5.0.0",
+
+    # --- 文档解析 ---
+    "pymupdf>=1.24.0",
+    "python-pptx>=0.6.23",
+    "python-docx>=1.1.0",
     "pandas>=2.2.0",
     "openpyxl>=3.1.0",
     "xlrd>=2.0.1",
+
+    # --- 大模型供应商 SDK ---
     "dashscope>=1.27.0",
     "pywin32>=306; sys_platform == 'win32'",
-    "langchain_deepseek",
-    "sentence-transformers>=3.0.0",
-    # —— mem0 长期记忆（本地化）——
-    # 注意：mem0ai 目前在 PyPI 上仍声明 protobuf<7.0.0，而本项目的
-    # Milvus/gRPC 栈需要 protobuf>=7。为避免破坏 RAG，请用
-    # `uv pip install --no-deps mem0ai==2.0.18` 安装 mem0ai 本体，
-    # 并单独安装下列其余依赖（其余均无版本冲突）。
+
+    # --- 长期记忆 (mem0) ---
     "mem0ai>=2.0.18",
-    "qdrant-client>=1.12.0",
-    "posthog>=7.14.0",
-    "pytz>=2024.1",
-    "portalocker>=2.7.0",
+    # mem0 可选增强：BM25 关键词检索(fastembed) + 词形还原(spacy)。
+    # 注意：不要用 mem0ai[extras]，它会强制 langchain<1.0，破坏上面的 1.x 版本线。
+    "fastembed>=0.3.1",
+    "spacy>=3.7.0",
+    # spaCy 的英文小模型（mem0 词形还原/实体抽取所需，运行时自动下载会走 GitHub，这里显式固定以可复现）
+    "en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "ruff>=0.16.0",
+]
+
+[project.optional-dependencies]
+study = [
+    "langchain-classic>=1.0.0",
+    "chromadb>=0.5.5",
+    "bilibili-api-python>=17.0.0",
 ]
 
 [[tool.uv.index]]
 url = "https://pypi.tuna.tsinghua.edu.cn/simple"
 default = true
-
-[project.optional-dependencies]
-study = [
-    "langchain-classic>=0.2.0",
-    "chromadb>=0.5.5",
-    "bilibili-api-python>=17.0.0",
-]
