@@ -322,6 +322,9 @@
   font-family: var(--font-mono);
   font-size: 0.82rem;
   line-height: 1.6;
+  /* 深色代码底上显式用浅色文字，避免未高亮时代码继承深色 --ink 导致「字底同色」 */
+  color: oklch(94% 0.012 155);
+  background: transparent;
 }
 
 /* ── 思考 / 规划态 ──────────────────────────────────── */
