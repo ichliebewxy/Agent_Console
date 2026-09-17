@@ -142,6 +142,6 @@ def delete_session_files(user_id: str, session_id: str) -> None:
     root = session_files_dir(user_id, session_id, create=False)
     tmp_root = BACKEND_TMP_DIR.resolve()
     if root.parent != tmp_root:
-        raise RuntimeError("Refusing to remove a path outside backend/tmp.")
+        raise RuntimeError("Refusing to remove a path outside agent_workspace/sessions.")
     if root.exists():
         shutil.rmtree(root)

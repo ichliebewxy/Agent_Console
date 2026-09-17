@@ -36,7 +36,7 @@ Agent Console 是一个面向本地可信环境的 LangChain 多 Agent + RAG 工
 | 混合检索 | BGE-M3 dense embedding + BM25 sparse embedding + Milvus Hybrid Search + RRF 融合，可选接入 SiliconFlow rerank。 |
 | 查询扩展 | 初始召回相关性不足时，LangGraph 自动选择 Step-back、HyDE 或 complex 策略再次召回。 |
 | `.doc` 兼容 | `.docx` 走 OpenXML；旧版二进制 `.doc` 在 Windows 优先使用 Word COM，并降级到 LibreOffice/antiword。中文路径会先复制到 ASCII 临时路径。 |
-| 会话工作区 | 每个 `user_id/session_id` 拥有独立的 `backend/tmp/<session-key>/`；脚本、缓存、预览等中间文件留在会话目录，最终产物统一放在其 `deliverables/` 子目录。 |
+| 会话工作区 | 每个 `user_id/session_id` 拥有独立的 `agent_workspace/sessions/<session-key>/`；脚本、缓存、预览等中间文件留在会话目录，最终产物统一放在其 `deliverables/` 子目录。 |
 | 工具安全 | Bash 默认拒绝，执行顺序为 deny → authorize → allow → default deny；阻止路径逃逸、shell 拼接、危险系统命令和高风险 OpenCLI。 |
 | 可观察但不扰人 | 前端展示当前对话实际产生的工具/RAG 轨迹和引用；没有引用时不展示检索轨迹。旧的“运行回调”只读页面和公开回调接口不再提供，失败记录仅留在服务端诊断文件。 |
 | 调用上限 | 每轮对话最多执行 `AGENT_TOOL_CALL_LIMIT` 次工具调用，默认 250 次；达到上限会停止继续调用并整理已有结果。 |
@@ -295,7 +295,7 @@ agent_workspace/skills/opencli/
 2. 按意图、站点、`access`、`strategy` 和 `browser` 字段筛选，不把整个 registry 放入上下文。
 3. 读取 `opencli <site-or-app> --help -f yaml` 和具体命令的 `--help -f yaml`。
 4. 浏览器任务使用一个独立命名 session：先 `open/bind`，再读 `state`，使用返回的 refs 做一次交互，再读 `state` 验证。
-5. 下载、导出、截图和缓存必须写入当前 `backend/tmp/<session-key>/`，并向主 Agent 返回相对路径。
+5. 下载、导出、截图和缓存必须写入当前 `agent_workspace/sessions/<session-key>/`，并向主 Agent 返回相对路径。
 6. 使用 `-f json` 执行并验证退出码和结果结构，最后报告实际命令、access 级别、验证结果和生成文件。
 
 示例（手动诊断）：
@@ -466,9 +466,8 @@ description: What it does and when the specialist should use it.
 | `data/bash_audit.json` | Bash 权限决策、规则、命令摘要、用户/session 和退出码。 | 否。 |
 | `backend/config.json` | Skills catalog、Bash 权限、发现时间和 Skill 错误。 | 可提交默认模板；运行时会更新。 |
 | `backend/mcp_servers.json` | MCP server 配置和发现摘要；敏感值仅使用环境变量占位符。 | 可提交非敏感配置，生产密钥不得写入。 |
-| `backend/tmp/<session-key>/` | 每个会话的脚本、下载、缓存和中间文件；其中 `deliverables/` 子目录存放交付给用户的最终产物。 | 否。 |
-| `backend/tmp/.gitkeep` | 保留会话临时目录的空目录占位文件。 |
-| `backend/tmp/.artifact_signing_key` | 未配置 `ARTIFACT_SIGNING_KEY` 时自动生成的本地下载签名密钥。 | 否，必须备份或在生产显式配置。 |
+| `agent_workspace/sessions/<session-key>/` | 每个会话的脚本、下载、缓存和中间文件；其中 `deliverables/` 子目录存放交付给用户的最终产物。 | 否。 |
+| `agent_workspace/sessions/.artifact_signing_key` | 未配置 `ARTIFACT_SIGNING_KEY` 时自动生成的本地下载签名密钥。 | 否，必须备份或在生产显式配置。 |
 | `volumes/` | Docker 的 etcd、MinIO、Milvus 数据卷。 | 否。 |
 
 ## 部署前置条件
@@ -681,12 +680,12 @@ Invoke-RestMethod http://127.0.0.1:8080/documents
 | `OPENCLI_SESSION` | `lcagent` | OpenCLI 浏览器 session 名称。 |
 | `OPENCLI_TIMEOUT` | `75` | OpenCLI 单次命令超时（秒）。 |
 | `OPENCLI_OUTPUT_MAX_CHARS` | `12000` | OpenCLI 输出截断上限。 |
-| `BACKEND_TMP_DIR` | `backend/tmp` | 会话临时目录根。 |
+| `BACKEND_TMP_DIR` | `agent_workspace/sessions` | 会话临时目录根。 |
 | `AGENT_SKILLS_DIR` | `agent_workspace/skills` | Skill 包根目录。 |
 | `SKILL_CATALOG_MAX_CHARS` | `8000` | 注入 Skills subagent 的 catalog 上限。 |
 | `SKILL_CONTENT_MAX_CHARS` | `60000` | 单次 Skill 正文/资源读取上限。 |
 | `WORKSPACE_FILE_MAX_CHARS` | `50000` | 单个文本文件读写上限。 |
-| `ARTIFACT_SIGNING_KEY` | 空 | Artifact 下载 HMAC key；为空时在 `backend/tmp/.artifact_signing_key` 自动生成。 |
+| `ARTIFACT_SIGNING_KEY` | 空 | Artifact 下载 HMAC key；为空时在 `agent_workspace/sessions/.artifact_signing_key` 自动生成。 |
 | `LOCAL_RUN_TIMEOUT` | `120` | 本地命令超时（秒）。 |
 | `LOCAL_RUN_OUTPUT_MAX_CHARS` | `20000` | 本地命令 stdout/stderr 上限。 |
 | `LOCAL_RUN_COMMAND_MAX_CHARS` | `8000` | 单条命令长度上限。 |
@@ -718,7 +717,7 @@ Invoke-RestMethod http://127.0.0.1:8080/documents
 | `DELETE` | `/documents/{filename}` | 删除同名 Milvus 向量和父块；当前接口不会自动删除 `data/documents` 下的原始文件。 |
 | `GET` | `/sessions/{user_id}` | 获取用户会话列表。 |
 | `GET` | `/sessions/{user_id}/{session_id}` | 获取会话消息、RAG trace 和历史 Artifact 清单。 |
-| `DELETE` | `/sessions/{user_id}/{session_id}` | 删除会话历史及 `backend/tmp` 对应目录。 |
+| `DELETE` | `/sessions/{user_id}/{session_id}` | 删除会话历史及 `agent_workspace/sessions` 对应目录。 |
 | `GET` | `/sessions/{user_id}/{session_id}/artifacts` | 使用 SSE 返回的 token 列出当前会话 `deliverables/` 最终产物。 |
 | `GET` | `/sessions/{user_id}/{session_id}/artifacts/{path}` | 使用 HMAC token 下载会话文件。 |
 | `GET` | `/runs` | 按可选 `user_id/session_id` 查询持久化工作流运行。 |
@@ -830,7 +829,7 @@ uv run python -m unittest discover -s backend/tests -p "test_*.py" -v
 - 新工具必须经过 `tool_instrumentation.py`，错误不能静默丢弃。
 - 新 Skill 必须有有效 YAML frontmatter，并通过 `skill_service.py` 的精确名称加载。
 - 业务代码不硬编码密钥；所有外部凭据走 `.env` 或受控的 MCP 环境变量占位符。
-- `data/`、`volumes/`、`.env`、`.venv/`、`backend/tmp/` 和运行日志不提交版本库。
+- `data/`、`volumes/`、`.env`、`.venv/`、`agent_workspace/sessions/` 和运行日志不提交版本库。
 - 修改前端后同时更新对应 JS/CSS 模块，不把业务逻辑重新堆回 `index.html`。
 
 ## 版本与维护提示

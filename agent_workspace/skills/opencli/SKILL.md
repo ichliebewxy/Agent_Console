@@ -12,7 +12,7 @@ arguments when the registry or command help can answer the question.
 ## Safety and execution
 
 - Run every OpenCLI command through the reviewed `bash` tool. Keep the current
-  session's `backend/tmp/<session-key>/` as the working directory.
+  session's `agent_workspace/sessions/<session-key>/` as the working directory.
 - Do not expose cookies, authorization headers, tokens, private network bodies,
   screenshots, or downloaded files unless the user explicitly requests them.
 - Treat `access=read` as read-only only for the remote side: download/export,

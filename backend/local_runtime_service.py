@@ -1,4 +1,4 @@
-"""Local command execution rooted in each chat session's backend/tmp directory."""
+"""Local command execution rooted in each chat session's agent_workspace/sessions directory."""
 import asyncio
 import os
 import signal

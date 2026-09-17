@@ -25,9 +25,8 @@ extracted_images/
 .DS_Store
 data/
 
-# Local Agent runtime artifacts (skill packages remain tracked)
-backend/tmp/*
-!backend/tmp/.gitkeep
+# Runtime session workspace (hashed per-session dirs, generated at runtime)
+agent_workspace/sessions/
 
 /.tmp_probe
 

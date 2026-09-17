@@ -248,7 +248,7 @@ async def bash(
     user_authorized_side_effect: bool = False,
     opencli_access: Literal["unknown", "read", "write", "p4"] = "unknown",
 ) -> str:
-    """Review and run one command in backend/tmp; OpenCLI access must match live registry evidence."""
+    """Review and run one command in agent_workspace/sessions; OpenCLI access must match live registry evidence."""
     command = (command or "").strip()
     decision = review_bash_command(
         command,

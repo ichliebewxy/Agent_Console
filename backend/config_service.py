@@ -28,7 +28,7 @@ DEFAULT_BASH_PERMISSIONS = {
         },
         {
             "id": "deny-workspace-escape",
-            "description": "阻止命令访问 backend/tmp 会话目录之外的本地路径",
+            "description": "阻止命令访问 agent_workspace/sessions 会话目录之外的本地路径",
             "patterns": [
                 r"(?:^|[\s'\"])(?:\.\.[\\/])",
                 r"(?:^|[\s'\"])[A-Za-z]:[\\/]",
@@ -71,7 +71,7 @@ DEFAULT_BASH_PERMISSIONS = {
     "allow": [
         {
             "id": "allow-tmp-development",
-            "description": "允许在当前 backend/tmp 会话目录内进行常见开发、查询和 OpenCLI 操作",
+            "description": "允许在当前 agent_workspace/sessions 会话目录内进行常见开发、查询和 OpenCLI 操作",
             "patterns": [
                 r"^(?:python|python3|py|node|npm|npx|opencli|git|rg|grep|dir|type|echo|where|mkdir|uv|pytest|ruff|mypy|radon|pip-audit|cargo|pdftotext|pdfinfo|pandoc|wkhtmltopdf|qpdf|mutool|ffmpeg|tesseract)\b",
                 r"^(?:get-childitem|get-content|set-content|test-path|select-string|copy-item|new-item|get-command|measure-object)\b",

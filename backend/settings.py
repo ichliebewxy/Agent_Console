@@ -78,7 +78,7 @@ OPENCLI_SESSION = env("OPENCLI_SESSION", "lcagent")
 OPENCLI_TIMEOUT = env_int("OPENCLI_TIMEOUT", 75)
 OPENCLI_OUTPUT_MAX_CHARS = env_int("OPENCLI_OUTPUT_MAX_CHARS", 12000)
 
-BACKEND_TMP_DIR = env_path("BACKEND_TMP_DIR", PROJECT_ROOT / "backend" / "tmp")
+BACKEND_TMP_DIR = env_path("BACKEND_TMP_DIR", PROJECT_ROOT / "agent_workspace" / "sessions")
 AGENT_SKILLS_DIR = env_path(
     "AGENT_SKILLS_DIR",
     PROJECT_ROOT / "agent_workspace" / "skills",
