@@ -161,9 +161,12 @@ async def _augment_with_memory(user_text: str, user_id: str, messages: list) -> 
     return [SystemMessage(content=_format_memory_context(memories)), *messages]
 
 
-def _schedule_remember(user_id: str, user_message: str, assistant_message: str, session_id: str) -> None:
-    """后台异步把一轮对话蒸馏并写入长期记忆，不阻塞响应返回。"""
-    if not memory_service.is_enabled():
+def _schedule_remember(user_id: str, user_message: str, session_id: str) -> None:
+    """仅将有跨会话价值的信息异步写入长期记忆。"""
+    if (
+        not memory_service.is_enabled()
+        or not memory_service.is_long_term_memory_candidate(user_message)
+    ):
         return
 
     async def _run():
@@ -172,7 +175,6 @@ def _schedule_remember(user_id: str, user_message: str, assistant_message: str, 
                 memory_service.remember_conversation,
                 user_id,
                 user_message,
-                assistant_message,
                 session_id,
             )
         except Exception as exc:
@@ -335,7 +337,7 @@ async def chat_with_agent(
                 plan=plan_data,
                 workflow=workflow_data,
             )
-        _schedule_remember(user_id, user_text, response, session_id)
+        _schedule_remember(user_id, user_text, session_id)
         return {
             "response": response,
             "rag_trace": rag_trace,
@@ -505,7 +507,7 @@ async def _chat_with_agent_stream_bound(
             plan=plan_data,
             workflow=workflow_data,
         )
-    _schedule_remember(user_id, user_text, full_response, session_id)
+    _schedule_remember(user_id, user_text, session_id)
     artifact_payload = json.dumps(
         {"type": "artifacts", "artifacts": artifacts},
         ensure_ascii=False,

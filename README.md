@@ -41,18 +41,19 @@ Agent Console 是一个面向本地可信环境的 LangChain 多 Agent + RAG 工
 | 可观察但不扰人 | 前端展示当前对话实际产生的工具/RAG 轨迹和引用；没有引用时不展示检索轨迹。旧的“运行回调”只读页面和公开回调接口不再提供，失败记录仅留在服务端诊断文件。 |
 | 调用上限 | 每轮对话最多执行 `AGENT_TOOL_CALL_LIMIT` 次工具调用，默认 250 次；达到上限会停止继续调用并整理已有结果。 |
 | Durable Plan-and-Execute | 多步骤任务由 LangGraph 状态图执行；每个 run 使用独立 `thread_id` 和 SQLite 检查点，步骤在私有 staging 中事务化执行，失败可重试、修改、跳过、终止或从历史检查点回滚。 |
-| 长期记忆（mem0） | 基于 [mem0](https://github.com/mem0ai/mem0) 的跨会话用户记忆：每轮对话前检索相关记忆注入上下文，对话后自动蒸馏沉淀新记忆；记忆面板支持查看、手动新增、编辑与删除。 |
+| 长期记忆（mem0） | 基于 [mem0](https://github.com/mem0ai/mem0) 的跨会话用户记忆：只沉淀稳定身份、持久偏好和明确的未来交互约定；普通问答与当前任务依靠会话历史连续衔接，不写入长期记忆。 |
 
 ## 长期记忆（mem0）
 
 主 Agent 通过 `backend/memory_service.py` 接入 mem0 长期记忆层，实现“跨会话还记得你”：
 
-- **自动沉淀**：每轮对话结束后，后台把“用户消息 + Agent 回复”交给 mem0 的 LLM 抽取为结构化事实，并按语义去重/合并（`infer=True`）。
+- **分层上下文**：同一 `session_id` 下的真实对话历史持续加载，多步工作流也会携带该历史；历史过长时摘要早期内容，无需依赖长期记忆来串起当前对话。
+- **选择性沉淀**：先用保守规则筛选，只有稳定身份/档案、持久偏好、重复性工作习惯、长期目标或明确的“以后请……”才进入 mem0 再抽取。当前任务、一次性计划、临时状态、Agent 回复和凭据信息都不会自动写入。
 - **上下文召回**：新一轮对话开始前，用当前问题做语义检索，把最相关的几条长期记忆作为 system 消息注入，Agent 无需用户重复自我介绍。
 - **本地化存储**：全部落在 `data/mem0/`（默认），包括本地 Qdrant 向量库与 SQLite 历史库；不依赖外部服务，模型使用项目已有的 `BAAI/bge-m3` 本地嵌入，DeepSeek 负责事实抽取。遥测默认关闭（`MEM0_TELEMETRY=False`）。
 - **手动管理**：前端“记忆”面板调用 `/memory/*` 接口，可查看、新增（原文照存或 LLM 抽取）、编辑、删除、清空某用户的记忆。
 
-相关配置（`.env`）：`MEMORY_ENABLED`（总开关）、`MEM0_DIR`（数据目录）、`MEM0_MODEL`（抽取模型，默认复用 `CHAT_MODEL`）、`MEM0_TOP_K`（每轮注入条数）。
+记忆配置已有代码默认值，通常不需要写入 `.env`。如需要覆盖，可使用 `MEMORY_ENABLED`、`MEM0_DIR`、`MEM0_MODEL` 和 `MEM0_TOP_K`。
 
 > 安装说明：mem0 及其本地 Qdrant 依赖已纳入 `pyproject.toml` 和 `uv.lock`，使用 `uv sync --frozen` 即可按锁定版本安装。
 
@@ -207,7 +208,9 @@ sequenceDiagram
         W-->>A: SSE plan / execute / reflect / content
     end
     A->>S: save(历史 + 当前 + 回答) 持久化
-    A->>M: 后台蒸馏写入长期记忆
+    opt 用户消息符合长期记忆政策
+        A->>M: 后台抽取、去重并写入长期记忆
+    end
     A-->>R: SSE trace(如有RAG) / artifacts / [DONE]
     R-->>F: 流式事件（text/event-stream）
     F-->>U: 渲染回答 + 工具/RAG 轨迹
@@ -236,6 +239,7 @@ flowchart TD
 要点：
 
 - **历史持久化**：`ConversationStorage` 只保存真实对话轮次（用户 + 助手）；`_augment_with_memory` 注入的长期记忆是“本轮临时上下文”，不随历史落库，避免逐轮累积脏上下文。
+- **记忆分流**：每轮都会进入当前会话历史；只有通过长期价值筛选的用户信息才会进入 mem0，两条链路互不替代。
 - **上下文的两个消费者**：简单问答把完整消息序列直接交给 `create_agent`；多步骤任务把历史序列化进 `WorkflowState.history`，再由规划器和每个步骤执行器分别读取，保证跨步骤、跨轮次的起点/目的地/已确认选择不丢失。
 - **工具轨迹**：核心工具、MCP、知识库检索、Skill/子代理调用都经 `tool_instrumentation.py` 包装成 `tool_step` / `rag_step` 事件推送 SSE，前端据此叠加渲染“检索与调用轨迹”。
 
@@ -520,9 +524,9 @@ Copy-Item .env.example .env
 
 ```dotenv
 CHAT_API_KEY=你的对话模型Key
-CHAT_MODEL=deepseek-v4-flash
-CHAT_BASE_URL=https://api.deepseek.com
 ```
+
+`CHAT_MODEL` 和 `CHAT_BASE_URL` 已有可用默认值，仅在切换模型或服务商时覆盖。`.env.example` 只保留必填凭据、可选集成和少量常用覆盖项；完整默认值集中在 `backend/settings.py`。
 
 生产环境还应设置一枚长随机字符串：
 
