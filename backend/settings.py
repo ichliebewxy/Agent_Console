@@ -1,6 +1,7 @@
 """Centralized runtime configuration."""
 import os
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -105,7 +106,7 @@ WORKFLOW_CHECKPOINT_PATH = env_path(
     "WORKFLOW_CHECKPOINT_PATH",
     PROJECT_ROOT / "data" / "workflow_checkpoints.sqlite",
 )
-WORKFLOW_MAX_RETRIES = max(0, env_int("WORKFLOW_MAX_RETRIES", 2))
+WORKFLOW_MAX_RETRIES = max(0, env_int("WORKFLOW_MAX_RETRIES", 4))
 
 # ===== mem0 长期记忆（本地持久化）=====
 # 是否启用 mem0 长期记忆。关闭后 Agent 不再检索/写入记忆，记忆接口仍可用。

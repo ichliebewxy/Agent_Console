@@ -661,7 +661,7 @@ Invoke-RestMethod http://127.0.0.1:8080/documents
 | `PLAN_EXECUTE_MAX_STEPS` | `6` | 单次任务最多拆解/执行的子任务步数上限。 |
 | `PLAN_EXECUTE_RESULT_MAX_CHARS` | `3000` | 反省时注入“上一步结果”的字符上限。 |
 | `WORKFLOW_CHECKPOINT_PATH` | `data/workflow_checkpoints.sqlite` | LangGraph SQLite 检查点数据库。 |
-| `WORKFLOW_MAX_RETRIES` | `2` | 可判定为瞬时错误时的自动重试上限。 |
+| `WORKFLOW_MAX_RETRIES` | `4` | 瞬时基础设施错误的自动重试上限；按 1、2、4、8 秒基准退避，并增加 0–25% 随机扰动。 |
 | `DASHSCOPE_MCP_API_KEY` | 空 | 高德地图 MCP 的授权 Key。 |
 | `MCP_DISCOVERY_TIMEOUT` | `30` | 单个 MCP server 工具发现超时（秒）。 |
 | `EMBEDDING_MODEL` | `BAAI/bge-m3` | dense embedding 模型。 |

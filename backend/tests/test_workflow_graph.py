@@ -3,16 +3,14 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
-
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
+import plan_execute
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
-
-import plan_execute
-from workflow_graph import build_workflow_graph
+from workflow_graph import _is_transient_error, build_workflow_graph
 from workflow_state import initial_workflow_state
 
 
@@ -90,6 +88,57 @@ class WorkflowGraphTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resumed["run_status"], "completed")
         self.assertIn("恢复成功", resumed["final_response"])
         self.assertEqual(calls, 2)
+
+    def test_transient_infrastructure_error_classification(self):
+        for message in (
+            "connection failed",
+            "HTTP 429 Too Many Requests",
+            "HTTP 500 Internal Server Error",
+            "HTTP 502 Bad Gateway",
+            "HTTP 503 Service Unavailable",
+            "HTTP 504 Gateway Timeout",
+        ):
+            with self.subTest(message=message):
+                self.assertTrue(_is_transient_error(message))
+
+        self.assertFalse(_is_transient_error("HTTP 501 Not Implemented"))
+        self.assertFalse(_is_transient_error("TOOL_ERROR: bad input"))
+
+    async def test_transient_failures_use_exponential_backoff_with_jitter(self):
+        calls = 0
+
+        async def execute(_instruction):
+            nonlocal calls
+            calls += 1
+            if calls <= 4:
+                raise ConnectionError("connection failed")
+            return {"response": "重试成功", "tool_events": [], "rag_trace": None}
+
+        graph = build_workflow_graph(InMemorySaver(), execute)
+        config = {"configurable": {"thread_id": "run-backoff"}}
+        patches = self._patch_runtime()
+        sleep = AsyncMock()
+        with (
+            patches[0],
+            patches[1],
+            patches[2],
+            patches[3],
+            patches[4],
+            patch("workflow_graph.WORKFLOW_MAX_RETRIES", 4),
+            patch("workflow_graph.random.uniform", side_effect=[0.1, 0.2, 0.4, 0.8]),
+            patch("workflow_graph._sleep_retry", sleep),
+        ):
+            result = await graph.ainvoke(
+                initial_workflow_state("run-backoff", "user", "session", "完成任务"),
+                config,
+            )
+
+        self.assertEqual(result["run_status"], "completed")
+        self.assertEqual(calls, 5)
+        self.assertEqual(
+            [call.args[0] for call in sleep.await_args_list],
+            [1.1, 2.2, 4.4, 8.8],
+        )
 
 
 if __name__ == "__main__":

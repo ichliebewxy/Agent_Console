@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import asyncio
+import random
+import re
 from collections.abc import Awaitable, Callable
-
-from langgraph.graph import END, START, StateGraph
-from langgraph.types import interrupt
 
 import plan_execute
 from agent_state import set_conversation_history
+from langgraph.graph import END, START, StateGraph
+from langgraph.types import interrupt
 from runtime_context import bind_runtime_context
 from settings import PLAN_EXECUTE_MAX_STEPS, WORKFLOW_MAX_RETRIES
 from workflow_state import FLOW_VERSION, WorkflowState, utc_now
@@ -38,12 +39,43 @@ _TRANSIENT_MARKERS = (
     "429",
     "rate limit",
     "temporarily unavailable",
+    "connection error",
+    "connection failed",
+    "connection refused",
     "connection reset",
     "connection aborted",
+    "bad gateway",
+    "service unavailable",
+    "gateway timeout",
+    "upstream error",
     "连接超时",
+    "连接失败",
+    "连接拒绝",
+    "网络错误",
     "限流",
     "暂时不可用",
 )
+_TRANSIENT_HTTP_STATUS = re.compile(r"(?:^|\D)(?:500|502|503|504)(?:\D|$)")
+_RETRY_BACKOFF_SECONDS = (1.0, 2.0, 4.0, 8.0)
+_RETRY_JITTER_RATIO = 0.25
+
+
+def _is_transient_error(error_text: str) -> bool:
+    lowered = error_text.lower()
+    return any(marker in lowered for marker in _TRANSIENT_MARKERS) or bool(
+        _TRANSIENT_HTTP_STATUS.search(lowered)
+    )
+
+
+def _retry_delay_seconds(attempts: int) -> float:
+    """Return 1/2/4/8 second backoff plus up to 25% positive jitter."""
+    index = max(0, min(attempts - 1, len(_RETRY_BACKOFF_SECONDS) - 1))
+    base = _RETRY_BACKOFF_SECONDS[index]
+    return base + random.uniform(0.0, base * _RETRY_JITTER_RATIO)
+
+
+async def _sleep_retry(delay: float) -> None:
+    await asyncio.sleep(delay)
 
 
 def _plan_from_state(state: WorkflowState) -> plan_execute.Plan:
@@ -163,7 +195,18 @@ def _make_execute_node(execute_step: StepExecutor):
             # 把本轮之前积累的会话历史注入到步骤执行器里，否则每一步都以
             # 空白上下文执行，跨轮次的地点/选择等信息会全部丢失。
             set_conversation_history(state.get("history") or [])
-            execution = await execute_step(_build_instruction(state))
+            try:
+                execution = await execute_step(_build_instruction(state))
+            except Exception as exc:  # noqa: BLE001 - normalize executor failures for retry classification
+                # Infrastructure failures may surface as exceptions instead of
+                # serializable tool results. Convert them into normal workflow
+                # evidence so the transient-error policy can classify/retry them.
+                message = str(exc) or type(exc).__name__
+                execution = {
+                    "response": f"TOOL_ERROR: {message}",
+                    "tool_events": [{"phase": "error", "result": message}],
+                    "rag_trace": None,
+                }
         results = dict(state.get("results") or {})
         results[step_id] = {
             "step_id": step_id,
@@ -209,9 +252,8 @@ async def _validate_step(state: WorkflowState) -> dict:
             "updated_at": utc_now(),
         }
 
-    lowered = error_text.lower()
     unknown = "UNKNOWN_EFFECT:" in error_text
-    retryable = any(marker in lowered for marker in _TRANSIENT_MARKERS)
+    retryable = _is_transient_error(error_text)
     attempts = int((state.get("attempts") or {}).get(step_id, 0))
     validation = "retry" if retryable and attempts <= WORKFLOW_MAX_RETRIES else "recover"
     result["validation"] = validation
@@ -240,6 +282,9 @@ def _after_validate(state: WorkflowState) -> str:
 
 
 async def _retry_step(state: WorkflowState) -> dict:
+    step_id = state["current_step_id"]
+    attempts = int((state.get("attempts") or {}).get(step_id, 1))
+    await _sleep_retry(_retry_delay_seconds(attempts))
     return {
         "run_status": "running",
         "validation_status": "",
@@ -292,7 +337,7 @@ async def _reflect(state: WorkflowState) -> dict:
             "reflection_notes": notes,
             "current_step_id": None,
         }
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - reflection failure must not stop the workflow
         return {
             "reflection_decision": "continue",
             "reflection_reason": f"反省失败，沿用原计划：{exc}",
