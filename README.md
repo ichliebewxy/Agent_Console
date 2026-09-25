@@ -33,7 +33,7 @@ Agent Console 是一个面向本地可信环境的 LangChain 多 Agent + RAG 工
 | OpenCLI 封装 | 不把动态 registry 的大量命令硬编码成主 Agent 工具，而是以 `opencli` Skill + 审查 Bash 的方式调用。 |
 | 动态 MCP | `backend/mcp_servers.json` 是 MCP server 的唯一配置源；启动时发现工具并转换为 LangChain tools。 |
 | 分层 RAG | 文档生成 L1/L2 父块和 L3 叶子块；叶子块入 Milvus，父块保存在本地 DocStore，检索时自动向上合并上下文。 |
-| 混合检索 | BGE-M3 dense embedding + BM25 sparse embedding + Milvus Hybrid Search + RRF 融合，可选接入 SiliconFlow rerank。 |
+| 混合检索 | BGE-M3 dense embedding + BM25 sparse embedding + Milvus Hybrid Search + RRF 融合，可选接入 rerank API。 |
 | 查询扩展 | 初始召回相关性不足时，LangGraph 自动选择 Step-back、HyDE 或 complex 策略再次召回。 |
 | `.doc` 兼容 | `.docx` 走 OpenXML；旧版二进制 `.doc` 在 Windows 优先使用 Word COM，并降级到 LibreOffice/antiword。中文路径会先复制到 ASCII 临时路径。 |
 | 会话工作区 | 每个 `user_id/session_id` 拥有独立的 `agent_workspace/sessions/<session-key>/`；脚本、缓存、预览等中间文件留在会话目录，最终产物统一放在其 `deliverables/` 子目录。 |
@@ -401,7 +401,7 @@ Windows 下 URL 中的 `&` 是 `cmd.exe` 的命令分隔符；通过 Bash 执行
 | `backend/rag_pipeline.py` | 初始召回、相关性评分、查询改写、扩展召回和最终 trace 的 LangGraph 主图。 |
 | `backend/rag_expanded.py` | Step-back/HyDE/complex 分支召回、去重和分支 metadata 合并。 |
 | `backend/rag_utils.py` | dense+sparse 召回、Milvus hybrid 查询和 RRF 编排。 |
-| `backend/retrieval_steps.py` | 父块 auto-merging、去重、可选 SiliconFlow rerank 和检索 metadata。 |
+| `backend/retrieval_steps.py` | 父块 auto-merging、去重、可选 rerank API 调用和检索 metadata。 |
 | `backend/query_expansion.py` | Step-back 问题/答案、HyDE 假设文档和扩展查询生成。 |
 
 ### 前端
@@ -496,7 +496,7 @@ description: What it does and when the specialist should use it.
 - OpenCLIApp 或 `@jackwener/opencli`：需要实时网页、用户浏览器登录态、下载或桌面自动化时安装。
 - Microsoft Word + `pywin32`：Windows 解析传统二进制 `.doc` 的首选；`pyproject.toml` 会在 Windows 自动安装 `pywin32`。
 - LibreOffice 或 antiword：没有 Microsoft Word 时解析 `.doc` 的降级方案。
-- SiliconFlow rerank API Key：需要远程 rerank 时配置；不配置也可使用基础混合检索。
+- rerank API Key：需要远程 rerank 时配置；不配置也可使用基础混合检索。`.env.example` 提供 Jina 示例。
 - DashScope VLM Key：需要解析 PDF/PPT 内嵌图片文字时配置 `DASHSCOPE_API_KEY`；纯文本文档不需要。
 
 ### 资源建议
@@ -682,9 +682,13 @@ Invoke-RestMethod http://127.0.0.1:8080/documents
 | `AUTO_MERGE_ENABLED` | `true` | 是否将多个叶子块自动上卷为父块。 |
 | `AUTO_MERGE_THRESHOLD` | `2` | 同一父块至少命中多少子块才合并。 |
 | `LEAF_RETRIEVE_LEVEL` | `3` | 首先召回的叶子层级。 |
-| `RERANK_MODEL` | 空 | 可选 rerank 模型。模板默认示例为 `BAAI/bge-reranker-v2-m3`。 |
-| `RERANK_BINDING_HOST` | 空 | rerank API 地址；代码会规范化为 `/v1/rerank`。 |
+| `RERANK_MODEL` | 空 | 可选 rerank 模型；`.env.example` 示例为 `jina-reranker-v3`。 |
+| `RERANK_BINDING_HOST` | 空 | rerank API 地址；`.env.example` 示例为 `https://api.jina.ai`，未以 `/v1/rerank` 结尾时会自动补上。 |
 | `RERANK_API_KEY` | 空 | rerank API Key。三项同时存在才会调用 rerank。 |
+| `MEMORY_ENABLED` | `true` | 是否启用跨会话记忆；`.env.example` 中注释的 `false` 是关闭记忆的覆盖示例。 |
+| `MEM0_DIR` | `data/mem0` | 本地记忆数据目录。 |
+| `MEM0_MODEL` | `CHAT_MODEL` | 记忆抽取使用的对话模型。 |
+| `MEM0_TOP_K` | `5` | 每轮注入的记忆条数上限。 |
 | `OPENCLI_BIN` | 空 | OpenCLI 可执行文件路径；Windows 常为 `opencli.cmd`。 |
 | `OPENCLI_SESSION` | `lcagent` | OpenCLI 浏览器 session 名称。 |
 | `OPENCLI_TIMEOUT` | `75` | OpenCLI 单次命令超时（秒）。 |
