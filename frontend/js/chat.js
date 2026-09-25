@@ -112,6 +112,8 @@ Object.assign(window.NebulaNestApp.methods, {
       } else if (data.type === "artifacts") {
         const botMessage = this.activeAssistantMessage(botMsgIdx);
         botMessage.artifacts = data.artifacts || [];
+      } else if (data.type === "memory_extraction") {
+        this.watchMemoryExtraction(data.job_id);
       } else if (data.type === "plan") {
         const botMessage = this.activeAssistantMessage(botMsgIdx);
         if (!botMessage.plan) botMessage.plan = { objective: "", steps: [], reflections: [] };

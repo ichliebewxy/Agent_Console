@@ -15,6 +15,11 @@
   gap: 18px;
 }
 
+.section-head .inline {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
 .section-head h3,
 .section-head p {
   margin: 0;
@@ -543,5 +548,19 @@
 .memory-footer {
   display: flex;
   justify-content: flex-end;
+}
+
+.memory-footer .danger-action {
+  width: auto;
+  min-height: 40px;
+  padding: 0 15px;
+  border-color: color-mix(in oklch, var(--coral) 28%, var(--line));
+  background: var(--danger-bg);
+  color: var(--coral);
+}
+
+.memory-footer .danger-action:hover {
+  border-color: color-mix(in oklch, var(--coral) 48%, var(--line));
+  background: color-mix(in oklch, var(--danger-bg) 76%, var(--surface-raised));
 }
 

@@ -53,12 +53,67 @@ window.NebulaNestApp = {
     },
     viewTitle() {
       const titles = {
-        chat: { eyebrow: "Chat", title: "可追踪的 Agent 对话" },
-        knowledge: { eyebrow: "Knowledge", title: "知识库与混合检索" },
-        config: { eyebrow: "Runtime Config", title: "MCP、Skills 与 Bash 权限" },
-        memory: { eyebrow: "Memory", title: "用户长期记忆（mem0）" },
+        chat: { eyebrow: "主 Agent 协调检索、工具与执行计划", title: "研究与分析" },
+        knowledge: { eyebrow: "管理本地文档与混合检索索引", title: "知识库" },
+        config: { eyebrow: "管理 MCP、Skills 与命令权限", title: "配置中心" },
+        memory: { eyebrow: "查看和维护跨会话的用户上下文", title: "长期记忆" },
       };
       return titles[this.activeView] || titles.chat;
+    },
+    latestAgentMessage() {
+      for (let index = this.messages.length - 1; index >= 0; index -= 1) {
+        if (!this.messages[index].isUser) return this.messages[index];
+      }
+      return null;
+    },
+    contextPlanSteps() {
+      const msg = this.latestAgentMessage;
+      if (!msg) return [];
+
+      const planned = this.planSteps(msg);
+      if (planned.length) return planned;
+
+      return this.agentFlowSteps(msg).slice(-5).map((step, index, steps) => {
+        let status = "done";
+        if (step.phase === "error" || step.status === "failed") status = "failed";
+        else if (this.isLoading && index === steps.length - 1) status = "in_progress";
+        return {
+          id: step.call_id || `activity-${index}`,
+          title: step.label || step.tool_name || "执行步骤",
+          detail: step.result || step.detail || "",
+          status,
+        };
+      });
+    },
+    contextSources() {
+      return this.latestAgentMessage ? this.sourceChunks(this.latestAgentMessage).slice(0, 3) : [];
+    },
+    contextToolCount() {
+      return this.latestAgentMessage ? this.toolCallGroups(this.latestAgentMessage).length : 0;
+    },
+    contextProgressPercent() {
+      const steps = this.contextPlanSteps;
+      if (!this.latestAgentMessage) return 0;
+      if (!steps.length) return this.isLoading ? 28 : 100;
+      const complete = steps.filter((step) => ["done", "skipped"].includes(step.status)).length;
+      const active = steps.some((step) => step.status === "in_progress") ? 0.45 : 0;
+      return Math.min(100, Math.round(((complete + active) / steps.length) * 100));
+    },
+    contextProgressText() {
+      if (!this.latestAgentMessage) return "等待任务";
+      if (!this.contextPlanSteps.length) return this.isLoading ? "正在分析" : "已完成";
+      const complete = this.contextPlanSteps.filter((step) => ["done", "skipped"].includes(step.status)).length;
+      return `${complete} / ${this.contextPlanSteps.length}`;
+    },
+    contextStatusText() {
+      if (this.isLoading) return "执行中";
+      const workflowStatus = this.latestAgentMessage && this.latestAgentMessage.workflow
+        ? this.latestAgentMessage.workflow.run_status
+        : "";
+      if (workflowStatus) return this.workflowStatusLabel(workflowStatus);
+      if (this.contextPlanSteps.some((step) => step.status === "failed")) return "需处理";
+      if (this.contextPlanSteps.some((step) => ["pending", "in_progress"].includes(step.status))) return "待继续";
+      return this.latestAgentMessage ? "已完成" : "就绪";
     },
   },
 
@@ -66,6 +121,7 @@ window.NebulaNestApp = {
     this.configureMarked();
     this.restoreIdentity();
     this.restoreState();
+    this.syncShellContext();
     this.$nextTick(() => this.scrollToBottom());
   },
 
@@ -118,12 +174,17 @@ window.NebulaNestApp = {
       localStorage.setItem(this.stateKey, JSON.stringify(state));
     },
 
-    notify(message) {
+    notify(message, duration = 2400) {
       this.toast = message;
       window.clearTimeout(this._toastTimer);
       this._toastTimer = window.setTimeout(() => {
         this.toast = "";
-      }, 2400);
+      }, duration);
+    },
+
+    syncShellContext() {
+      const shell = document.getElementById("app");
+      if (shell) shell.classList.toggle("has-context", this.activeView === "chat");
     },
 
     switchView(view) {
@@ -226,6 +287,7 @@ window.NebulaNestApp = {
     },
     activeView() {
       this.persistState();
+      this.syncShellContext();
     },
   },
 };

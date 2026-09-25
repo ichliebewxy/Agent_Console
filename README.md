@@ -41,14 +41,14 @@ Agent Console 是一个面向本地可信环境的 LangChain 多 Agent + RAG 工
 | 可观察但不扰人 | 前端展示当前对话实际产生的工具/RAG 轨迹和引用；没有引用时不展示检索轨迹。旧的“运行回调”只读页面和公开回调接口不再提供，失败记录仅留在服务端诊断文件。 |
 | 调用上限 | 每轮对话最多执行 `AGENT_TOOL_CALL_LIMIT` 次工具调用，默认 250 次；达到上限会停止继续调用并整理已有结果。 |
 | Durable Plan-and-Execute | 多步骤任务由 LangGraph 状态图执行；每个 run 使用独立 `thread_id` 和 SQLite 检查点，步骤在私有 staging 中事务化执行，失败可重试、修改、跳过、终止或从历史检查点回滚。 |
-| 长期记忆（mem0） | 基于 [mem0](https://github.com/mem0ai/mem0) 的跨会话用户记忆：只沉淀稳定身份、持久偏好和明确的未来交互约定；普通问答与当前任务依靠会话历史连续衔接，不写入长期记忆。 |
+| 长期记忆（mem0） | 每轮回复结束后由独立的 extractMemories 后台任务读取主 Agent 的对话记录，分类、去重并保存有跨会话价值的记忆。 |
 
 ## 长期记忆（mem0）
 
 主 Agent 通过 `backend/memory_service.py` 接入 mem0 长期记忆层，实现“跨会话还记得你”：
 
 - **分层上下文**：同一 `session_id` 下的真实对话历史持续加载，多步工作流也会携带该历史；历史过长时摘要早期内容，无需依赖长期记忆来串起当前对话。
-- **选择性沉淀**：先用保守规则筛选，只有稳定身份/档案、持久偏好、重复性工作习惯、长期目标或明确的“以后请……”才进入 mem0 再抽取。当前任务、一次性计划、临时状态、Agent 回复和凭据信息都不会自动写入。
+- **轮后抽取**：主 Agent 完成最终回复并保存对话后，`stopHook` 在后台启动独立的 `extractMemories`。它只从本轮用户消息提取信息，按用户信息、偏好、长期项目、反馈纠正四类归档；先与现有记忆比对，并通过 `hasMemoryWritesSince` 排除本轮刚写入的重复内容。新增记忆同时写入 mem0 和 `data/mem0/extractions/` 下的独立 JSON 文件，页面会提示新增条数。
 - **上下文召回**：新一轮对话开始前，用当前问题做语义检索，把最相关的几条长期记忆作为 system 消息注入，Agent 无需用户重复自我介绍。
 - **本地化存储**：全部落在 `data/mem0/`（默认），包括本地 Qdrant 向量库与 SQLite 历史库；不依赖外部服务，模型使用项目已有的 `BAAI/bge-m3` 本地嵌入，DeepSeek 负责事实抽取。遥测默认关闭（`MEM0_TELEMETRY=False`）。
 - **手动管理**：前端“记忆”面板调用 `/memory/*` 接口，可查看、新增（原文照存或 LLM 抽取）、编辑、删除、清空某用户的记忆。
@@ -183,6 +183,7 @@ sequenceDiagram
     participant T as 工具层 (Core/MCP/RAG/Skill)
     participant S as ConversationStorage
     participant M as mem0 长期记忆
+    participant X as extractMemories
 
     U->>F: 输入消息
     F->>R: POST /chat/stream(message, user_id, session_id)
@@ -208,10 +209,13 @@ sequenceDiagram
         W-->>A: SSE plan / execute / reflect / content
     end
     A->>S: save(历史 + 当前 + 回答) 持久化
-    opt 用户消息符合长期记忆政策
-        A->>M: 后台抽取、去重并写入长期记忆
+    A->>X: stopHook 后台启动（复用本轮对话记录）
+    X->>M: 读取现有记忆、抽取四类事实并去重
+    opt 确有新增记忆
+        X->>M: 写入 mem0 与独立 JSON 文件
+        F-->>U: 弹出新增记忆提示
     end
-    A-->>R: SSE trace(如有RAG) / artifacts / [DONE]
+    A-->>R: SSE trace(如有RAG) / artifacts / memory_extraction / [DONE]
     R-->>F: 流式事件（text/event-stream）
     F-->>U: 渲染回答 + 工具/RAG 轨迹
 ```
@@ -239,7 +243,7 @@ flowchart TD
 要点：
 
 - **历史持久化**：`ConversationStorage` 只保存真实对话轮次（用户 + 助手）；`_augment_with_memory` 注入的长期记忆是“本轮临时上下文”，不随历史落库，避免逐轮累积脏上下文。
-- **记忆分流**：每轮都会进入当前会话历史；只有通过长期价值筛选的用户信息才会进入 mem0，两条链路互不替代。
+- **记忆分流**：每轮都会进入当前会话历史；轮后抽取器只把有跨会话价值且未重复的用户信息写入 mem0。
 - **上下文的两个消费者**：简单问答把完整消息序列直接交给 `create_agent`；多步骤任务把历史序列化进 `WorkflowState.history`，再由规划器和每个步骤执行器分别读取，保证跨步骤、跨轮次的起点/目的地/已确认选择不丢失。
 - **工具轨迹**：核心工具、MCP、知识库检索、Skill/子代理调用都经 `tool_instrumentation.py` 包装成 `tool_step` / `rag_step` 事件推送 SSE，前端据此叠加渲染“检索与调用轨迹”。
 
@@ -418,6 +422,7 @@ Windows 下 URL 中的 `&` 是 `cmd.exe` 的命令分隔符；通过 Bash 执行
 | `frontend/css/workspace.css` | 页面外壳、侧栏、顶部栏和工作区布局。 |
 | `frontend/css/chat.css` | 消息、输入框、流式回答和聊天列表。 |
 | `frontend/css/trace-composer.css` | RAG/工具步骤、引用和 trace 卡片。 |
+| `frontend/css/context.css` | 对话页右侧任务进度、引用来源和运行指标面板。 |
 | `frontend/css/panels.css` | 知识库、配置中心、表格和卡片面板。 |
 | `frontend/css/overlays.css` | toast、弹层、历史抽屉等覆盖层。 |
 | `frontend/css/responsive.css` | 移动端和窄屏布局适配。 |

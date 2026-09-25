@@ -1,12 +1,21 @@
 @media (max-width: 1180px) {
+  .shell.has-context {
+    grid-template-columns: var(--rail-w) minmax(0, 1fr);
+  }
+
+  .context-panel {
+    display: none !important;
+  }
+
   .config-grid {
     grid-template-columns: 1fr;
   }
 }
 
 @media (max-width: 900px) {
-  .shell {
-    grid-template-columns: 78px 1fr;
+  .shell,
+  .shell.has-context {
+    grid-template-columns: 78px minmax(0, 1fr);
   }
 
   .rail {
@@ -15,13 +24,28 @@
 
   .brand {
     justify-content: center;
-    padding: 2px 0 14px;
+    padding: 2px 0 18px;
   }
 
-  .brand > div:not(.brand-mark),
+  .brand-mark {
+    width: 42px;
+    height: 42px;
+  }
+
+  .brand-copy,
+  .new-chat span,
+  .nav-label,
   .nav-list span,
+  .nav-badge,
+  .runtime-card,
   .rail-actions span {
     display: none;
+  }
+
+  .new-chat {
+    width: 46px;
+    margin: 0 auto 20px;
+    padding: 0;
   }
 
   .nav-list button,
@@ -31,16 +55,20 @@
     padding: 0;
   }
 
+  .nav-list button:hover {
+    transform: none;
+  }
+
   .nav-list button.active::before {
-    display: none;
+    left: -10px;
   }
 
   .topbar {
-    padding: 14px 18px;
+    padding: 0 18px;
   }
 
   .topbar h2 {
-    font-size: 1.05rem;
+    font-size: 1rem;
   }
 
   .session-pill {
@@ -58,6 +86,10 @@
 
   .message-bubble {
     font-size: 0.94rem;
+  }
+
+  .from-agent > .message-bubble:not(.thinking) {
+    padding: 18px;
   }
 
   .empty-state h3 {
@@ -93,6 +125,125 @@
 }
 
 @media (max-width: 520px) {
+  body {
+    overflow: hidden;
+  }
+
+  .shell,
+  .shell.has-context {
+    display: block;
+    padding-bottom: 66px;
+  }
+
+  .rail {
+    position: fixed;
+    z-index: 30;
+    inset: auto 0 0;
+    width: 100%;
+    height: 66px;
+    padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    display: block;
+    overflow: visible;
+  }
+
+  .rail::before,
+  .brand,
+  .new-chat,
+  .nav-label,
+  .rail-actions {
+    display: none;
+  }
+
+  .nav-list {
+    height: 50px;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 3px;
+  }
+
+  .nav-list button {
+    min-height: 48px;
+    padding: 0;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+  }
+
+  .nav-list span {
+    display: block;
+    font-size: 0.58rem;
+  }
+
+  .nav-list button.active::before {
+    display: block;
+    left: 50%;
+    top: -8px;
+    bottom: auto;
+    width: 22px;
+    height: 3px;
+    border-radius: 0 0 3px 3px;
+    transform: translateX(-50%);
+  }
+
+  .workspace {
+    height: calc(100dvh - 66px);
+    grid-template-rows: 64px minmax(0, 1fr);
+  }
+
+  .history-drawer {
+    top: 64px;
+  }
+
+  .topbar {
+    padding: 0 13px;
+  }
+
+  .eyebrow,
+  .session-pill,
+  .status-pill,
+  .topbar-icon:first-of-type {
+    display: none;
+  }
+
+  .topbar-status {
+    gap: 6px;
+  }
+
+  .topbar h2 {
+    font-size: 0.95rem;
+  }
+
+  .chat-stream {
+    padding: 20px 11px 16px;
+  }
+
+  .from-user .message-bubble {
+    max-width: 92%;
+  }
+
+  .from-agent > .message-bubble:not(.thinking) {
+    padding: 16px;
+    border-radius: 16px;
+  }
+
+  .composer {
+    margin: 0 9px 10px;
+    min-height: 58px;
+    border-radius: 17px;
+    grid-template-columns: 40px minmax(0, 1fr) 42px;
+    gap: 3px;
+  }
+
+  .composer button {
+    width: 40px;
+    height: 40px;
+  }
+
+  .composer button:last-child {
+    width: 42px;
+  }
+
   .config-stats {
     grid-template-columns: 1fr 1fr;
     gap: 10px;
@@ -102,11 +253,15 @@
     grid-template-columns: 1fr;
   }
 
-  .status-pill {
-    display: none;
-  }
-
   .empty-suggestions button {
     font-size: 0.84rem;
+  }
+
+  .table-row {
+    grid-template-columns: minmax(130px, 1fr) 62px 46px;
+  }
+
+  .table-row span:nth-child(2) {
+    display: none;
   }
 }

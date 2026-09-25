@@ -1,0 +1,811 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f7f5">
+  <title>Agent Console · UI Concept</title>
+  <style>
+    :root {
+      --canvas: #f2f6f4;
+      --surface: #ffffff;
+      --surface-soft: #f7faf8;
+      --surface-tint: #edf7f3;
+      --ink: #17231f;
+      --muted: #64736d;
+      --subtle: #8b9993;
+      --line: #dfe8e3;
+      --line-strong: #cad8d1;
+      --brand: #167a62;
+      --brand-deep: #105c4b;
+      --brand-soft: #dff3eb;
+      --blue: #3d6fe8;
+      --blue-soft: #e9efff;
+      --amber: #b26918;
+      --amber-soft: #fff2dc;
+      --danger: #bf4b4b;
+      --shadow-sm: 0 1px 2px rgba(20, 43, 34, .04), 0 8px 24px rgba(20, 43, 34, .05);
+      --shadow-md: 0 18px 50px rgba(20, 43, 34, .10);
+      --ease: cubic-bezier(.2, .8, .2, 1);
+      --sidebar: 232px;
+      --context: 296px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { color-scheme: light; }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      min-height: 100vh;
+      min-height: 100dvh;
+      overflow: hidden;
+      background: var(--canvas);
+      color: var(--ink);
+      font-family: Inter, "SF Pro Display", "Segoe UI", "Noto Sans SC", system-ui, sans-serif;
+      font-size: 16px;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    button, textarea { font: inherit; }
+
+    button { cursor: pointer; touch-action: manipulation; }
+
+    button:focus-visible,
+    textarea:focus-visible {
+      outline: 3px solid rgba(61, 111, 232, .28);
+      outline-offset: 2px;
+    }
+
+    svg { display: block; }
+
+    .icon { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+    .app {
+      position: relative;
+      isolation: isolate;
+      display: grid;
+      grid-template-columns: var(--sidebar) minmax(0, 1fr) var(--context);
+      height: 100vh;
+      height: 100dvh;
+      overflow: hidden;
+    }
+
+    .ambient {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      pointer-events: none;
+      background:
+        radial-gradient(520px circle at var(--mx, 62%) var(--my, 15%), rgba(74, 191, 156, .12), transparent 66%),
+        radial-gradient(440px circle at 82% 86%, rgba(61, 111, 232, .08), transparent 68%);
+      transition: background-position .25s ease-out;
+    }
+
+    .sidebar {
+      min-height: 0;
+      padding: 20px 14px 16px;
+      border-right: 1px solid rgba(255, 255, 255, .08);
+      background: linear-gradient(176deg, #19372e 0%, #122a25 55%, #10231f 100%);
+      color: #edf7f3;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      padding: 0 8px 22px;
+    }
+
+    .brand img {
+      width: 39px;
+      height: 39px;
+      border-radius: 12px;
+      object-fit: cover;
+      box-shadow: 0 8px 20px rgba(26, 177, 225, .24);
+    }
+
+    .brand-copy { min-width: 0; }
+
+    .brand strong {
+      display: block;
+      font-size: .96rem;
+      letter-spacing: -.01em;
+    }
+
+    .brand small {
+      display: block;
+      margin-top: 3px;
+      color: rgba(237, 247, 243, .54);
+      font-size: .68rem;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .new-chat {
+      width: 100%;
+      min-height: 46px;
+      padding: 0 14px;
+      border: 1px solid rgba(255, 255, 255, .14);
+      border-radius: 13px;
+      background: rgba(255, 255, 255, .08);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 9px;
+      font-weight: 650;
+      transition: transform .2s var(--ease), background .2s ease, border-color .2s ease;
+    }
+
+    .new-chat:hover { background: rgba(255, 255, 255, .13); border-color: rgba(255, 255, 255, .22); transform: translateY(-1px); }
+    .new-chat:active { transform: scale(.98); }
+
+    .nav-label {
+      margin: 26px 10px 8px;
+      color: rgba(237, 247, 243, .42);
+      font-size: .66rem;
+      font-weight: 700;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+
+    .nav-list { display: grid; gap: 5px; }
+
+    .nav-item {
+      position: relative;
+      width: 100%;
+      min-height: 44px;
+      padding: 0 12px;
+      border: 0;
+      border-radius: 12px;
+      background: transparent;
+      color: rgba(237, 247, 243, .68);
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      text-align: left;
+      transition: color .2s ease, background .2s ease, transform .2s var(--ease);
+    }
+
+    .nav-item:hover { color: #fff; background: rgba(255, 255, 255, .07); transform: translateX(2px); }
+    .nav-item.active { color: #fff; background: rgba(113, 220, 182, .14); }
+    .nav-item.active::before { content: ""; position: absolute; left: -14px; width: 3px; height: 22px; border-radius: 0 3px 3px 0; background: #72d6b7; box-shadow: 0 0 14px rgba(114, 214, 183, .45); }
+    .nav-item span { font-size: .88rem; font-weight: 560; }
+    .nav-item .badge { margin-left: auto; min-width: 21px; height: 21px; padding: 0 6px; border-radius: 7px; background: rgba(255,255,255,.1); display: grid; place-items: center; font-size: .67rem; }
+
+    .sidebar-foot {
+      margin-top: auto;
+      padding-top: 18px;
+    }
+
+    .runtime-card {
+      padding: 13px;
+      border: 1px solid rgba(255, 255, 255, .09);
+      border-radius: 14px;
+      background: rgba(255, 255, 255, .045);
+    }
+
+    .runtime-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .runtime-head span { font-size: .75rem; color: rgba(237,247,243,.68); }
+    .live-dot { width: 8px; height: 8px; border-radius: 50%; background: #70dab7; box-shadow: 0 0 0 5px rgba(112, 218, 183, .1); }
+    .runtime-card strong { display: block; margin-top: 9px; font-size: .8rem; font-weight: 600; }
+    .runtime-card small { display: block; margin-top: 3px; color: rgba(237,247,243,.43); font-size: .69rem; }
+
+    .workspace {
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: 72px minmax(0, 1fr);
+      background: rgba(247, 250, 248, .72);
+    }
+
+    .topbar {
+      padding: 0 28px;
+      border-bottom: 1px solid rgba(202, 216, 209, .76);
+      background: rgba(255,255,255,.72);
+      backdrop-filter: blur(18px) saturate(1.3);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      z-index: 10;
+    }
+
+    .title-block { min-width: 0; }
+    .title-block h1 { margin: 0; font-size: 1.02rem; letter-spacing: -.02em; font-weight: 700; }
+    .title-block p { margin: 5px 0 0; color: var(--muted); font-size: .73rem; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+
+    .top-actions { display: flex; align-items: center; gap: 9px; }
+    .status {
+      min-height: 34px;
+      padding: 0 12px;
+      border: 1px solid #cde6dc;
+      border-radius: 999px;
+      background: #f2fbf7;
+      color: var(--brand-deep);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: .75rem;
+      font-weight: 650;
+    }
+    .status .live-dot { width: 7px; height: 7px; animation: pulse 2s ease-out infinite; }
+
+    .icon-button {
+      width: 40px;
+      height: 40px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--surface);
+      color: var(--muted);
+      display: grid;
+      place-items: center;
+      transition: transform .18s var(--ease), color .18s ease, border-color .18s ease, box-shadow .18s ease;
+    }
+    .icon-button:hover { color: var(--brand); border-color: #b8d7ca; box-shadow: var(--shadow-sm); transform: translateY(-1px); }
+    .icon-button:active { transform: scale(.96); }
+
+    .chat {
+      position: relative;
+      min-height: 0;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      scrollbar-width: thin;
+      scrollbar-color: #c5d3cc transparent;
+    }
+
+    .stream {
+      width: min(820px, calc(100% - 48px));
+      margin: 0 auto;
+      padding: 34px 0 138px;
+      display: grid;
+      gap: 28px;
+    }
+
+    .date-divider {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      color: var(--subtle);
+      font-size: .7rem;
+      font-weight: 650;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+    .date-divider::before, .date-divider::after { content: ""; height: 1px; flex: 1; background: var(--line); }
+
+    .message { display: grid; gap: 9px; animation: enter .42s var(--ease) both; }
+    .message:nth-of-type(3) { animation-delay: 70ms; }
+    .message:nth-of-type(4) { animation-delay: 120ms; }
+    .message.user { justify-items: end; }
+
+    .message-meta { display: flex; align-items: center; gap: 8px; color: var(--subtle); font-size: .7rem; }
+    .message-meta strong { color: var(--muted); font-size: .73rem; }
+    .avatar { width: 25px; height: 25px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); display: grid; place-items: center; color: var(--brand); box-shadow: var(--shadow-sm); }
+    .avatar .icon { width: 14px; height: 14px; }
+
+    .user-bubble {
+      max-width: min(620px, 82%);
+      padding: 13px 17px;
+      border-radius: 18px 18px 5px 18px;
+      background: linear-gradient(135deg, #198168, #126651);
+      color: #fff;
+      box-shadow: 0 10px 24px rgba(22, 122, 98, .18);
+      font-size: .91rem;
+      line-height: 1.62;
+    }
+
+    .agent-card {
+      border: 1px solid var(--line);
+      border-radius: 19px;
+      background: rgba(255,255,255,.86);
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+    }
+
+    .agent-answer { padding: 21px 22px 18px; }
+    .agent-answer h2 { margin: 0 0 10px; font-size: 1.08rem; letter-spacing: -.02em; }
+    .agent-answer p { margin: 0; color: #34443e; font-size: .92rem; line-height: 1.75; }
+    .agent-answer p + p { margin-top: 11px; }
+    .agent-answer strong { color: var(--ink); }
+
+    .insight-grid { margin-top: 17px; display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; }
+    .insight {
+      min-width: 0;
+      padding: 13px;
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      background: var(--surface-soft);
+      transition: transform .2s var(--ease), border-color .2s ease, background .2s ease;
+    }
+    .insight:hover { transform: translateY(-2px); border-color: #bfd8ce; background: #fff; }
+    .insight span { display: flex; align-items: center; gap: 7px; color: var(--muted); font-size: .68rem; font-weight: 650; }
+    .insight .icon { width: 15px; height: 15px; color: var(--brand); }
+    .insight strong { display: block; margin-top: 9px; font-size: .88rem; overflow-wrap: anywhere; }
+
+    .answer-actions {
+      min-height: 49px;
+      padding: 7px 11px 7px 17px;
+      border-top: 1px solid var(--line);
+      background: #fbfcfb;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .source-count { color: var(--muted); font-size: .73rem; display: flex; align-items: center; gap: 7px; }
+    .source-count .icon { width: 15px; height: 15px; }
+    .action-row { display: flex; gap: 3px; }
+    .action-row button { width: 36px; height: 36px; border: 0; border-radius: 10px; background: transparent; color: var(--subtle); display: grid; place-items: center; transition: background .18s ease, color .18s ease, transform .18s ease; }
+    .action-row button:hover { background: var(--surface-tint); color: var(--brand); }
+    .action-row button:active { transform: scale(.92); }
+    .action-row .icon { width: 17px; height: 17px; }
+
+    .composer-wrap {
+      position: sticky;
+      bottom: 0;
+      z-index: 8;
+      width: min(860px, 100%);
+      margin: -106px auto 0;
+      padding: 28px 20px 18px;
+      background: linear-gradient(to bottom, rgba(247,250,248,0), rgba(247,250,248,.9) 27%, rgba(247,250,248,.98) 58%);
+      pointer-events: none;
+    }
+
+    .composer {
+      padding: 8px;
+      border: 1px solid var(--line-strong);
+      border-radius: 20px;
+      background: rgba(255,255,255,.94);
+      box-shadow: var(--shadow-md), 0 0 0 1px rgba(255,255,255,.7) inset;
+      display: grid;
+      grid-template-columns: 44px minmax(0,1fr) auto;
+      align-items: end;
+      gap: 7px;
+      pointer-events: auto;
+      transition: border-color .2s ease, box-shadow .2s ease, transform .2s var(--ease);
+    }
+    .composer:focus-within { border-color: #83bba8; box-shadow: var(--shadow-md), 0 0 0 4px rgba(22,122,98,.1); transform: translateY(-2px); }
+    .composer textarea { width: 100%; min-height: 44px; max-height: 130px; padding: 10px 4px; resize: none; border: 0; outline: 0; background: transparent; color: var(--ink); line-height: 1.5; font-size: .91rem; }
+    .composer textarea::placeholder { color: #93a09b; }
+    .attach { width: 44px; height: 44px; border: 0; border-radius: 13px; background: transparent; color: var(--muted); display: grid; place-items: center; transition: background .18s ease, color .18s ease; }
+    .attach:hover { background: var(--surface-tint); color: var(--brand); }
+    .send {
+      min-width: 88px;
+      height: 44px;
+      padding: 0 15px;
+      border: 0;
+      border-radius: 13px;
+      background: linear-gradient(135deg, #198168, #126651);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      font-size: .81rem;
+      font-weight: 700;
+      box-shadow: 0 8px 18px rgba(22,122,98,.21);
+      transition: transform .18s var(--ease), box-shadow .18s ease, opacity .18s ease;
+    }
+    .send:hover { transform: translateY(-1px); box-shadow: 0 11px 24px rgba(22,122,98,.28); }
+    .send:active { transform: scale(.96); }
+    .send:disabled { cursor: not-allowed; opacity: .48; transform: none; box-shadow: none; }
+    .send .icon { width: 17px; height: 17px; }
+
+    .context-panel {
+      min-height: 0;
+      padding: 18px 16px;
+      border-left: 1px solid var(--line);
+      background: rgba(255,255,255,.72);
+      overflow-y: auto;
+    }
+
+    .context-head { height: 37px; display: flex; align-items: center; justify-content: space-between; }
+    .context-head h2 { margin: 0; font-size: .8rem; letter-spacing: .01em; }
+    .more-button { width: 34px; height: 34px; border: 0; border-radius: 10px; background: transparent; color: var(--muted); display: grid; place-items: center; }
+    .more-button:hover { background: var(--surface-soft); color: var(--ink); }
+
+    .progress-card { margin-top: 12px; padding: 15px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); box-shadow: var(--shadow-sm); }
+    .progress-top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+    .progress-top strong { font-size: .82rem; }
+    .progress-top span { color: var(--brand); font-size: .72rem; font-weight: 700; }
+    .progress-track { height: 6px; margin-top: 12px; border-radius: 99px; background: #e8efeb; overflow: hidden; }
+    .progress-bar { width: 76%; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--brand), #4e8beb); animation: grow 1s var(--ease) both .15s; }
+
+    .timeline { position: relative; margin-top: 14px; display: grid; }
+    .timeline::before { content: ""; position: absolute; top: 19px; bottom: 19px; left: 16px; width: 1px; background: var(--line); }
+    .step {
+      position: relative;
+      min-height: 54px;
+      padding: 8px 4px 8px 45px;
+      border: 0;
+      border-radius: 11px;
+      background: transparent;
+      color: inherit;
+      text-align: left;
+      transition: background .18s ease;
+    }
+    .step:hover { background: var(--surface-soft); }
+    .step-marker { position: absolute; z-index: 1; left: 5px; top: 12px; width: 24px; height: 24px; border: 3px solid var(--surface); border-radius: 50%; background: var(--brand-soft); color: var(--brand); display: grid; place-items: center; box-shadow: 0 0 0 1px #cce4da; }
+    .step-marker .icon { width: 12px; height: 12px; stroke-width: 2.5; }
+    .step.active .step-marker { color: #fff; border-color: #fff; background: var(--blue); box-shadow: 0 0 0 1px #b9c8f3; }
+    .step.active .step-marker .icon { animation: spin 1.1s linear infinite; }
+    .step strong { display: block; font-size: .75rem; }
+    .step small { display: block; margin-top: 4px; color: var(--subtle); font-size: .68rem; line-height: 1.4; }
+    .step-detail { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows .25s var(--ease), opacity .2s ease; }
+    .step-detail span { overflow: hidden; padding-top: 0; color: var(--muted); font: .66rem/1.5 ui-monospace, SFMono-Regular, Consolas, monospace; }
+    .step.expanded .step-detail { grid-template-rows: 1fr; opacity: 1; }
+    .step.expanded .step-detail span { padding-top: 7px; }
+
+    .context-section { margin-top: 25px; }
+    .section-title { margin: 0 4px 9px; color: var(--subtle); font-size: .65rem; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; }
+    .source-list { display: grid; gap: 7px; }
+    .source {
+      min-height: 58px;
+      padding: 10px;
+      border: 1px solid transparent;
+      border-radius: 12px;
+      background: transparent;
+      display: grid;
+      grid-template-columns: 31px minmax(0,1fr);
+      gap: 9px;
+      text-align: left;
+      transition: border-color .18s ease, background .18s ease, transform .18s var(--ease);
+    }
+    .source:hover { border-color: var(--line); background: var(--surface); transform: translateX(-2px); }
+    .file-icon { width: 31px; height: 35px; border-radius: 8px; background: var(--blue-soft); color: var(--blue); display: grid; place-items: center; }
+    .file-icon.green { background: var(--brand-soft); color: var(--brand); }
+    .file-icon .icon { width: 15px; height: 15px; }
+    .source strong { display: block; overflow: hidden; color: var(--ink); font-size: .72rem; white-space: nowrap; text-overflow: ellipsis; }
+    .source small { display: block; margin-top: 5px; color: var(--subtle); font-size: .65rem; }
+
+    .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .metric { padding: 11px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+    .metric span { display: block; color: var(--subtle); font-size: .62rem; }
+    .metric strong { display: block; margin-top: 7px; font-size: .8rem; font-variant-numeric: tabular-nums; }
+
+    .toast {
+      position: fixed;
+      z-index: 100;
+      left: 50%;
+      bottom: 24px;
+      min-height: 44px;
+      padding: 0 15px;
+      border: 1px solid rgba(255,255,255,.12);
+      border-radius: 12px;
+      background: #17342b;
+      color: #f3fbf7;
+      box-shadow: 0 16px 42px rgba(9, 31, 24, .24);
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      font-size: .78rem;
+      transform: translate(-50%, 20px);
+      opacity: 0;
+      pointer-events: none;
+      transition: transform .25s var(--ease), opacity .2s ease;
+    }
+    .toast.show { transform: translate(-50%, 0); opacity: 1; }
+    .toast .icon { width: 17px; height: 17px; color: #70dab7; }
+
+    @keyframes enter { from { opacity: 0; transform: translateY(12px); } }
+    @keyframes grow { from { width: 0; } }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes pulse { 0%, 100% { box-shadow: 0 0 0 4px rgba(112,218,183,.09); } 50% { box-shadow: 0 0 0 8px rgba(112,218,183,0); } }
+
+    @media (max-width: 1180px) {
+      .app { grid-template-columns: var(--sidebar) minmax(0,1fr); }
+      .context-panel { display: none; }
+    }
+
+    @media (max-width: 780px) {
+      body { overflow: auto; }
+      .app { grid-template-columns: 72px minmax(0,1fr); }
+      .sidebar { padding: 16px 10px; align-items: center; }
+      .brand { padding: 0 0 20px; }
+      .brand img { width: 42px; height: 42px; }
+      .brand-copy, .new-chat span, .nav-label, .nav-item span, .nav-item .badge, .runtime-card { display: none; }
+      .new-chat { width: 46px; padding: 0; }
+      .nav-list { width: 100%; }
+      .nav-item { justify-content: center; padding: 0; }
+      .nav-item.active::before { left: -10px; }
+      .sidebar-foot { display: none; }
+      .topbar { padding: 0 17px; }
+      .status span:last-child { display: none; }
+      .status { width: 36px; min-height: 36px; padding: 0; justify-content: center; }
+      .stream { width: min(100% - 28px, 720px); padding-top: 24px; }
+      .insight-grid { grid-template-columns: 1fr; }
+      .composer-wrap { padding-inline: 12px; }
+      .send { min-width: 44px; width: 44px; padding: 0; }
+      .send span { display: none; }
+    }
+
+    @media (max-width: 520px) {
+      .app { display: block; padding-bottom: 66px; }
+      .sidebar {
+        position: fixed;
+        z-index: 30;
+        inset: auto 0 0;
+        width: 100%;
+        height: 66px;
+        padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+        border-top: 1px solid rgba(255,255,255,.1);
+        display: block;
+        overflow: visible;
+      }
+      .brand, .new-chat, .nav-label, .sidebar-foot { display: none; }
+      .nav-list { height: 50px; display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px; }
+      .nav-item { min-height: 48px; display: flex; flex-direction: column; gap: 3px; }
+      .nav-item span { display: block; font-size: .58rem; }
+      .nav-item.active::before { left: 50%; top: -8px; width: 22px; height: 3px; border-radius: 0 0 3px 3px; transform: translateX(-50%); }
+      .nav-item .icon { width: 18px; height: 18px; }
+      .workspace { height: calc(100dvh - 66px); grid-template-rows: 64px minmax(0,1fr); }
+      .topbar { padding: 0 13px; }
+      .title-block p, .top-actions .icon-button { display: none; }
+      .title-block h1 { font-size: .94rem; }
+      .stream { width: calc(100% - 22px); padding-bottom: 126px; gap: 22px; }
+      .user-bubble { max-width: 90%; }
+      .agent-answer { padding: 17px 16px 15px; }
+      .agent-answer p { font-size: .88rem; }
+      .insight { padding: 11px; }
+      .answer-actions { padding-left: 13px; }
+      .source-count span { display: none; }
+      .composer-wrap { margin-top: -100px; padding: 24px 9px 11px; }
+      .composer { border-radius: 17px; grid-template-columns: 40px minmax(0,1fr) 42px; gap: 3px; }
+      .attach { width: 40px; }
+      .send { width: 42px; min-width: 42px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; }
+      .ambient { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <svg width="0" height="0" aria-hidden="true" style="position:absolute">
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-message" viewBox="0 0 24 24"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 6.5A2.5 2.5 0 0 1 5.5 4H9l2 2h7.5A2.5 2.5 0 0 1 21 8.5v8A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5z"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 6h8M16 6h4M4 12h3M11 12h9M4 18h10M18 18h2"/><circle cx="14" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="16" cy="18" r="2"/></symbol>
+    <symbol id="i-brain" viewBox="0 0 24 24"><path d="M9.5 4.5A3.5 3.5 0 0 0 6 8a3.5 3.5 0 0 0 0 7 3.5 3.5 0 0 0 5.5 2.9V6.1a3.5 3.5 0 0 0-2-1.6ZM14.5 4.5A3.5 3.5 0 0 1 18 8a3.5 3.5 0 0 1 0 7 3.5 3.5 0 0 1-5.5 2.9V6.1a3.5 3.5 0 0 1 2-1.6Z"/><path d="M6 8.5h2.5M18 8.5h-2.5M6.5 15H9M17.5 15H15"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5zM19 17l.6 2.4L22 20l-2.4.6L19 23l-.6-2.4L16 20l2.4-.6z"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m6 12 4 4 8-9"/></symbol>
+    <symbol id="i-loader" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-6.2-8.6"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v5h5M9 13h6M9 17h5"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="M7 10v10H4V10zM7 10l5-7a2 2 0 0 1 2 2v3h4.5a2 2 0 0 1 2 2.4l-1.4 7A2 2 0 0 1 17.2 19H7"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M7 14V4H4v10zM7 14l5 7a2 2 0 0 0 2-2v-3h4.5a2 2 0 0 0 2-2.4l-1.4-7A2 2 0 0 0 17.2 5H7"/></symbol>
+    <symbol id="i-clip" viewBox="0 0 24 24"><path d="m21 11.5-8.6 8.6a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 0 1 5.7 5.7l-9.2 9.2a2 2 0 0 1-2.9-2.8l8.6-8.6"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="m21 3-7.5 18-3.2-7.3L3 10.5zM10.3 13.7 21 3"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 20 6v5c0 5-3.4 8.5-8 10-4.6-1.5-8-5-8-10V6z"/><path d="m9 12 2 2 4-4"/></symbol>
+  </svg>
+
+  <div class="app">
+    <div class="ambient"></div>
+
+    <aside class="sidebar" aria-label="主导航">
+      <div class="brand">
+        <img src="assets/agent-console-logo.png" alt="Agent Console 小狗标志">
+        <div class="brand-copy"><strong>Agent Console</strong><small>Local Intelligence</small></div>
+      </div>
+
+      <button class="new-chat" type="button" aria-label="新建会话" data-toast="已创建新的空白会话">
+        <svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg><span>新建会话</span>
+      </button>
+
+      <p class="nav-label">工作空间</p>
+      <nav class="nav-list">
+        <button class="nav-item active" type="button" aria-label="打开对话" aria-current="page"><svg class="icon" aria-hidden="true"><use href="#i-message"/></svg><span>对话</span></button>
+        <button class="nav-item" type="button" aria-label="打开知识库，8 个文档"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg><span>知识库</span><b class="badge">8</b></button>
+        <button class="nav-item" type="button" aria-label="打开配置中心"><svg class="icon" aria-hidden="true"><use href="#i-sliders"/></svg><span>配置中心</span></button>
+        <button class="nav-item" type="button" aria-label="打开长期记忆，12 条记忆"><svg class="icon" aria-hidden="true"><use href="#i-brain"/></svg><span>长期记忆</span><b class="badge">12</b></button>
+        <button class="nav-item" type="button" aria-label="打开历史会话"><svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg><span>历史会话</span></button>
+      </nav>
+
+      <div class="sidebar-foot">
+        <div class="runtime-card">
+          <div class="runtime-head"><span>本地运行时</span><i class="live-dot" aria-hidden="true"></i></div>
+          <strong>所有服务正常</strong>
+          <small>6 个工具 · 4 个技能可用</small>
+        </div>
+      </div>
+    </aside>
+
+    <main class="workspace">
+      <header class="topbar">
+        <div class="title-block">
+          <h1 id="view-title">研究与分析</h1>
+          <p>会话 ac_7f29 · 自动选择模型与工具</p>
+        </div>
+        <div class="top-actions">
+          <div class="status" aria-label="SSE 已连接"><i class="live-dot" aria-hidden="true"></i><span>SSE 已连接</span></div>
+          <button class="icon-button" type="button" aria-label="搜索会话" data-toast="搜索面板已准备好"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg></button>
+          <button class="icon-button" type="button" aria-label="更多操作" data-toast="更多操作"><svg class="icon" aria-hidden="true"><use href="#i-more"/></svg></button>
+        </div>
+      </header>
+
+      <section class="chat" aria-labelledby="view-title">
+        <div class="stream">
+          <div class="date-divider"><span>今天 14:32</span></div>
+
+          <article class="message user">
+            <div class="message-meta"><span>刚刚</span><strong>你</strong></div>
+            <div class="user-bubble">分析知识库中最新的产品文档，整理核心变化，并给我一份可以直接同步给团队的摘要。</div>
+          </article>
+
+          <article class="message agent">
+            <div class="message-meta"><span class="avatar"><svg class="icon" aria-hidden="true"><use href="#i-spark"/></svg></span><strong>Agent</strong><span>8 秒</span></div>
+            <div class="agent-card">
+              <div class="agent-answer">
+                <h2>产品文档本周有 3 项关键变化</h2>
+                <p>我检索并交叉核对了知识库中的 8 份文档。主要变化集中在<strong>工作流恢复、长期记忆和工具权限</strong>，其中工作流恢复会直接影响现有使用方式。</p>
+                <p>建议团队优先验证异常中断后的“重试 / 跳过 / 终止”路径，再同步新版配置说明。</p>
+                <div class="insight-grid">
+                  <div class="insight"><span><svg class="icon" aria-hidden="true"><use href="#i-shield"/></svg>高影响</span><strong>工作流支持断点恢复</strong></div>
+                  <div class="insight"><span><svg class="icon" aria-hidden="true"><use href="#i-brain"/></svg>体验优化</span><strong>记忆检索更加透明</strong></div>
+                  <div class="insight"><span><svg class="icon" aria-hidden="true"><use href="#i-sliders"/></svg>配置变化</span><strong>工具权限按组管理</strong></div>
+                </div>
+              </div>
+              <footer class="answer-actions">
+                <span class="source-count"><svg class="icon" aria-hidden="true"><use href="#i-folder"/></svg><span>引用 3 个来源 · 可信度高</span></span>
+                <div class="action-row">
+                  <button type="button" aria-label="复制回答" data-copy><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg></button>
+                  <button type="button" aria-label="回答有帮助" data-toast="感谢反馈"><svg class="icon" aria-hidden="true"><use href="#i-up"/></svg></button>
+                  <button type="button" aria-label="回答需改进" data-toast="已记录改进反馈"><svg class="icon" aria-hidden="true"><use href="#i-down"/></svg></button>
+                </div>
+              </footer>
+            </div>
+          </article>
+        </div>
+
+        <div class="composer-wrap">
+          <form class="composer" id="composer">
+            <button class="attach" type="button" aria-label="添加附件" data-toast="可添加本地文件"><svg class="icon" aria-hidden="true"><use href="#i-clip"/></svg></button>
+            <textarea id="prompt" rows="1" aria-label="消息输入" placeholder="继续追问，或交给 Agent 执行任务…"></textarea>
+            <button class="send" type="submit" aria-label="发送消息" disabled><span>发送</span><svg class="icon" aria-hidden="true"><use href="#i-send"/></svg></button>
+          </form>
+        </div>
+      </section>
+    </main>
+
+    <aside class="context-panel" aria-label="当前任务详情">
+      <div class="context-head"><h2>当前任务</h2><button class="more-button" type="button" aria-label="任务更多操作" data-toast="任务操作"><svg class="icon" aria-hidden="true"><use href="#i-more"/></svg></button></div>
+
+      <section class="progress-card">
+        <div class="progress-top"><strong>研究进度</strong><span>3 / 4</span></div>
+        <div class="progress-track" aria-label="任务进度 76%"><div class="progress-bar"></div></div>
+        <div class="timeline">
+          <button class="step expanded" type="button" aria-expanded="true">
+            <span class="step-marker"><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg></span>
+            <strong>理解任务</strong><small>识别摘要目标与输出受众</small>
+            <span class="step-detail"><span>scope: latest_docs · audience: team</span></span>
+          </button>
+          <button class="step" type="button" aria-expanded="false">
+            <span class="step-marker"><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg></span>
+            <strong>检索知识库</strong><small>8 份文档，召回 24 个片段</small>
+            <span class="step-detail"><span>hybrid_search · rerank_top_k: 8</span></span>
+          </button>
+          <button class="step" type="button" aria-expanded="false">
+            <span class="step-marker"><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg></span>
+            <strong>交叉核验</strong><small>3 处变更已确认来源</small>
+            <span class="step-detail"><span>confidence: 0.92 · conflicts: 0</span></span>
+          </button>
+          <button class="step active" type="button" aria-expanded="false">
+            <span class="step-marker"><svg class="icon" aria-hidden="true"><use href="#i-loader"/></svg></span>
+            <strong>生成团队摘要</strong><small>正在调整信息优先级</small>
+            <span class="step-detail"><span>format: concise_markdown · streaming</span></span>
+          </button>
+        </div>
+      </section>
+
+      <section class="context-section">
+        <h3 class="section-title">引用来源</h3>
+        <div class="source-list">
+          <button class="source" type="button" data-toast="打开：workflow-recovery.md"><span class="file-icon"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg></span><span><strong>workflow-recovery.md</strong><small>匹配度 96% · 4 个片段</small></span></button>
+          <button class="source" type="button" data-toast="打开：memory-design.pdf"><span class="file-icon green"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg></span><span><strong>memory-design.pdf</strong><small>匹配度 91% · 3 个片段</small></span></button>
+          <button class="source" type="button" data-toast="打开：tool-permissions.md"><span class="file-icon"><svg class="icon" aria-hidden="true"><use href="#i-file"/></svg></span><span><strong>tool-permissions.md</strong><small>匹配度 88% · 2 个片段</small></span></button>
+        </div>
+      </section>
+
+      <section class="context-section">
+        <h3 class="section-title">本次运行</h3>
+        <div class="metrics">
+          <div class="metric"><span>耗时</span><strong>8.4 s</strong></div>
+          <div class="metric"><span>Tokens</span><strong>2,418</strong></div>
+          <div class="metric"><span>工具调用</span><strong>3 次</strong></div>
+          <div class="metric"><span>模型</span><strong>Auto</strong></div>
+        </div>
+      </section>
+    </aside>
+  </div>
+
+  <div class="toast" role="status" aria-live="polite"><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg><span id="toast-text"></span></div>
+
+  <script>
+    const root = document.documentElement;
+    const prompt = document.querySelector('#prompt');
+    const composer = document.querySelector('#composer');
+    const send = composer.querySelector('.send');
+    const toast = document.querySelector('.toast');
+    const toastText = document.querySelector('#toast-text');
+    let toastTimer;
+
+    function showToast(message) {
+      toastText.textContent = message;
+      toast.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove('show'), 2600);
+    }
+
+    document.addEventListener('pointermove', event => {
+      root.style.setProperty('--mx', `${event.clientX}px`);
+      root.style.setProperty('--my', `${event.clientY}px`);
+    }, { passive: true });
+
+    document.querySelectorAll('.nav-item').forEach(item => {
+      item.addEventListener('click', () => {
+        document.querySelectorAll('.nav-item').forEach(nav => {
+          nav.classList.remove('active');
+          nav.removeAttribute('aria-current');
+        });
+        item.classList.add('active');
+        item.setAttribute('aria-current', 'page');
+        const label = item.querySelector('span').textContent;
+        showToast(`${label}为交互概念展示`);
+      });
+    });
+
+    document.querySelectorAll('.step').forEach(step => {
+      step.addEventListener('click', () => {
+        const expanded = step.classList.toggle('expanded');
+        step.setAttribute('aria-expanded', String(expanded));
+      });
+    });
+
+    document.querySelectorAll('[data-toast]').forEach(button => {
+      button.addEventListener('click', () => showToast(button.dataset.toast));
+    });
+
+    prompt.addEventListener('input', () => {
+      send.disabled = !prompt.value.trim();
+      prompt.style.height = 'auto';
+      prompt.style.height = `${Math.min(prompt.scrollHeight, 130)}px`;
+    });
+
+    prompt.addEventListener('keydown', event => {
+      if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+        event.preventDefault();
+        if (prompt.value.trim()) composer.requestSubmit();
+      }
+    });
+
+    composer.addEventListener('submit', event => {
+      event.preventDefault();
+      if (!prompt.value.trim()) return;
+      showToast('Demo：消息已进入 Agent 队列');
+      prompt.value = '';
+      prompt.style.height = 'auto';
+      send.disabled = true;
+    });
+
+    document.querySelector('[data-copy]').addEventListener('click', async () => {
+      const text = document.querySelector('.agent-answer').innerText;
+      try {
+        await navigator.clipboard.writeText(text);
+        showToast('回答已复制');
+      } catch {
+        showToast('当前环境不支持剪贴板');
+      }
+    });
+  </script>
+</body>
+</html>

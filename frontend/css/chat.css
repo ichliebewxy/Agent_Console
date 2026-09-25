@@ -12,10 +12,10 @@
   height: 100%;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 34px max(24px, calc((100% - var(--content-w)) / 2)) 28px;
+  padding: 32px max(24px, calc((100% - var(--content-w)) / 2)) 24px;
   display: flex;
   flex-direction: column;
-  gap: 26px;
+  gap: 28px;
 }
 
 /* ── 空状态 ─────────────────────────────────────────── */
@@ -27,17 +27,17 @@
 }
 
 .empty-state > i {
-  width: 78px;
-  height: 78px;
+  width: 68px;
+  height: 68px;
   display: inline-grid;
   place-items: center;
-  border-radius: 24px;
+  border-radius: 20px;
   background: var(--accent-gradient);
   color: oklch(99% 0.005 160);
   font-size: 1.7rem;
   box-shadow: 0 14px 34px color-mix(in oklch, var(--teal) 36%, transparent),
     inset 0 1px 0 color-mix(in oklch, white 30%, transparent);
-  animation: float-y 4.6s ease-in-out infinite;
+  animation: float-y 5.2s ease-in-out infinite;
 }
 
 @keyframes float-y {
@@ -161,9 +161,8 @@
   gap: 7px;
   color: var(--muted);
   font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  font-weight: 650;
+  letter-spacing: 0.02em;
 }
 
 .message-role::before {
@@ -205,6 +204,16 @@
   overflow-wrap: anywhere;
 }
 
+.from-agent > .message-bubble:not(.thinking) {
+  width: 100%;
+  max-width: 78ch;
+  padding: 20px 22px;
+  border: 1px solid var(--line);
+  border-radius: 19px;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: var(--shadow-sm);
+}
+
 .from-user .message-bubble {
   width: fit-content;
   max-width: min(76%, 620px);
@@ -213,7 +222,7 @@
   background: var(--accent-gradient);
   color: oklch(99% 0.005 160);
   line-height: 1.65;
-  box-shadow: 0 8px 22px color-mix(in oklch, var(--green) 26%, transparent),
+  box-shadow: 0 10px 24px rgba(22, 122, 98, 0.18),
     inset 0 1px 0 color-mix(in oklch, white 22%, transparent);
 }
 

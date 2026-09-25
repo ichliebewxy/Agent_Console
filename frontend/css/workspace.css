@@ -8,13 +8,12 @@
   display: grid;
   grid-template-rows: var(--topbar-h) 1fr;
   background:
-    radial-gradient(58% 42% at 88% -6%, color-mix(in oklch, var(--teal) 8%, transparent), transparent 72%),
-    radial-gradient(46% 36% at 6% 0%, color-mix(in oklch, var(--green) 7%, transparent), transparent 72%),
+    radial-gradient(520px circle at 90% 0%, rgba(74, 191, 156, 0.08), transparent 68%),
     var(--surface-soft);
 }
 
 .topbar {
-  padding: 16px 30px;
+  padding: 0 28px;
   border-bottom: 1px solid var(--line);
   background: color-mix(in oklch, var(--surface-raised) 80%, transparent);
   backdrop-filter: blur(14px) saturate(1.25);
@@ -33,22 +32,16 @@
 
 .topbar h2 {
   font-family: var(--font-display);
-  font-size: 1.22rem;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-size: 1.02rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 .eyebrow {
-  margin-bottom: 3px !important;
-  background: var(--accent-gradient);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: transparent;
-  text-transform: uppercase;
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.16em;
+  margin-top: 5px !important;
+  color: var(--muted);
+  font-size: 0.73rem;
+  letter-spacing: 0;
 }
 
 .topbar-status {
@@ -106,4 +99,24 @@
   font-family: var(--font-mono);
   font-size: 0.74rem;
   box-shadow: var(--shadow-sm);
+}
+
+.topbar-icon {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-raised);
+  color: var(--muted);
+  display: grid;
+  place-items: center;
+  transition: transform 0.18s ease, color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.topbar-icon:hover {
+  color: var(--green);
+  border-color: #b8d7ca;
+  box-shadow: var(--shadow-sm);
+  transform: translateY(-1px);
 }

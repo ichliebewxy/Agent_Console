@@ -82,6 +82,7 @@ class ArtifactListResponse(BaseModel):
 
 class ChatResponse(BaseModel):
     response: str
+    memory_job_id: Optional[str] = None
     rag_trace: Optional[RagTrace] = None
     artifacts: List[ArtifactInfo] = Field(default_factory=list)
     plan: Optional[Dict[str, Any]] = None
