@@ -22,6 +22,8 @@ async def get_session_messages(user_id: str, session_id: str):
                 timestamp=item["timestamp"],
                 rag_trace=item.get("rag_trace"),
                 artifacts=item.get("artifacts") or [],
+                plan=item.get("plan"),
+                workflow=item.get("workflow"),
             )
             for item in session_data.get("messages", [])
         ]

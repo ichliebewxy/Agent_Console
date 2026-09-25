@@ -1,5 +1,6 @@
 import sys
 import unittest
+from uuid import UUID
 from pathlib import Path
 
 
@@ -73,6 +74,8 @@ class PlanExecuteTests(unittest.TestCase):
         self.assertIn("二改", titles)
         self.assertNotIn("三", titles)
         self.assertEqual(plan.steps[0].title, "一")  # completed step untouched
+        added = next(step for step in plan.steps if step.title == "四")
+        self.assertEqual(str(UUID(added.id)), added.id)
 
     def test_build_step_instruction_mentions_objective_and_prior(self):
         plan = plan_execute_module.Plan(
@@ -86,7 +89,6 @@ class PlanExecuteTests(unittest.TestCase):
         self.assertIn("总体目标", instruction)
         self.assertIn("当前步", instruction)
         self.assertIn("先前的产出", instruction)
-
 
 if __name__ == "__main__":
     unittest.main()

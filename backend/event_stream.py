@@ -7,69 +7,68 @@ emit progress without depending on the chat layer.
 """
 
 import asyncio
+from contextvars import ContextVar
 
-_RAG_STEP_QUEUE = None
-_RAG_STEP_LOOP = None
-_TOOL_STEP_QUEUE = None
-_TOOL_STEP_LOOP = None
+_RAG_STEP_TARGET: ContextVar[tuple | None] = ContextVar("rag_step_target", default=None)
+_TOOL_STEP_TARGET: ContextVar[tuple | None] = ContextVar("tool_step_target", default=None)
 
 
 def set_rag_step_queue(queue):
-    global _RAG_STEP_QUEUE, _RAG_STEP_LOOP
-    _RAG_STEP_QUEUE = queue
     if queue:
         try:
-            _RAG_STEP_LOOP = asyncio.get_running_loop()
+            loop = asyncio.get_running_loop()
         except RuntimeError:
-            _RAG_STEP_LOOP = asyncio.get_event_loop()
+            loop = asyncio.get_event_loop()
+        _RAG_STEP_TARGET.set((queue, loop))
     else:
-        _RAG_STEP_LOOP = None
+        _RAG_STEP_TARGET.set(None)
 
 
 def emit_rag_step(icon: str, label: str, detail: str = ""):
-    global _RAG_STEP_QUEUE, _RAG_STEP_LOOP
-    if _RAG_STEP_QUEUE is None or _RAG_STEP_LOOP is None:
+    target = _RAG_STEP_TARGET.get()
+    if target is None:
         return
+    queue, loop = target
     step = {"icon": icon, "label": label, "detail": detail}
     try:
-        if not _RAG_STEP_LOOP.is_closed():
+        if not loop.is_closed():
             try:
                 current_loop = asyncio.get_running_loop()
             except RuntimeError:
                 current_loop = None
-            if current_loop is _RAG_STEP_LOOP:
-                _RAG_STEP_QUEUE.put_nowait(step)
+            if current_loop is loop:
+                queue.put_nowait(step)
             else:
-                _RAG_STEP_LOOP.call_soon_threadsafe(_RAG_STEP_QUEUE.put_nowait, step)
+                loop.call_soon_threadsafe(queue.put_nowait, step)
     except Exception:
         pass
 
 
 def set_tool_step_queue(queue):
-    global _TOOL_STEP_QUEUE, _TOOL_STEP_LOOP
-    _TOOL_STEP_QUEUE = queue
     if queue:
         try:
-            _TOOL_STEP_LOOP = asyncio.get_running_loop()
+            loop = asyncio.get_running_loop()
         except RuntimeError:
-            _TOOL_STEP_LOOP = asyncio.get_event_loop()
+            loop = asyncio.get_event_loop()
+        _TOOL_STEP_TARGET.set((queue, loop))
     else:
-        _TOOL_STEP_LOOP = None
+        _TOOL_STEP_TARGET.set(None)
 
 
 def emit_tool_step(step: dict):
-    global _TOOL_STEP_QUEUE, _TOOL_STEP_LOOP
-    if _TOOL_STEP_QUEUE is None or _TOOL_STEP_LOOP is None:
+    target = _TOOL_STEP_TARGET.get()
+    if target is None:
         return
+    queue, loop = target
     try:
-        if not _TOOL_STEP_LOOP.is_closed():
+        if not loop.is_closed():
             try:
                 current_loop = asyncio.get_running_loop()
             except RuntimeError:
                 current_loop = None
-            if current_loop is _TOOL_STEP_LOOP:
-                _TOOL_STEP_QUEUE.put_nowait(step)
+            if current_loop is loop:
+                queue.put_nowait(step)
             else:
-                _TOOL_STEP_LOOP.call_soon_threadsafe(_TOOL_STEP_QUEUE.put_nowait, step)
+                loop.call_soon_threadsafe(queue.put_nowait, step)
     except Exception:
         pass

@@ -1,6 +1,7 @@
 """Centralized runtime configuration."""
 import os
 from pathlib import Path
+
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -78,7 +79,7 @@ OPENCLI_SESSION = env("OPENCLI_SESSION", "lcagent")
 OPENCLI_TIMEOUT = env_int("OPENCLI_TIMEOUT", 75)
 OPENCLI_OUTPUT_MAX_CHARS = env_int("OPENCLI_OUTPUT_MAX_CHARS", 12000)
 
-BACKEND_TMP_DIR = env_path("BACKEND_TMP_DIR", PROJECT_ROOT / "backend" / "tmp")
+BACKEND_TMP_DIR = env_path("BACKEND_TMP_DIR", PROJECT_ROOT / "agent_workspace" / "sessions")
 AGENT_SKILLS_DIR = env_path(
     "AGENT_SKILLS_DIR",
     PROJECT_ROOT / "agent_workspace" / "skills",
@@ -101,6 +102,11 @@ PLAN_EXECUTE_ENABLED = env_bool("PLAN_EXECUTE_ENABLED", True)
 PLAN_EXECUTE_MAX_STEPS = max(1, env_int("PLAN_EXECUTE_MAX_STEPS", 6))
 # 反省时注入“上一步结果”的字符上限，避免上下文过长。
 PLAN_EXECUTE_RESULT_MAX_CHARS = max(200, env_int("PLAN_EXECUTE_RESULT_MAX_CHARS", 3000))
+WORKFLOW_CHECKPOINT_PATH = env_path(
+    "WORKFLOW_CHECKPOINT_PATH",
+    PROJECT_ROOT / "data" / "workflow_checkpoints.sqlite",
+)
+WORKFLOW_MAX_RETRIES = max(0, env_int("WORKFLOW_MAX_RETRIES", 4))
 
 # ===== mem0 长期记忆（本地持久化）=====
 # 是否启用 mem0 长期记忆。关闭后 Agent 不再检索/写入记忆，记忆接口仍可用。

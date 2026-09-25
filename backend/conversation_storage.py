@@ -37,12 +37,12 @@ class ConversationStorage:
                 ),
             }
             if same_message:
-                for key in ("rag_trace", "artifacts"):
+                for key in ("rag_trace", "artifacts", "plan", "workflow"):
                     if key in previous:
                         record[key] = previous[key]
             if extra_message_data and idx < len(extra_message_data):
                 extra = extra_message_data[idx] or {}
-                for key in ("rag_trace", "artifacts"):
+                for key in ("rag_trace", "artifacts", "plan", "workflow"):
                     if key in extra:
                         record[key] = extra[key]
             serialized.append(record)
@@ -54,6 +54,38 @@ class ConversationStorage:
         }
         with open(self.storage_file, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+
+    def update_workflow_projection(
+        self,
+        user_id: str,
+        session_id: str,
+        run_id: str,
+        workflow: dict,
+    ) -> bool:
+        """Update the UI projection for an existing durable workflow run."""
+        data = self._load()
+        session = data.get(user_id, {}).get(session_id)
+        if not isinstance(session, dict):
+            return False
+        messages = session.get("messages") or []
+        for record in reversed(messages):
+            current = record.get("workflow") or {}
+            if current.get("run_id") != run_id:
+                continue
+            record["workflow"] = workflow
+            record["plan"] = {
+                "objective": workflow.get("objective", ""),
+                "steps": workflow.get("steps", []),
+                "reflections": (record.get("plan") or {}).get("reflections", []),
+            }
+            if workflow.get("final_response"):
+                record["content"] = workflow["final_response"]
+            record["rag_trace"] = workflow.get("rag_trace")
+            session["updated_at"] = datetime.now().isoformat()
+            with open(self.storage_file, "w", encoding="utf-8") as handle:
+                json.dump(data, handle, ensure_ascii=False, indent=2)
+            return True
+        return False
 
     def load(self, user_id: str, session_id: str) -> list:
         data = self._load()

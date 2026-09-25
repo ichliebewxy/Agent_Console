@@ -6,7 +6,7 @@ This directory stores the skill packages available to the `skills` specialist.
   frontmatter (`name` and `description`). Full instructions are loaded only
   after the specialist selects an exact catalog name.
 - Runtime working files and downloadable artifacts live separately under
-  `backend/tmp/<session-key>/` and are ignored by Git.
+  `agent_workspace/sessions/<session-key>/` and are ignored by Git.
 
 The runtime prevents skill resources from escaping their package root and keeps
 workspace file tools rooted in the current session directory. Commands run

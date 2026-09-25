@@ -10,6 +10,9 @@ wheels/
 .venv
 .env    
 
+# uv cache (local override for sandboxed sessions)
+.uv-cache/    
+
 #docker files
 volumes/
 
@@ -17,12 +20,16 @@ volumes/
 backend/*.log
 extracted_images/
 
+
 # OS files
 .DS_Store
 data/
 
-# Local Agent runtime artifacts (skill packages remain tracked)
-backend/tmp/*
-!backend/tmp/.gitkeep
+# Runtime session workspace (hashed per-session dirs, generated at runtime)
+agent_workspace/sessions/
 
 /.tmp_probe
+
+
+backend/mcp_servers.json
+backend/config.json

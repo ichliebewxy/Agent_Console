@@ -14,6 +14,7 @@ import asyncio
 from fastapi import APIRouter, HTTPException
 
 import memory_service
+from memory_extraction import clear_extraction_files, job_status, sync_extraction_file
 from schemas import (
     MemoryAddRequest,
     MemoryAddResponse,
@@ -40,6 +41,14 @@ def _to_info(item) -> MemoryInfo:
 @router.get("/memory/status", response_model=MemoryStatusResponse)
 async def memory_status():
     return MemoryStatusResponse(**memory_service.status())
+
+
+@router.get("/memory/extractions/{job_id}")
+async def memory_extraction_status(job_id: str, user_id: str):
+    result = job_status(job_id, user_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="未找到该记忆抽取任务")
+    return result
 
 
 @router.get("/memory/{user_id}", response_model=MemoryListResponse)
@@ -87,6 +96,7 @@ async def update_memory(memory_id: str, request: MemoryUpdateRequest):
         raise HTTPException(status_code=400, detail="记忆内容不能为空")
     try:
         await asyncio.to_thread(memory_service.update_memory, memory_id, text)
+        await asyncio.to_thread(sync_extraction_file, memory_id, text)
         return MemoryDeleteResponse(memory_id=memory_id, message="记忆已更新")
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"更新记忆失败: {exc}")
@@ -98,6 +108,7 @@ async def clear_user_memories(user_id: str):
     FastAPI 按路径段数区分，两者不会冲突。"""
     try:
         await asyncio.to_thread(memory_service.delete_all, user_id)
+        await asyncio.to_thread(clear_extraction_files, user_id)
         return MemoryDeleteResponse(memory_id=user_id, message="已清空该用户全部记忆")
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"清空记忆失败: {exc}")
@@ -107,6 +118,7 @@ async def clear_user_memories(user_id: str):
 async def delete_memory(memory_id: str):
     try:
         await asyncio.to_thread(memory_service.delete_memory, memory_id)
+        await asyncio.to_thread(sync_extraction_file, memory_id)
         return MemoryDeleteResponse(memory_id=memory_id, message="记忆已删除")
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"删除记忆失败: {exc}")

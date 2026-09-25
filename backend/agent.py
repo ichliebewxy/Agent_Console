@@ -1,12 +1,18 @@
 """LangChain main-agent construction, chat execution, and streaming."""
 import asyncio
 import json
+from uuid import uuid4
 
 from langchain.agents import create_agent
 from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, SystemMessage
 
 from agent_prompt import SYSTEM_PROMPT
-from agent_state import get_last_rag_context, reset_tool_call_guards
+from agent_state import (
+    consume_tool_events,
+    get_conversation_history,
+    get_last_rag_context,
+    reset_tool_call_guards,
+)
 from artifact_service import list_session_artifacts
 from chat_models import build_chat_model
 from conversation_storage import ConversationStorage
@@ -18,6 +24,9 @@ from runtime_context import bind_runtime_context, session_async_lock
 from settings import AGENT_TOOL_CALL_LIMIT, PLAN_EXECUTE_ENABLED
 from subagents import build_subagent_tools
 from tool_instrumentation import instrument_tools
+from workflow_state import initial_workflow_state, plan_payload, public_workflow_state
+from workflow_stream import stream_workflow_events
+from checkpoint_service import get_run_state, get_workflow, register_run, workflow_config
 
 
 agent = None
@@ -71,15 +80,61 @@ def summarize_old_messages(chat_model, messages: list) -> str:
     return chat_model.invoke(prompt).content
 
 
-def _prepare_messages(user_text: str, user_id: str, session_id: str) -> list:
-    messages = storage.load(user_id, session_id)
+def _message_text(msg) -> str:
+    """把任意 LangChain 消息的内容安全地压成纯文本。"""
+    content = getattr(msg, "content", "")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict) and block.get("type") == "text":
+                parts.append(str(block.get("text", "")))
+        return "".join(parts)
+    return str(content or "")
+
+
+def _serialize_history(messages: list) -> list[dict]:
+    """把 LangChain 消息列表转成可持久化、可跨工作流节点传递的轻量历史。"""
+    return [
+        {"type": getattr(msg, "type", "system"), "content": _message_text(msg)}
+        for msg in messages
+    ]
+
+
+def _messages_from_history(history: list | None) -> list:
+    """把序列化的历史还原为 LangChain 消息列表。"""
+    messages = []
+    for item in history or []:
+        if not isinstance(item, dict):
+            continue
+        content = item.get("content", "")
+        kind = item.get("type", "ai")
+        if kind == "human":
+            messages.append(HumanMessage(content=content))
+        elif kind == "system":
+            messages.append(SystemMessage(content=content))
+        else:
+            messages.append(AIMessage(content=content))
+    return messages
+
+
+def _prepare_messages(user_text: str, user_id: str, session_id: str):
+    """加载历史并返回 (完整消息序列, 本轮之前的历史)。
+
+    完整消息序列末尾追加当前用户输入，用于简单问答直接回答。历史单独返回，
+    便于序列化后随工作流状态传给规划器与步骤执行器，避免多轮上下文丢失。
+    """
+    history = storage.load(user_id, session_id)
     get_last_rag_context(clear=True)
     reset_tool_call_guards()
-    if len(messages) > 50:
-        summary = summarize_old_messages(model, messages[:40])
-        messages = [SystemMessage(content=f"之前的对话摘要：\n{summary}")] + messages[40:]
-    messages.append(HumanMessage(content=user_text))
-    return messages
+    if len(history) > 50:
+        summary = summarize_old_messages(model, history[:40])
+        history = [SystemMessage(content=f"之前的对话摘要：\n{summary}")] + history[40:]
+    messages = [*history, HumanMessage(content=user_text)]
+    return messages, history
 
 
 def _format_memory_context(memories: list) -> str:
@@ -106,9 +161,12 @@ async def _augment_with_memory(user_text: str, user_id: str, messages: list) -> 
     return [SystemMessage(content=_format_memory_context(memories)), *messages]
 
 
-def _schedule_remember(user_id: str, user_message: str, assistant_message: str, session_id: str) -> None:
-    """后台异步把一轮对话蒸馏并写入长期记忆，不阻塞响应返回。"""
-    if not memory_service.is_enabled():
+def _schedule_remember(user_id: str, user_message: str, session_id: str) -> None:
+    """仅将有跨会话价值的信息异步写入长期记忆。"""
+    if (
+        not memory_service.is_enabled()
+        or not memory_service.is_long_term_memory_candidate(user_message)
+    ):
         return
 
     async def _run():
@@ -117,7 +175,6 @@ def _schedule_remember(user_id: str, user_message: str, assistant_message: str, 
                 memory_service.remember_conversation,
                 user_id,
                 user_message,
-                assistant_message,
                 session_id,
             )
         except Exception as exc:
@@ -168,137 +225,24 @@ def _should_plan_execute(user_text: str) -> bool:
     return plan_execute.is_multi_step_task(user_text)
 
 
-def _drain_output_queue(queue: asyncio.Queue) -> list:
-    drained = []
-    while True:
-        try:
-            drained.append(queue.get_nowait())
-        except asyncio.QueueEmpty:
-            break
-    return drained
-
-
-async def _execute_plan_step(instruction: str) -> str:
+async def execute_workflow_step(instruction: str) -> dict:
+    """Execute one graph step and return serializable evidence for validation."""
     reset_tool_call_guards()
+    get_last_rag_context(clear=True)
+    # 步骤执行必须携带本轮之前的会话历史，否则多轮任务会丢失起点、目的地等
+    # 已在上文中确认的信息（该历史由 workflow_graph 在调用前注入 ContextVar）。
+    messages = _messages_from_history(get_conversation_history())
+    messages.append(HumanMessage(content=instruction))
     result = await agent.ainvoke(
-        {"messages": [HumanMessage(content=instruction)]},
+        {"messages": messages},
         config={"recursion_limit": _AGENT_RECURSION_LIMIT},
     )
-    return _extract_response(result)
-
-
-async def _plan_execute_stream_events(user_text: str, plan, output_queue: asyncio.Queue):
-    "Yield plan / execute / reflect / content events for one plan-and-execute turn."
-    from settings import PLAN_EXECUTE_MAX_STEPS
-
-    def _plan_event():
-        steps = []
-        for s in plan.steps:
-            item = s.to_dict()
-            if item.get("result"):
-                item["result"] = item["result"][:200]
-            steps.append(item)
-        return {"type": "plan", "objective": plan.objective, "steps": steps}
-
-    yield _plan_event()
-    yield {
-        "type": "plan_step",
-        "step": {
-            "icon": "📋",
-            "phase": "plan",
-            "label": "规划完成：拆分为 " + str(len(plan.steps)) + " 个子任务",
-            "detail": plan.objective,
-        },
+    rag_context = get_last_rag_context(clear=True)
+    return {
+        "response": _extract_response(result),
+        "tool_events": consume_tool_events(),
+        "rag_trace": rag_context.get("rag_trace") if rag_context else None,
     }
-
-    newline = chr(10)
-    index = 0
-    executed = 0
-    max_steps = PLAN_EXECUTE_MAX_STEPS
-    while index < len(plan.steps) and executed < max_steps:
-        step = plan.steps[index]
-        if step.status != "pending":
-            index += 1
-            continue
-        step.status = "in_progress"
-        yield {
-            "type": "plan_step",
-            "step": {
-                "icon": "▶",
-                "phase": "execute",
-                "label": "执行 " + str(index + 1) + "/" + str(len(plan.steps)) + "：" + step.title,
-                "detail": step.detail or "",
-            },
-        }
-        yield {
-            "type": "execute",
-            "step_id": step.id,
-            "status": "in_progress",
-            "title": step.title,
-            "index": index,
-            "total": len(plan.steps),
-        }
-
-        instruction = plan_execute.build_step_instruction(
-            plan, step, index + 1, len(plan.steps)
-        )
-        try:
-            result = await _execute_plan_step(instruction)
-            step.status = "done"
-        except Exception as exc:
-            result = "（执行出错：" + str(exc) + "）"
-            step.status = "failed"
-        step.result = result
-        executed += 1
-
-        for event in _drain_output_queue(output_queue):
-            yield event
-
-        if index > 0:
-            yield {"type": "content_boundary"}
-        header = "### 步骤 " + str(index + 1) + "：" + step.title + newline
-        yield {"type": "content", "content": header + str(result or "") + newline}
-        yield {
-            "type": "execute",
-            "step_id": step.id,
-            "status": step.status,
-            "title": step.title,
-            "index": index,
-            "total": len(plan.steps),
-            "result": str(result or "")[:200],
-        }
-
-        yield {
-            "type": "plan_step",
-            "step": {"icon": "🔄", "phase": "reflect", "label": "反省与计划调整", "detail": ""},
-        }
-        reflection = None
-        try:
-            reflection = await plan_execute.reflect(plan, step.result or "")
-        except Exception as exc:
-            print("[plan] 反省失败，按原计划继续: " + str(exc))
-        if reflection is not None:
-            notes = plan_execute.apply_reflection(plan, reflection)
-            yield {
-                "type": "reflect",
-                "decision": reflection.decision,
-                "reason": reflection.reason,
-                "adjusted": bool(notes),
-            }
-            if notes:
-                yield _plan_event()
-            if reflection.decision == "complete":
-                break
-            if reflection.decision == "stop":
-                break
-
-        index += 1
-
-    yield {
-        "type": "plan_step",
-        "step": {"icon": "✅", "phase": "complete", "label": "计划执行结束", "detail": ""},
-    }
-    yield _plan_event()
 
 
 def _persist_response(
@@ -308,11 +252,16 @@ def _persist_response(
     response: str,
     rag_trace,
     artifacts: list,
+    plan: dict | None = None,
+    workflow: dict | None = None,
 ):
     messages.append(AIMessage(content=response))
-    extra = [None] * (len(messages) - 1) + [
-        {"rag_trace": rag_trace, "artifacts": artifacts}
-    ]
+    metadata = {"rag_trace": rag_trace, "artifacts": artifacts}
+    if plan is not None:
+        metadata["plan"] = plan
+    if workflow is not None:
+        metadata["workflow"] = workflow
+    extra = [None] * (len(messages) - 1) + [metadata]
     storage.save(user_id, session_id, messages, extra_message_data=extra)
 
 
@@ -324,47 +273,78 @@ async def chat_with_agent(
     if agent is None:
         raise RuntimeError("主 Agent 尚未初始化，请先等待 init_agent_async() 完成。")
     with bind_runtime_context(user_id, session_id):
-        messages = _prepare_messages(user_text, user_id, session_id)
-        messages = await _augment_with_memory(user_text, user_id, messages)
+        messages, history = _prepare_messages(user_text, user_id, session_id)
+        # 记忆只注入本轮调用，不随 messages 一起持久化，避免逐轮累积脏上下文。
+        invoke_messages = await _augment_with_memory(user_text, user_id, messages)
 
-        output_queue = asyncio.Queue()
-        plan = None
+        workflow_data = None
+        plan_data = None
         if _should_plan_execute(user_text):
+            run_id = str(uuid4())
+            initial = initial_workflow_state(
+                run_id,
+                user_id,
+                session_id,
+                user_text,
+                history=_serialize_history(history),
+            )
+            # Step staging protects individual mutations. Serializing full
+            # workflow runs per session also protects the shared visible
+            # workspace when two browser tabs submit tasks at once.
+            async with session_async_lock(user_id, session_id):
+                await register_run(initial)
+                await get_workflow().ainvoke(
+                    initial,
+                    workflow_config(run_id),
+                    durability="sync",
+                )
+            workflow_data = await get_run_state(run_id)
+            plan_data = {
+                "objective": workflow_data.get("objective", ""),
+                "steps": workflow_data.get("steps", []),
+                "reflections": [],
+            }
+            response = workflow_data.get("final_response", "")
+            rag_trace = workflow_data.get("rag_trace")
+        else:
+            output_queue = asyncio.Queue()
+            set_rag_step_queue(_RagStepQueueProxy(output_queue))
+            set_tool_step_queue(_ToolStepQueueProxy(output_queue))
             try:
-                plan = await plan_execute.generate_plan(user_text)
-            except Exception as exc:
-                print("[plan] 规划失败，退回到直接执行: " + str(exc))
-                plan = None
-
-        set_rag_step_queue(_RagStepQueueProxy(output_queue))
-        set_tool_step_queue(_ToolStepQueueProxy(output_queue))
-        try:
-            if plan is not None and getattr(plan, "steps", None):
-                response = ""
-                async for event in _plan_execute_stream_events(user_text, plan, output_queue):
-                    if event.get("type") == "content":
-                        response += event.get("content", "")
-            else:
                 result = await agent.ainvoke(
-                    {"messages": messages},
+                    {"messages": invoke_messages},
                     config={"recursion_limit": _AGENT_RECURSION_LIMIT},
                 )
                 response = _extract_response(result)
-        finally:
-            set_rag_step_queue(None)
-            set_tool_step_queue(None)
-
-        rag_context = get_last_rag_context(clear=True)
-        rag_trace = rag_context.get("rag_trace") if rag_context else None
+            finally:
+                set_rag_step_queue(None)
+                set_tool_step_queue(None)
+            rag_context = get_last_rag_context(clear=True)
+            rag_trace = rag_context.get("rag_trace") if rag_context else None
         async with session_async_lock(user_id, session_id):
             artifacts = await asyncio.to_thread(
                 list_session_artifacts,
                 user_id,
                 session_id,
             )
-            _persist_response(user_id, session_id, messages, response, rag_trace, artifacts)
-        _schedule_remember(user_id, user_text, response, session_id)
-        return {"response": response, "rag_trace": rag_trace, "artifacts": artifacts}
+            _persist_response(
+                user_id,
+                session_id,
+                messages,
+                response,
+                rag_trace,
+                artifacts,
+                plan=plan_data,
+                workflow=workflow_data,
+            )
+        _schedule_remember(user_id, user_text, session_id)
+        return {
+            "response": response,
+            "rag_trace": rag_trace,
+            "artifacts": artifacts,
+            "plan": plan_data,
+            "workflow": workflow_data,
+        }
 
 
 def _chunk_text(msg: AIMessageChunk) -> str:
@@ -399,28 +379,14 @@ async def _chat_with_agent_stream_bound(
 ):
     if agent is None:
         raise RuntimeError("主 Agent 尚未初始化，请先等待 init_agent_async() 完成。")
-    messages = _prepare_messages(user_text, user_id, session_id)
-    messages = await _augment_with_memory(user_text, user_id, messages)
+    messages, history = _prepare_messages(user_text, user_id, session_id)
+    # 记忆只注入本轮调用，不随 messages 一起持久化。
+    invoke_messages = await _augment_with_memory(user_text, user_id, messages)
 
-    plan = None
-    if _should_plan_execute(user_text):
-        yield _sse_event(
-            {
-                "type": "plan_step",
-                "step": {"icon": "🧭", "phase": "plan", "label": "正在规划任务拆解", "detail": ""},
-            }
-        )
-        try:
-            plan = await plan_execute.generate_plan(user_text)
-        except Exception as exc:
-            print("[plan] 规划失败，退回到直接执行: " + str(exc))
-            yield _sse_event(
-                {
-                    "type": "plan_step",
-                    "step": {"icon": "↩", "phase": "plan", "label": "规划未成功，改为直接执行", "detail": str(exc)[:200]},
-                }
-            )
-            plan = None
+    use_workflow = _should_plan_execute(user_text)
+    workflow_data = None
+    plan_data = None
+    workflow_run_id = str(uuid4()) if use_workflow else None
 
     output_queue = asyncio.Queue()
     full_response = ""
@@ -438,7 +404,7 @@ async def _chat_with_agent_stream_bound(
         active_message_id = None
         try:
             async for msg, metadata in agent.astream(
-                {"messages": messages},
+                {"messages": invoke_messages},
                 stream_mode="messages",
                 config={"recursion_limit": _AGENT_RECURSION_LIMIT},
             ):
@@ -476,11 +442,26 @@ async def _chat_with_agent_stream_bound(
 
     agent_task = None
     try:
-        if plan is not None and getattr(plan, "steps", None):
-            async for event in _plan_execute_stream_events(user_text, plan, output_queue):
-                if event.get("type") == "content":
-                    full_response += event.get("content", "")
-                yield _sse_event(event)
+        if use_workflow:
+            initial = initial_workflow_state(
+                workflow_run_id,
+                user_id,
+                session_id,
+                user_text,
+                history=_serialize_history(history),
+            )
+            async with session_async_lock(user_id, session_id):
+                async for event in stream_workflow_events(initial):
+                    if event.get("type") == "content":
+                        full_response += event.get("content", "")
+                    yield _sse_event(event)
+            workflow_data = await get_run_state(workflow_run_id)
+            plan_data = {
+                "objective": workflow_data.get("objective", ""),
+                "steps": workflow_data.get("steps", []),
+                "reflections": [],
+            }
+            full_response = workflow_data.get("final_response", "") or full_response
         else:
             agent_task = asyncio.create_task(_agent_worker())
             try:
@@ -502,8 +483,11 @@ async def _chat_with_agent_stream_bound(
         if agent_task is not None and not agent_task.done():
             agent_task.cancel()
 
-    rag_context = get_last_rag_context(clear=True)
-    rag_trace = rag_context.get("rag_trace") if rag_context else None
+    if workflow_data is not None:
+        rag_trace = workflow_data.get("rag_trace")
+    else:
+        rag_context = get_last_rag_context(clear=True)
+        rag_trace = rag_context.get("rag_trace") if rag_context else None
     if rag_trace:
         payload = json.dumps({"type": "trace", "rag_trace": rag_trace}, ensure_ascii=False)
         yield f"data: {payload}\n\n"
@@ -520,8 +504,10 @@ async def _chat_with_agent_stream_bound(
             full_response,
             rag_trace,
             artifacts,
+            plan=plan_data,
+            workflow=workflow_data,
         )
-    _schedule_remember(user_id, user_text, full_response, session_id)
+    _schedule_remember(user_id, user_text, session_id)
     artifact_payload = json.dumps(
         {"type": "artifacts", "artifacts": artifacts},
         ensure_ascii=False,

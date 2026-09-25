@@ -134,18 +134,34 @@ def _delete_existing(filename: str) -> int:
 
 
 def _validated_filename(raw_filename: str) -> str:
-    filename = Path(raw_filename).name
+    normalized_filename = _repair_utf8_mojibake(raw_filename)
+    filename = Path(normalized_filename).name
     reserved_name = filename.split(".", 1)[0].upper()
     if (
         not filename
-        or filename != raw_filename
+        or filename != normalized_filename
         or filename in {".", ".."}
         or filename.rstrip(" .") != filename
-        or re.search(r'[<>:"/\\|?*\x00-\x1f]', filename)
+        or re.search(r'[<>:"/\\|?*\x00-\x1f\x7f-\x9f]', filename)
         or reserved_name in WINDOWS_RESERVED_NAMES
     ):
         raise HTTPException(status_code=400, detail="文件名无效")
     return filename
+
+
+def _repair_utf8_mojibake(value: str) -> str:
+    """Repair UTF-8 bytes that a multipart client decoded as Latin-1.
+
+    C1 control characters are not valid in user-facing filenames, but they are
+    a reliable marker of this specific mojibake pattern (for example,
+    ``ç \x81`` instead of ``码``). Leave every other filename untouched.
+    """
+    if not any("\x80" <= character <= "\x9f" for character in value):
+        return value
+    try:
+        return value.encode("latin-1").decode("utf-8")
+    except (UnicodeEncodeError, UnicodeDecodeError):
+        return value
 
 
 async def _save_upload(file: UploadFile, filename: str) -> Path:

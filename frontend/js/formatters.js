@@ -120,4 +120,16 @@ Object.assign(window.NebulaNestApp.methods, {
     };
     return map[status] || status;
   },
+
+  workflowStatusLabel(status) {
+    const map = {
+      planning: "规划中",
+      running: "执行中",
+      waiting_user: "等待处理",
+      rolling_back: "回滚中",
+      failed: "已终止",
+      completed: "已完成",
+    };
+    return map[status] || status || "";
+  },
 });

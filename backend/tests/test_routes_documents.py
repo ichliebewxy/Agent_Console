@@ -18,7 +18,12 @@ import routes_documents
 class DocumentRouteTests(unittest.IsolatedAsyncioTestCase):
     def test_filename_validation_rejects_paths_and_windows_devices(self):
         self.assertEqual(routes_documents._validated_filename("报告.doc"), "报告.doc")
-        for invalid in ("", "../report.doc", r"C:\fakepath\report.doc", "CON.doc", "bad:name.doc"):
+        mojibake_filename = "码蹄杯资料.docx".encode("utf-8").decode("latin-1")
+        self.assertEqual(
+            routes_documents._validated_filename(mojibake_filename),
+            "码蹄杯资料.docx",
+        )
+        for invalid in ("", "../report.doc", r"C:\fakepath\report.doc", "CON.doc", "bad:name.doc", "bad\x81.doc"):
             with self.subTest(filename=invalid), self.assertRaises(HTTPException):
                 routes_documents._validated_filename(invalid)
 

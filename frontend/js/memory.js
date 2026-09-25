@@ -1,4 +1,30 @@
 Object.assign(window.NebulaNestApp.methods, {
+  memoryTypeLabel(type) {
+    return ({ profile: "用户信息", preference: "偏好", project: "长期项目", feedback: "反馈纠正" })[type] || type;
+  },
+
+  async watchMemoryExtraction(jobId) {
+    if (!jobId) return;
+    for (let attempt = 0; attempt < 45; attempt += 1) {
+      await new Promise((resolve) => window.setTimeout(resolve, 2000));
+      try {
+        const response = await fetch(`/memory/extractions/${encodeURIComponent(jobId)}?user_id=${encodeURIComponent(this.userId)}`);
+        if (!response.ok) return;
+        const data = await response.json();
+        if (data.status === "running") continue;
+        if (data.status === "completed" && data.memories && data.memories.length) {
+          const first = data.memories[0].memory || "新记忆";
+          const suffix = data.memories.length > 1 ? `（另有 ${data.memories.length - 1} 条）` : "";
+          this.notify(`已记住：${first}${suffix}`, 6000);
+          if (this.activeView === "memory") await this.loadMemories();
+        }
+        return;
+      } catch (error) {
+        console.warn("Memory extraction status unavailable", error);
+      }
+    }
+  },
+
   async loadMemories() {
     this.memoriesLoading = true;
     try {

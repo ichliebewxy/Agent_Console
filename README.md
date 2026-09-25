@@ -10,6 +10,7 @@ Agent Console 是一个面向本地可信环境的 LangChain 多 Agent + RAG 工
 
 - [核心亮点](#核心亮点)
 - [系统架构](#系统架构)
+- [运行逻辑](#运行逻辑)
 - [OpenCLI Skill 详解](#opencli-skill-详解)
 - [目录与文件职责](#目录与文件职责)
 - [运行数据与持久化文件](#运行数据与持久化文件)
@@ -35,25 +36,26 @@ Agent Console 是一个面向本地可信环境的 LangChain 多 Agent + RAG 工
 | 混合检索 | BGE-M3 dense embedding + BM25 sparse embedding + Milvus Hybrid Search + RRF 融合，可选接入 SiliconFlow rerank。 |
 | 查询扩展 | 初始召回相关性不足时，LangGraph 自动选择 Step-back、HyDE 或 complex 策略再次召回。 |
 | `.doc` 兼容 | `.docx` 走 OpenXML；旧版二进制 `.doc` 在 Windows 优先使用 Word COM，并降级到 LibreOffice/antiword。中文路径会先复制到 ASCII 临时路径。 |
-| 会话工作区 | 每个 `user_id/session_id` 拥有独立的 `backend/tmp/<session-key>/`；脚本、缓存、预览等中间文件留在会话目录，最终产物统一放在其 `deliverables/` 子目录。 |
+| 会话工作区 | 每个 `user_id/session_id` 拥有独立的 `agent_workspace/sessions/<session-key>/`；脚本、缓存、预览等中间文件留在会话目录，最终产物统一放在其 `deliverables/` 子目录。 |
 | 工具安全 | Bash 默认拒绝，执行顺序为 deny → authorize → allow → default deny；阻止路径逃逸、shell 拼接、危险系统命令和高风险 OpenCLI。 |
 | 可观察但不扰人 | 前端展示当前对话实际产生的工具/RAG 轨迹和引用；没有引用时不展示检索轨迹。旧的“运行回调”只读页面和公开回调接口不再提供，失败记录仅留在服务端诊断文件。 |
 | 调用上限 | 每轮对话最多执行 `AGENT_TOOL_CALL_LIMIT` 次工具调用，默认 250 次；达到上限会停止继续调用并整理已有结果。 |
-| Plan-and-Execute | 对多步骤任务，先用规划器一次性拆解为有序子任务，再逐步执行；每完成一步就结合实际结果“反省”，必要时增删改后续计划。 |
-| 长期记忆（mem0） | 基于 [mem0](https://github.com/mem0ai/mem0) 的跨会话用户记忆：每轮对话前检索相关记忆注入上下文，对话后自动蒸馏沉淀新记忆；记忆面板支持查看、手动新增、编辑与删除。 |
+| Durable Plan-and-Execute | 多步骤任务由 LangGraph 状态图执行；每个 run 使用独立 `thread_id` 和 SQLite 检查点，步骤在私有 staging 中事务化执行，失败可重试、修改、跳过、终止或从历史检查点回滚。 |
+| 长期记忆（mem0） | 每轮回复结束后由独立的 extractMemories 后台任务读取主 Agent 的对话记录，分类、去重并保存有跨会话价值的记忆。 |
 
 ## 长期记忆（mem0）
 
 主 Agent 通过 `backend/memory_service.py` 接入 mem0 长期记忆层，实现“跨会话还记得你”：
 
-- **自动沉淀**：每轮对话结束后，后台把“用户消息 + Agent 回复”交给 mem0 的 LLM 抽取为结构化事实，并按语义去重/合并（`infer=True`）。
+- **分层上下文**：同一 `session_id` 下的真实对话历史持续加载，多步工作流也会携带该历史；历史过长时摘要早期内容，无需依赖长期记忆来串起当前对话。
+- **轮后抽取**：主 Agent 完成最终回复并保存对话后，`stopHook` 在后台启动独立的 `extractMemories`。它只从本轮用户消息提取信息，按用户信息、偏好、长期项目、反馈纠正四类归档；先与现有记忆比对，并通过 `hasMemoryWritesSince` 排除本轮刚写入的重复内容。新增记忆同时写入 mem0 和 `data/mem0/extractions/` 下的独立 JSON 文件，页面会提示新增条数。
 - **上下文召回**：新一轮对话开始前，用当前问题做语义检索，把最相关的几条长期记忆作为 system 消息注入，Agent 无需用户重复自我介绍。
 - **本地化存储**：全部落在 `data/mem0/`（默认），包括本地 Qdrant 向量库与 SQLite 历史库；不依赖外部服务，模型使用项目已有的 `BAAI/bge-m3` 本地嵌入，DeepSeek 负责事实抽取。遥测默认关闭（`MEM0_TELEMETRY=False`）。
 - **手动管理**：前端“记忆”面板调用 `/memory/*` 接口，可查看、新增（原文照存或 LLM 抽取）、编辑、删除、清空某用户的记忆。
 
-相关配置（`.env`）：`MEMORY_ENABLED`（总开关）、`MEM0_DIR`（数据目录）、`MEM0_MODEL`（抽取模型，默认复用 `CHAT_MODEL`）、`MEM0_TOP_K`（每轮注入条数）。
+记忆配置已有代码默认值，通常不需要写入 `.env`。如需要覆盖，可使用 `MEMORY_ENABLED`、`MEM0_DIR`、`MEM0_MODEL` 和 `MEM0_TOP_K`。
 
-> 安装说明：`mem0ai` 目前在 PyPI 上仍声明 `protobuf<7.0.0`，而本项目 Milvus/gRPC 栈需要 `protobuf>=7`。请用 `uv pip install --no-deps mem0ai==2.0.18` 安装 mem0ai 本体，再单独安装 `qdrant-client` / `posthog` / `pytz` / `portalocker`（均已写入 `pyproject.toml`，无版本冲突）。
+> 安装说明：mem0 及其本地 Qdrant 依赖已纳入 `pyproject.toml` 和 `uv.lock`，使用 `uv sync --frozen` 即可按锁定版本安装。
 
 ## 系统架构
 
@@ -164,6 +166,87 @@ flowchart TD
 
 文档上传的原子性规则：先把内容写入临时文件，成功解析并生成 L3 叶子块后才替换 `data/documents/<filename>`；随后删除同名旧向量并写入新向量。解析或入库失败时不会提前删除旧源文件，向量写入失败也会回滚同名新向量。支持格式为 `.pdf`、`.docx`、`.doc`、`.pptx`、`.ppt`、`.xlsx`、`.xls`、`.csv`、`.txt`。
 
+## 运行逻辑
+
+本节按“时间顺序”描述一轮对话从浏览器到模型/工具、再回到浏览器的完整运行路径，并画出**多轮上下文如何在同一个会话里保持连贯**。图中的分支对应 `agent.py` 里的 `_should_plan_execute()` 门控：简单问答走单次 Agent 循环，多步骤任务走可持久化的 plan-and-execute 工作流。
+
+### 端到端运行时序
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant U as 用户/浏览器
+    participant F as 前端 chat.js
+    participant R as FastAPI /chat/stream
+    participant A as 主 Agent (agent.py)
+    participant W as 工作流 (workflow_graph)
+    participant T as 工具层 (Core/MCP/RAG/Skill)
+    participant S as ConversationStorage
+    participant M as mem0 长期记忆
+    participant X as extractMemories
+
+    U->>F: 输入消息
+    F->>R: POST /chat/stream(message, user_id, session_id)
+    R->>A: chat_with_agent_stream()
+    A->>S: load(user_id, session_id) 读取历史
+    S-->>A: 历史消息（超过 50 条则先摘要旧消息）
+    A->>M: search_for_context 检索长期记忆
+    M-->>A: 相关记忆（仅本轮注入，不写入历史）
+    alt 简单问答（未命中多步骤门控）
+        A->>T: create_agent 循环（历史 + 当前消息）
+        loop 工具调用（上限 AGENT_TOOL_CALL_LIMIT）
+            T-->>A: tool_step / rag_step 事件
+        end
+        A-->>R: SSE content / content_boundary
+    else 多步骤任务（plan-and-execute）
+        A->>W: initial_workflow_state(history) + astream
+        W->>W: 规划(带历史) → 选择步骤 → 事务 → 执行步骤(带历史)
+        loop 每个子任务
+            W->>T: execute_workflow_step(历史 + step 指令) → agent.ainvoke
+            T-->>W: 步骤结果 / tool_events
+        end
+        W->>W: 校验 → 提交或补偿 → 反省 → 收尾
+        W-->>A: SSE plan / execute / reflect / content
+    end
+    A->>S: save(历史 + 当前 + 回答) 持久化
+    A->>X: stopHook 后台启动（复用本轮对话记录）
+    X->>M: 读取现有记忆、抽取四类事实并去重
+    opt 确有新增记忆
+        X->>M: 写入 mem0 与独立 JSON 文件
+        F-->>U: 弹出新增记忆提示
+    end
+    A-->>R: SSE trace(如有RAG) / artifacts / memory_extraction / [DONE]
+    R-->>F: 流式事件（text/event-stream）
+    F-->>U: 渲染回答 + 工具/RAG 轨迹
+```
+
+### 多轮上下文流转
+
+```mermaid
+flowchart TD
+    A[用户输入 与 session_id] --> B[_prepare_messages]
+    B --> C{历史长度超过 50}
+    C -->|是| D[最早消息摘要后拼接近期消息]
+    C -->|否| E[保留完整历史]
+    D --> F[_augment_with_memory 注入长期记忆]
+    E --> F
+    F --> G{_should_plan_execute}
+    G -->|否| H[create_agent 直接调用 带历史]
+    G -->|是| I[initial_workflow_state 携带 history]
+    I --> J[规划器与每个步骤执行器 均读取 history]
+    H --> K[_persist_response 保存 历史+当前+回答]
+    J --> K
+    K --> L[下一轮 ConversationStorage.load 重载]
+    L --> B
+```
+
+要点：
+
+- **历史持久化**：`ConversationStorage` 只保存真实对话轮次（用户 + 助手）；`_augment_with_memory` 注入的长期记忆是“本轮临时上下文”，不随历史落库，避免逐轮累积脏上下文。
+- **记忆分流**：每轮都会进入当前会话历史；轮后抽取器只把有跨会话价值且未重复的用户信息写入 mem0。
+- **上下文的两个消费者**：简单问答把完整消息序列直接交给 `create_agent`；多步骤任务把历史序列化进 `WorkflowState.history`，再由规划器和每个步骤执行器分别读取，保证跨步骤、跨轮次的起点/目的地/已确认选择不丢失。
+- **工具轨迹**：核心工具、MCP、知识库检索、Skill/子代理调用都经 `tool_instrumentation.py` 包装成 `tool_step` / `rag_step` 事件推送 SSE，前端据此叠加渲染“检索与调用轨迹”。
+
 ## OpenCLI Skill 详解
 
 ### 为什么用 Skill 封装
@@ -220,7 +303,7 @@ agent_workspace/skills/opencli/
 2. 按意图、站点、`access`、`strategy` 和 `browser` 字段筛选，不把整个 registry 放入上下文。
 3. 读取 `opencli <site-or-app> --help -f yaml` 和具体命令的 `--help -f yaml`。
 4. 浏览器任务使用一个独立命名 session：先 `open/bind`，再读 `state`，使用返回的 refs 做一次交互，再读 `state` 验证。
-5. 下载、导出、截图和缓存必须写入当前 `backend/tmp/<session-key>/`，并向主 Agent 返回相对路径。
+5. 下载、导出、截图和缓存必须写入当前 `agent_workspace/sessions/<session-key>/`，并向主 Agent 返回相对路径。
 6. 使用 `-f json` 执行并验证退出码和结果结构，最后报告实际命令、access 级别、验证结果和生成文件。
 
 示例（手动诊断）：
@@ -268,6 +351,7 @@ Windows 下 URL 中的 `&` 是 `cmd.exe` 的命令分隔符；通过 Bash 执行
 | `backend/routes_documents.py` | 文档上传、列表、删除；扩展名/文件名/50MB 校验、staging、解析和 Milvus 写入。 |
 | `backend/routes_config.py` | MCP/Skill 增删、配置刷新和主 Agent 热重载。 |
 | `backend/routes_sessions.py` | 历史会话列表、消息读取和会话删除；删除时同步清理会话工作区。 |
+| `backend/routes_runs.py` | 工作流状态、检查点历史、人工恢复和回滚/分叉 API。 |
 | `backend/routes_artifacts.py` | Artifact 列表和 HMAC token 校验后的安全下载。 |
 | `backend/encoding_utils.py` | Windows stdout/stderr 编码保护和安全打印，减少中文/emoji 引起的 GBK 日志错误。 |
 
@@ -283,6 +367,9 @@ Windows 下 URL 中的 `&` 是 `cmd.exe` 的命令分隔符；通过 Bash 执行
 | `backend/bash_tool.py` | Bash 权限判定和执行入口；实现 deny/authorize/allow/default-deny、OpenCLI 访问级别和审计。 |
 | `backend/local_runtime_service.py` | 在会话临时目录启动单条本地命令，设置 TMP/TEMP、超时、输出长度和环境变量过滤。 |
 | `backend/runtime_context.py` | 当前 user/session 上下文、会话目录键、异步锁和会话目录删除。 |
+| `backend/workflow_graph.py` | 可持久化的规划、步骤事务、验证、补偿、人工恢复和结束状态图。 |
+| `backend/checkpoint_service.py` | 管理 SQLite checkpointer、run 索引、状态历史、恢复和 time travel。 |
+| `backend/workspace_transaction.py` | 步骤级 staging、快照、提交、补偿回滚与幂等工具回执。 |
 | `backend/subagents.py` | 懒加载 `skills_specialist`，提供 `load_subagent` 和 `delegate_to_skill_agent` 两个主 Agent 网关。 |
 | `backend/tool_instrumentation.py` | 为工具增加调用开始/结果/错误/上限事件，并把事件推送给 SSE。 |
 | `backend/search_tool.py` | `search_knowledge_base` 知识库检索工具与检索状态格式化。 |
@@ -335,6 +422,7 @@ Windows 下 URL 中的 `&` 是 `cmd.exe` 的命令分隔符；通过 Bash 执行
 | `frontend/css/workspace.css` | 页面外壳、侧栏、顶部栏和工作区布局。 |
 | `frontend/css/chat.css` | 消息、输入框、流式回答和聊天列表。 |
 | `frontend/css/trace-composer.css` | RAG/工具步骤、引用和 trace 卡片。 |
+| `frontend/css/context.css` | 对话页右侧任务进度、引用来源和运行指标面板。 |
 | `frontend/css/panels.css` | 知识库、配置中心、表格和卡片面板。 |
 | `frontend/css/overlays.css` | toast、弹层、历史抽屉等覆盖层。 |
 | `frontend/css/responsive.css` | 移动端和窄屏布局适配。 |
@@ -387,9 +475,8 @@ description: What it does and when the specialist should use it.
 | `data/bash_audit.json` | Bash 权限决策、规则、命令摘要、用户/session 和退出码。 | 否。 |
 | `backend/config.json` | Skills catalog、Bash 权限、发现时间和 Skill 错误。 | 可提交默认模板；运行时会更新。 |
 | `backend/mcp_servers.json` | MCP server 配置和发现摘要；敏感值仅使用环境变量占位符。 | 可提交非敏感配置，生产密钥不得写入。 |
-| `backend/tmp/<session-key>/` | 每个会话的脚本、下载、缓存和中间文件；其中 `deliverables/` 子目录存放交付给用户的最终产物。 | 否。 |
-| `backend/tmp/.gitkeep` | 保留会话临时目录的空目录占位文件。 |
-| `backend/tmp/.artifact_signing_key` | 未配置 `ARTIFACT_SIGNING_KEY` 时自动生成的本地下载签名密钥。 | 否，必须备份或在生产显式配置。 |
+| `agent_workspace/sessions/<session-key>/` | 每个会话的脚本、下载、缓存和中间文件；其中 `deliverables/` 子目录存放交付给用户的最终产物。 | 否。 |
+| `agent_workspace/sessions/.artifact_signing_key` | 未配置 `ARTIFACT_SIGNING_KEY` 时自动生成的本地下载签名密钥。 | 否，必须备份或在生产显式配置。 |
 | `volumes/` | Docker 的 etcd、MinIO、Milvus 数据卷。 | 否。 |
 
 ## 部署前置条件
@@ -442,9 +529,9 @@ Copy-Item .env.example .env
 
 ```dotenv
 CHAT_API_KEY=你的对话模型Key
-CHAT_MODEL=deepseek-v4-flash
-CHAT_BASE_URL=https://api.deepseek.com
 ```
+
+`CHAT_MODEL` 和 `CHAT_BASE_URL` 已有可用默认值，仅在切换模型或服务商时覆盖。`.env.example` 只保留必填凭据、可选集成和少量常用覆盖项；完整默认值集中在 `backend/settings.py`。
 
 生产环境还应设置一枚长随机字符串：
 
@@ -578,6 +665,8 @@ Invoke-RestMethod http://127.0.0.1:8080/documents
 | `PLAN_EXECUTE_ENABLED` | `true` | 为多步骤任务启用“规划 → 执行 → 反省调整”模式；简单问答仍走单次直答。 |
 | `PLAN_EXECUTE_MAX_STEPS` | `6` | 单次任务最多拆解/执行的子任务步数上限。 |
 | `PLAN_EXECUTE_RESULT_MAX_CHARS` | `3000` | 反省时注入“上一步结果”的字符上限。 |
+| `WORKFLOW_CHECKPOINT_PATH` | `data/workflow_checkpoints.sqlite` | LangGraph SQLite 检查点数据库。 |
+| `WORKFLOW_MAX_RETRIES` | `4` | 瞬时基础设施错误的自动重试上限；按 1、2、4、8 秒基准退避，并增加 0–25% 随机扰动。 |
 | `DASHSCOPE_MCP_API_KEY` | 空 | 高德地图 MCP 的授权 Key。 |
 | `MCP_DISCOVERY_TIMEOUT` | `30` | 单个 MCP server 工具发现超时（秒）。 |
 | `EMBEDDING_MODEL` | `BAAI/bge-m3` | dense embedding 模型。 |
@@ -600,12 +689,12 @@ Invoke-RestMethod http://127.0.0.1:8080/documents
 | `OPENCLI_SESSION` | `lcagent` | OpenCLI 浏览器 session 名称。 |
 | `OPENCLI_TIMEOUT` | `75` | OpenCLI 单次命令超时（秒）。 |
 | `OPENCLI_OUTPUT_MAX_CHARS` | `12000` | OpenCLI 输出截断上限。 |
-| `BACKEND_TMP_DIR` | `backend/tmp` | 会话临时目录根。 |
+| `BACKEND_TMP_DIR` | `agent_workspace/sessions` | 会话临时目录根。 |
 | `AGENT_SKILLS_DIR` | `agent_workspace/skills` | Skill 包根目录。 |
 | `SKILL_CATALOG_MAX_CHARS` | `8000` | 注入 Skills subagent 的 catalog 上限。 |
 | `SKILL_CONTENT_MAX_CHARS` | `60000` | 单次 Skill 正文/资源读取上限。 |
 | `WORKSPACE_FILE_MAX_CHARS` | `50000` | 单个文本文件读写上限。 |
-| `ARTIFACT_SIGNING_KEY` | 空 | Artifact 下载 HMAC key；为空时在 `backend/tmp/.artifact_signing_key` 自动生成。 |
+| `ARTIFACT_SIGNING_KEY` | 空 | Artifact 下载 HMAC key；为空时在 `agent_workspace/sessions/.artifact_signing_key` 自动生成。 |
 | `LOCAL_RUN_TIMEOUT` | `120` | 本地命令超时（秒）。 |
 | `LOCAL_RUN_OUTPUT_MAX_CHARS` | `20000` | 本地命令 stdout/stderr 上限。 |
 | `LOCAL_RUN_COMMAND_MAX_CHARS` | `8000` | 单条命令长度上限。 |
@@ -637,9 +726,15 @@ Invoke-RestMethod http://127.0.0.1:8080/documents
 | `DELETE` | `/documents/{filename}` | 删除同名 Milvus 向量和父块；当前接口不会自动删除 `data/documents` 下的原始文件。 |
 | `GET` | `/sessions/{user_id}` | 获取用户会话列表。 |
 | `GET` | `/sessions/{user_id}/{session_id}` | 获取会话消息、RAG trace 和历史 Artifact 清单。 |
-| `DELETE` | `/sessions/{user_id}/{session_id}` | 删除会话历史及 `backend/tmp` 对应目录。 |
+| `DELETE` | `/sessions/{user_id}/{session_id}` | 删除会话历史及 `agent_workspace/sessions` 对应目录。 |
 | `GET` | `/sessions/{user_id}/{session_id}/artifacts` | 使用 SSE 返回的 token 列出当前会话 `deliverables/` 最终产物。 |
 | `GET` | `/sessions/{user_id}/{session_id}/artifacts/{path}` | 使用 HMAC token 下载会话文件。 |
+| `GET` | `/runs` | 按可选 `user_id/session_id` 查询持久化工作流运行。 |
+| `GET` | `/runs/{run_id}` | 获取当前工作流状态。 |
+| `GET` | `/runs/{run_id}/checkpoints` | 获取该运行的检查点历史。 |
+| `POST` | `/runs/{run_id}/resume` | 使用 `retry/modify/skip/abort` 恢复人工中断的运行。 |
+| `POST` | `/runs/{run_id}/fork` | 从指定检查点更新状态，可选继续执行。 |
+| `POST` | `/runs/{run_id}/rollback` | `/fork` 的显式回滚别名。 |
 | `GET` | `/runtime-config` | 查看脱敏后的 Skills、MCP、发现状态和 Bash 规则。 |
 | `POST` | `/runtime-config/refresh` | 重新扫描 Skills、重新发现 MCP 并热重载主 Agent。 |
 | `POST` | `/runtime-config/mcp` | 新增或更新 MCP server。 |
@@ -743,7 +838,7 @@ uv run python -m unittest discover -s backend/tests -p "test_*.py" -v
 - 新工具必须经过 `tool_instrumentation.py`，错误不能静默丢弃。
 - 新 Skill 必须有有效 YAML frontmatter，并通过 `skill_service.py` 的精确名称加载。
 - 业务代码不硬编码密钥；所有外部凭据走 `.env` 或受控的 MCP 环境变量占位符。
-- `data/`、`volumes/`、`.env`、`.venv/`、`backend/tmp/` 和运行日志不提交版本库。
+- `data/`、`volumes/`、`.env`、`.venv/`、`agent_workspace/sessions/` 和运行日志不提交版本库。
 - 修改前端后同时更新对应 JS/CSS 模块，不把业务逻辑重新堆回 `index.html`。
 
 ## 版本与维护提示

@@ -1,7 +1,7 @@
 """mem0 长期记忆服务 — 让主 Agent 具备跨会话的持久记忆（本地存储）。
 
 本模块封装 mem0 (mem0ai 2.0.x) 的 Memory 实例，提供：
-- 自动记忆：把用户消息 + Agent 回复蒸馏成结构化事实并持久化（LLM 抽取，语义去重）。
+- 选择性记忆：只把跨会话仍有价值的用户信息持久化（LLM 抽取，语义去重）。
 - 上下文召回：对话开始前按当前问题检索相关记忆，注入 Agent 上下文。
 - 手动管理：列出 / 新增 / 更新 / 删除记忆，供前端“记忆”面板调用。
 
@@ -17,8 +17,8 @@ import mem0 之前设置 MEM0_DIR 与 MEM0_TELEMETRY 环境变量，保证“本
 from __future__ import annotations
 
 import os
+import re
 import threading
-from typing import Any, Dict, List, Optional
 
 from settings import (
     CHAT_API_KEY,
@@ -46,6 +46,61 @@ _init_lock = threading.Lock()  # 保证 Memory 只初始化一次（加载本地
 _call_lock = threading.Lock()  # 串行化对 mem0 的调用（Qdrant 本地模式非线程安全）
 _initialized = False
 _init_error = None
+
+
+# 这些指令会交给 mem0 的抽取模型做第二道判断。原版默认 prompt
+# 会把“正在找一家餐厅”等一次性意图也当作记忆，不符合长期记忆的边界。
+LONG_TERM_MEMORY_INSTRUCTIONS = """
+Only extract durable, user-specific information that is likely to remain useful in future,
+unrelated conversations. Good memories include stable identity/profile facts, enduring
+preferences, recurring working habits, accessibility or dietary needs, long-running goals,
+and explicit instructions about how the user wants future conversations handled.
+
+Return no facts for the current request, task details, code/content being discussed,
+one-off plans, temporary status, recent events, questions, general knowledge, assistant
+responses, tool results, or information that is only useful inside the current session.
+Never store passwords, API keys, tokens, cookies, private keys, or other credentials.
+When durability is uncertain, return an empty facts list. Extract facts only from the user.
+""".strip()
+
+_SENSITIVE_MEMORY_RE = re.compile(
+    r"(?i)(api[ _-]?key|access[ _-]?token|\btoken\b|authorization|bearer|"
+    r"password|passwd|secret|cookie|密码|口令|令牌|密钥|授权码|私钥|助记词)"
+)
+_EXPLICIT_MEMORY_RE = re.compile(
+    r"(?i)(请?记住|请?记下|长期记忆|从今往后|以后.{0,16}(?:都|请|要|不要)|"
+    r"remember (?:that|this|my)|from now on|always .{0,24}(?:reply|respond|use|avoid))"
+)
+_TRANSIENT_MEMORY_RE = re.compile(
+    r"(?i)(今天|昨天|明天|刚才|现在|当前|这次|本次|本轮|暂时|临时|"
+    r"today|yesterday|tomorrow|right now|currently|this time|temporary|temporarily)"
+)
+_DURABLE_MEMORY_RE = re.compile(
+    r"(?i)("
+    r"(?:我|本人)(?:叫|是|住在|来自|从事|任职|喜欢|偏好|习惯|通常|一直|不喜欢|不吃|患有)|"
+    r"我的(?:名字|职业|工作|职位|公司|团队|项目|技术栈|母语|时区|所在地|偏好|习惯|长期目标|忌口|过敏)|"
+    r"我对.{0,20}过敏|"
+    r"(?:回答|回复|输出|报告|代码).{0,20}(?:一律|默认|始终)|"
+    r"\b(?:my name is|i am|i'm|i live|i work|i prefer|i like|i dislike|"
+    r"i always|i never|i am allergic|i'm allergic)\b"
+    r")"
+)
+
+
+def is_long_term_memory_candidate(user_message: str) -> bool:
+    """Conservatively decide whether a turn merits long-term extraction.
+
+    Same-session continuity is handled by ``ConversationStorage``; this gate is only for
+    cross-session memory. False negatives are preferable to filling memory with task noise.
+    """
+    text = (user_message or "").strip()
+    if not text or _SENSITIVE_MEMORY_RE.search(text):
+        return False
+    if _EXPLICIT_MEMORY_RE.search(text):
+        return True
+    if _TRANSIENT_MEMORY_RE.search(text):
+        return False
+    return bool(_DURABLE_MEMORY_RE.search(text))
 
 
 def _build_config():
@@ -81,6 +136,7 @@ def _build_config():
         },
         "history_db_path": str(MEM0_DIR / "history.db"),
         "version": "v1.1",
+        "custom_instructions": LONG_TERM_MEMORY_INSTRUCTIONS,
     }
 
 
@@ -92,7 +148,7 @@ def init_memory():
         if _memory is not None:
             return _memory
         try:
-            from mem0 import Memory  # noqa: PLC0415
+            from mem0 import Memory
 
             MEM0_DIR.mkdir(parents=True, exist_ok=True)
             # 本地化加载 BGE 模型时临时强制离线，避免 sentence-transformers
@@ -133,7 +189,11 @@ def search_for_context(query, user_id, top_k=None):
     limit = top_k or MEM0_TOP_K
     with _call_lock:
         result = memory.search(query, filters={"user_id": user_id}, top_k=limit)
-    return [item.get("memory", "") for item in result.get("results", []) if item.get("memory")]
+    return [
+        item.get("memory", "")
+        for item in result.get("results", [])
+        if item.get("memory")
+    ]
 
 
 def get_all(user_id, top_k=100):
@@ -155,13 +215,16 @@ def add_memory(text, user_id, metadata=None, infer=False):
     return result
 
 
-def remember_conversation(user_id, user_message, assistant_message, session_id=None):
+def remember_conversation(user_id, user_message, session_id=None):
+    if not is_long_term_memory_candidate(user_message):
+        return {"results": [], "skipped": True, "reason": "not_long_term"}
+
     memory = init_memory()
-    messages = [
-        {"role": "user", "content": user_message},
-        {"role": "assistant", "content": assistant_message},
-    ]
-    metadata = {"session_id": session_id} if session_id else None
+    # 长期记忆只描述用户；Agent 回复只属于当前会话上下文。
+    messages = [{"role": "user", "content": user_message}]
+    metadata = {"source": "automatic", "scope": "long_term"}
+    if session_id:
+        metadata["session_id"] = session_id
     with _call_lock:
         result = memory.add(messages, user_id=user_id, metadata=metadata, infer=True)
     return result

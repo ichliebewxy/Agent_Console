@@ -18,7 +18,12 @@ from langchain_core.tools import tool
 
 from bash_tool import bash
 from bash_tool import review_bash_command
-from runtime_context import current_runtime_context, session_async_lock, session_files_dir
+from runtime_context import (
+    active_workspace_dir,
+    current_runtime_context,
+    session_async_lock,
+    session_files_dir,
+)
 from settings import WORKSPACE_FILE_MAX_CHARS
 
 
@@ -31,7 +36,7 @@ def _safe_path(relative_path: str, root: Path | None = None) -> Path:
 
 
 def _workspace() -> Path:
-    return session_files_dir(create=True).resolve()
+    return active_workspace_dir(create=True).resolve()
 
 
 def _read(path: str, limit: int | None, workspace: Path) -> str:

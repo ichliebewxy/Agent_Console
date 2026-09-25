@@ -1,40 +1,38 @@
 :root {
-  /* ── Aurora / Nebula 配色 ───────────────────────────── */
-  --bg: oklch(95.8% 0.012 152);
-  --surface: oklch(99.2% 0.004 148);
-  --surface-soft: oklch(97.2% 0.008 148);
-  --surface-raised: oklch(100% 0 0);
-  --ink: oklch(21% 0.02 162);
-  --muted: oklch(48% 0.024 158);
-  --line: oklch(90.5% 0.012 150);
-  --line-strong: oklch(82% 0.02 150);
+  /* ── 参考稿的克制型本地智能配色 ─────────────────────── */
+  --bg: #f2f6f4;
+  --surface: #ffffff;
+  --surface-soft: #f7faf8;
+  --surface-raised: #ffffff;
+  --ink: #17231f;
+  --muted: #64736d;
+  --subtle: #8b9993;
+  --line: #dfe8e3;
+  --line-strong: #cad8d1;
 
-  --green: oklch(54% 0.115 163);
-  --green-dark: oklch(43% 0.1 166);
-  --teal: oklch(60% 0.105 197);
-  --blue: oklch(51% 0.105 238);
-  --coral: oklch(56% 0.14 37);
-  --amber: oklch(60% 0.12 76);
+  --green: #167a62;
+  --green-dark: #105c4b;
+  --teal: #4abf9c;
+  --blue: #3d6fe8;
+  --coral: #bf4b4b;
+  --amber: #b26918;
 
-  --success-bg: oklch(94% 0.035 158);
-  --danger-bg: oklch(95.5% 0.03 38);
-  --warning-bg: oklch(95.5% 0.038 80);
-  --info-bg: oklch(94.5% 0.026 232);
+  --success-bg: #f2fbf7;
+  --danger-bg: #fff3f1;
+  --warning-bg: #fff7e8;
+  --info-bg: #edf2ff;
 
   /* ── 渐变与发光 ─────────────────────────────────────── */
-  --accent-gradient: linear-gradient(135deg, oklch(58% 0.13 162) 0%, oklch(52% 0.115 196) 100%);
-  --accent-soft: linear-gradient(135deg, oklch(95.5% 0.028 162), oklch(94.5% 0.026 196));
-  --rail-gradient: linear-gradient(168deg, oklch(24% 0.03 168) 0%, oklch(19% 0.026 185) 58%, oklch(17% 0.02 205) 100%);
-  --danger-gradient: linear-gradient(135deg, oklch(58% 0.15 37), oklch(52% 0.13 20));
-  --code-bg: oklch(23% 0.018 205);
+  --accent-gradient: linear-gradient(135deg, #198168 0%, #126651 100%);
+  --accent-soft: linear-gradient(135deg, #edf8f3, #eef8f6);
+  --rail-gradient: linear-gradient(176deg, #19372e 0%, #122a25 55%, #10231f 100%);
+  --danger-gradient: linear-gradient(135deg, #c85a51, #a84242);
+  --code-bg: #182b2b;
 
   /* ── 阴影 ───────────────────────────────────────────── */
-  --shadow-sm: 0 1px 2px color-mix(in oklch, var(--ink) 5%, transparent),
-    0 2px 8px color-mix(in oklch, var(--ink) 5%, transparent);
-  --shadow-md: 0 2px 6px color-mix(in oklch, var(--ink) 6%, transparent),
-    0 12px 28px color-mix(in oklch, var(--ink) 8%, transparent);
-  --shadow-lg: 0 4px 10px color-mix(in oklch, var(--ink) 7%, transparent),
-    0 24px 56px color-mix(in oklch, var(--ink) 12%, transparent);
+  --shadow-sm: 0 1px 2px rgba(20, 43, 34, 0.04), 0 8px 24px rgba(20, 43, 34, 0.05);
+  --shadow-md: 0 18px 50px rgba(20, 43, 34, 0.1);
+  --shadow-lg: 0 24px 60px rgba(20, 43, 34, 0.14);
   --shadow: var(--shadow-md);
   --glow-accent: 0 6px 20px color-mix(in oklch, var(--green) 32%, transparent);
 
@@ -42,10 +40,11 @@
   --radius-sm: 8px;
   --radius: 12px;
   --radius-lg: 16px;
-  --radius-xl: 22px;
-  --topbar-h: 76px;
-  --rail-w: 264px;
-  --content-w: 940px;
+  --radius-xl: 20px;
+  --topbar-h: 72px;
+  --rail-w: 232px;
+  --context-w: 296px;
+  --content-w: 820px;
 
   /* ── 字体 ───────────────────────────────────────────── */
   --font-ui: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", system-ui, sans-serif;
@@ -74,6 +73,7 @@ html {
 
 body {
   margin: 0;
+  min-width: 320px;
   overflow: hidden;
   background: var(--bg);
   color: var(--ink);
@@ -126,18 +126,22 @@ a:focus-visible {
   grid-template-columns: var(--rail-w) 1fr;
 }
 
+.shell.has-context {
+  grid-template-columns: var(--rail-w) minmax(0, 1fr) var(--context-w);
+}
+
 /* ── 侧边导航轨 ─────────────────────────────────────── */
 .rail {
   position: relative;
   min-width: 0;
   min-height: 0;
   overflow-y: auto;
-  padding: 24px 16px;
+  padding: 20px 14px 16px;
   background: var(--rail-gradient);
   color: oklch(96% 0.014 142);
   display: flex;
   flex-direction: column;
-  gap: 26px;
+  gap: 0;
 }
 
 .rail::before {
@@ -158,50 +162,79 @@ a:focus-visible {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 2px 6px 16px;
-  border-bottom: 1px solid color-mix(in oklch, oklch(96% 0.014 142) 11%, transparent);
+  padding: 0 8px 22px;
 }
 
 .brand-mark {
-  width: 44px;
-  height: 44px;
+  width: 39px;
+  height: 39px;
   flex: 0 0 auto;
   border-radius: 13px;
-  background: var(--accent-gradient);
-  color: oklch(99% 0.005 160);
-  display: grid;
-  place-items: center;
-  font-family: var(--font-display);
-  font-weight: 700;
-  font-size: 0.98rem;
-  letter-spacing: 0.02em;
+  display: block;
+  object-fit: cover;
   box-shadow: 0 6px 18px color-mix(in oklch, var(--teal) 38%, transparent),
     inset 0 1px 0 color-mix(in oklch, white 30%, transparent);
 }
 
-.brand h1,
-.brand p {
+.brand h1 {
   margin: 0;
 }
 
 .brand h1 {
   font-family: var(--font-display);
-  font-size: 1.08rem;
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  font-size: 0.96rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
 }
 
-.brand p {
-  margin-top: 2px;
-  color: color-mix(in oklch, oklch(96% 0.014 142) 62%, transparent);
-  font-size: 0.74rem;
-  letter-spacing: 0.14em;
+.brand-copy small {
+  display: block;
+  margin-top: 3px;
+  color: rgba(237, 247, 243, 0.54);
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.new-chat {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  font-weight: 650;
+  transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+}
+
+.new-chat:hover {
+  background: rgba(255, 255, 255, 0.13);
+  border-color: rgba(255, 255, 255, 0.22);
+  transform: translateY(-1px);
+}
+
+.new-chat:active {
+  transform: scale(0.98);
+}
+
+.nav-label {
+  margin: 26px 10px 8px;
+  color: rgba(237, 247, 243, 0.42);
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
 .nav-list {
   display: grid;
-  gap: 6px;
+  gap: 5px;
 }
 
 .nav-list button,
@@ -222,7 +255,8 @@ a:focus-visible {
 .nav-list button {
   position: relative;
   width: 100%;
-  padding: 0 14px;
+  min-height: 44px;
+  padding: 0 12px;
   background: transparent;
   color: color-mix(in oklch, oklch(96% 0.014 142) 72%, transparent);
   justify-content: flex-start;
@@ -232,24 +266,23 @@ a:focus-visible {
 .nav-list button:hover {
   background: color-mix(in oklch, oklch(96% 0.014 142) 8%, transparent);
   color: oklch(99% 0.006 142);
+  transform: translateX(2px);
 }
 
 .nav-list button.active {
-  background: linear-gradient(90deg,
-      color-mix(in oklch, oklch(96% 0.014 142) 13%, transparent),
-      color-mix(in oklch, oklch(96% 0.014 142) 6%, transparent));
+  background: rgba(113, 220, 182, 0.14);
   color: oklch(99% 0.006 142);
 }
 
 .nav-list button.active::before {
   content: "";
   position: absolute;
-  left: 0;
-  top: 9px;
-  bottom: 9px;
+  left: -14px;
+  top: 11px;
+  bottom: 11px;
   width: 3px;
-  border-radius: 999px;
-  background: linear-gradient(180deg, oklch(78% 0.14 165), oklch(66% 0.13 195));
+  border-radius: 0 3px 3px 0;
+  background: #72d6b7;
   box-shadow: 0 0 12px color-mix(in oklch, var(--teal) 60%, transparent);
 }
 
@@ -263,10 +296,66 @@ a:focus-visible {
   transition: color 0.16s ease;
 }
 
+.nav-badge {
+  min-width: 21px;
+  height: 21px;
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.1);
+  display: grid;
+  place-items: center;
+  font-size: 0.67rem;
+  font-weight: 700;
+}
+
 .rail-actions {
   margin-top: auto;
   display: grid;
   gap: 10px;
+}
+
+.runtime-card {
+  padding: 13px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.runtime-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.runtime-head span {
+  color: rgba(237, 247, 243, 0.68);
+  font-size: 0.75rem;
+}
+
+.runtime-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #70dab7;
+  box-shadow: 0 0 0 5px rgba(112, 218, 183, 0.1);
+}
+
+.runtime-card strong,
+.runtime-card small {
+  display: block;
+}
+
+.runtime-card strong {
+  margin-top: 9px;
+  font-size: 0.8rem;
+}
+
+.runtime-card small {
+  margin-top: 3px;
+  color: rgba(237, 247, 243, 0.43);
+  font-size: 0.69rem;
 }
 
 .secondary-action,
@@ -283,6 +372,10 @@ a:focus-visible {
 
 .danger-action {
   color: oklch(85% 0.07 35);
+  min-height: 38px;
+  border-color: transparent;
+  background: transparent;
+  font-size: 0.78rem;
 }
 
 .danger-action:hover {
