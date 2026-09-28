@@ -1,5 +1,6 @@
 """LangChain main-agent construction, chat execution, and streaming."""
 import asyncio
+import hashlib
 import json
 from uuid import uuid4
 
@@ -82,7 +83,8 @@ async def init_agent_async():
 
 def summarize_old_messages(chat_model, messages: list) -> str:
     old_conversation = "\n".join(
-        f"{'用户' if msg.type == 'human' else 'AI'}: {msg.content}" for msg in messages
+        f"{'用户' if msg.type == 'human' else '摘要' if msg.type == 'system' else 'AI'}: {msg.content}"
+        for msg in messages
     )
     prompt = f"请总结以下对话的关键信息：\n\n{old_conversation}\n总结："
     return chat_model.invoke(prompt).content
@@ -129,20 +131,51 @@ def _messages_from_history(history: list | None) -> list:
     return messages
 
 
-def _prepare_messages(user_text: str, user_id: str, session_id: str):
-    """加载历史并返回 (完整消息序列, 本轮之前的历史)。
+def _history_digest(history: list) -> str:
+    payload = json.dumps(_serialize_history(history), ensure_ascii=False, sort_keys=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
-    完整消息序列末尾追加当前用户输入，用于简单问答直接回答。历史单独返回，
-    便于序列化后随工作流状态传给规划器与步骤执行器，避免多轮上下文丢失。
-    """
-    history = storage.load(user_id, session_id)
+
+def _prepare_messages(user_text: str, user_id: str, session_id: str):
+    """Return the model context and the untouched persisted history."""
+    raw_history = storage.load(user_id, session_id)
     get_last_rag_context(clear=True)
     reset_tool_call_guards()
-    if len(history) > 50:
-        summary = summarize_old_messages(model, history[:40])
-        history = [SystemMessage(content=f"之前的对话摘要：\n{summary}")] + history[40:]
-    messages = [*history, HumanMessage(content=user_text)]
-    return messages, history
+    model_history = raw_history
+    if len(raw_history) > 50:
+        covered_count = len(raw_history) - 12
+        cached = storage.load_context_summary(user_id, session_id)
+        try:
+            cached_count = int(cached.get("covered_count", 0)) if cached else 0
+        except (TypeError, ValueError):
+            cached_count = 0
+        cache_valid = (
+            0 < cached_count <= covered_count
+            and isinstance(cached.get("text"), str)
+            and cached.get("source_digest") == _history_digest(raw_history[:cached_count])
+        )
+        if cache_valid and cached_count == covered_count:
+            summary = cached["text"]
+        else:
+            to_summarize = raw_history[:covered_count]
+            if cache_valid:
+                to_summarize = [
+                    SystemMessage(content=f"已有摘要：\n{cached['text']}"),
+                    *raw_history[cached_count:covered_count],
+                ]
+            summary = summarize_old_messages(model, to_summarize)
+            storage.save_context_summary(
+                user_id,
+                session_id,
+                {
+                    "text": summary,
+                    "covered_count": covered_count,
+                    "source_digest": _history_digest(raw_history[:covered_count]),
+                },
+            )
+        model_history = [SystemMessage(content=f"之前的对话摘要：\n{summary}"), *raw_history[covered_count:]]
+    messages = [*model_history, HumanMessage(content=user_text)]
+    return messages, raw_history
 
 
 def _format_memory_context(memories: list) -> str:
@@ -286,7 +319,7 @@ async def _chat_with_agent_locked(user_text: str, user_id: str, session_id: str)
     if agent is None:
         raise RuntimeError("主 Agent 尚未初始化，请先等待 init_agent_async() 完成。")
     with bind_runtime_context(user_id, session_id):
-        messages, history = _prepare_messages(user_text, user_id, session_id)
+        messages, raw_history = _prepare_messages(user_text, user_id, session_id)
         # 记忆只注入本轮调用，不随 messages 一起持久化，避免逐轮累积脏上下文。
         invoke_messages = await _augment_with_memory(user_text, user_id, messages)
 
@@ -299,7 +332,7 @@ async def _chat_with_agent_locked(user_text: str, user_id: str, session_id: str)
                 user_id,
                 session_id,
                 user_text,
-                history=_serialize_history(history),
+                history=_serialize_history(messages[:-1]),
             )
             # The turn lock covers history loading, workflow mutations and
             # response persistence for this session.
@@ -340,7 +373,7 @@ async def _chat_with_agent_locked(user_text: str, user_id: str, session_id: str)
         _persist_response(
             user_id,
             session_id,
-            messages,
+            [*raw_history, HumanMessage(content=user_text)],
             response,
             rag_trace,
             artifacts,
@@ -389,7 +422,7 @@ async def _chat_with_agent_stream_bound(
 ):
     if agent is None:
         raise RuntimeError("主 Agent 尚未初始化，请先等待 init_agent_async() 完成。")
-    messages, history = _prepare_messages(user_text, user_id, session_id)
+    messages, raw_history = _prepare_messages(user_text, user_id, session_id)
     # 记忆只注入本轮调用，不随 messages 一起持久化。
     invoke_messages = await _augment_with_memory(user_text, user_id, messages)
 
@@ -458,7 +491,7 @@ async def _chat_with_agent_stream_bound(
                 user_id,
                 session_id,
                 user_text,
-                history=_serialize_history(history),
+                history=_serialize_history(messages[:-1]),
             )
             async for event in stream_workflow_events(initial):
                 if event.get("type") == "content":
@@ -512,7 +545,7 @@ async def _chat_with_agent_stream_bound(
     _persist_response(
         user_id,
         session_id,
-        messages,
+        [*raw_history, HumanMessage(content=user_text)],
         full_response,
         rag_trace,
         artifacts,
