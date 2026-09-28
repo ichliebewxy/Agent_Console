@@ -9,9 +9,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-from runtime_context import session_files_dir, workflow_step_dir
+import runtime_context
+from runtime_context import _session_root_dir, session_files_dir, workflow_step_dir
 
-_RESERVED_SESSION_DIRS = {"runs"}
+_RESERVED_SESSION_DIRS = {"runs", ".versions", ".active_version.json"}
 
 
 def _utc_now() -> str:
@@ -47,24 +48,17 @@ def _copy_tree_contents(source: Path, destination: Path, *, skip_reserved: bool)
             shutil.copy2(child, target)
 
 
-def _clear_visible_workspace(root: Path) -> None:
-    for child in root.iterdir():
-        if child.name in _RESERVED_SESSION_DIRS:
-            continue
-        if child.is_dir():
-            shutil.rmtree(child)
-        else:
-            child.unlink(missing_ok=True)
-
-
 def _write_json(path: Path, value: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
-    temporary.write_text(
-        json.dumps(value, ensure_ascii=False, indent=2, default=str),
-        encoding="utf-8",
-    )
-    os.replace(temporary, path)
+    try:
+        with temporary.open("w", encoding="utf-8") as handle:
+            json.dump(value, handle, ensure_ascii=False, indent=2, default=str)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def _read_json(path: Path) -> dict:
@@ -75,11 +69,75 @@ def _read_json(path: Path) -> dict:
         return {}
 
 
+def _active_version(session_root: Path) -> str | None:
+    return _read_json(session_root / ".active_version.json").get("version")
+
+
+def _publish_version(session_root: Path, source: Path, version: str) -> None:
+    """Build an invisible version, then atomically select it by one manifest replace."""
+    versions = session_root / ".versions"
+    if versions.is_symlink():
+        raise RuntimeError("Refusing to use a linked workspace version directory.")
+    versions.mkdir(parents=True, exist_ok=True)
+    candidate = versions / version
+    _reset_dir(candidate, versions)
+    _copy_tree_contents(source, candidate, skip_reserved=False)
+    _write_json(session_root / ".active_version.json", {"version": version})
+
+
+def _recover_incomplete_commit(session_root: Path, step_root: Path) -> dict:
+    metadata_path = step_root / "transaction.json"
+    metadata = _read_json(metadata_path)
+    if metadata.get("status") != "committing":
+        return metadata
+    version = metadata.get("candidate_version")
+    if not isinstance(version, str) or len(version) != 32 or any(c not in "0123456789abcdef" for c in version):
+        raise RuntimeError("Invalid pending workspace version.")
+    if _active_version(session_root) == version:
+        # Manifest replacement was the commit point; a crash after it must be
+        # finalized, never silently rolled back to a partially changed tree.
+        metadata["status"] = "committed"
+        metadata["receipt"] = metadata["pending_receipt"]
+    else:
+        candidate = session_root / ".versions" / version
+        if candidate.exists():
+            shutil.rmtree(_ensure_internal(candidate, session_root / ".versions"))
+        committed = step_root / "committed"
+        if committed.exists():
+            shutil.rmtree(_ensure_internal(committed, step_root))
+        metadata["status"] = "begun"
+    metadata.pop("candidate_version", None)
+    metadata.pop("pending_receipt", None)
+    _write_json(metadata_path, metadata)
+    return metadata
+
+
+def recover_workspace_transactions() -> None:
+    """Resolve interrupted commits before the API begins serving workspaces."""
+    base = runtime_context.BACKEND_TMP_DIR
+    if not base.exists():
+        return
+    for session_root in base.iterdir():
+        if not session_root.is_dir() or session_root.is_symlink():
+            continue
+        runs = session_root / "runs"
+        if not runs.is_dir():
+            continue
+        for metadata_path in runs.glob("*/steps/*/transaction.json"):
+            step_root = metadata_path.parent
+            if not step_root.resolve().is_relative_to(runs.resolve()):
+                continue
+            if _read_json(metadata_path).get("status") == "committing":
+                _recover_incomplete_commit(session_root, step_root)
+
+
 def begin_step_transaction(user_id: str, session_id: str, run_id: str, step_id: str) -> dict:
     session_root = session_files_dir(user_id, session_id, create=True)
     step_root = workflow_step_dir(user_id, session_id, run_id, step_id, create=True)
     metadata_path = step_root / "transaction.json"
-    existing = _read_json(metadata_path)
+    existing = _recover_incomplete_commit(
+        _session_root_dir(user_id, session_id), step_root
+    )
     # A compensated, uncommitted step keeps its private staging tree. Reusing
     # it on recovery keeps persisted tool receipts consistent with the files
     # they describe and avoids replaying already-completed side effects.
@@ -104,22 +162,17 @@ def begin_step_transaction(user_id: str, session_id: str, run_id: str, step_id: 
 
 
 def commit_step_transaction(user_id: str, session_id: str, run_id: str, step_id: str) -> dict:
-    session_root = session_files_dir(user_id, session_id, create=True)
+    session_root = _session_root_dir(user_id, session_id, create=True)
     step_root = workflow_step_dir(user_id, session_id, run_id, step_id, create=True)
     metadata_path = step_root / "transaction.json"
-    metadata = _read_json(metadata_path)
+    metadata = _recover_incomplete_commit(session_root, step_root)
     if metadata.get("status") == "committed":
         return metadata.get("receipt") or {}
 
     staging = step_root / "staging"
     if not staging.exists():
         raise RuntimeError("Workflow staging directory is missing.")
-    _clear_visible_workspace(session_root)
-    _copy_tree_contents(staging, session_root, skip_reserved=False)
-
-    committed = step_root / "committed"
-    _reset_dir(committed, step_root)
-    _copy_tree_contents(staging, committed, skip_reserved=False)
+    version = uuid4().hex
     receipt = {
         "operation_key": f"{run_id}:{step_id}:workspace_commit",
         "kind": "workspace_commit",
@@ -127,20 +180,36 @@ def commit_step_transaction(user_id: str, session_id: str, run_id: str, step_id:
         "committed_at": _utc_now(),
         "snapshot_id": metadata.get("snapshot_id"),
     }
-    metadata.update({"status": "committed", "receipt": receipt})
+    metadata.update({"status": "committing", "candidate_version": version, "pending_receipt": receipt})
     _write_json(metadata_path, metadata)
+    try:
+        committed = step_root / "committed"
+        _reset_dir(committed, step_root)
+        _copy_tree_contents(staging, committed, skip_reserved=False)
+        _publish_version(session_root, committed, version)
+    except Exception:
+        _recover_incomplete_commit(session_root, step_root)
+        raise
+    metadata.update({"status": "committed", "receipt": receipt})
+    metadata.pop("candidate_version", None)
+    metadata.pop("pending_receipt", None)
+    try:
+        _write_json(metadata_path, metadata)
+    except OSError:
+        # The manifest already selected the complete version. Finish the
+        # journal from its durable committing record before returning.
+        _recover_incomplete_commit(session_root, step_root)
     return receipt
 
 
 def rollback_step_transaction(user_id: str, session_id: str, run_id: str, step_id: str) -> dict:
-    session_root = session_files_dir(user_id, session_id, create=True)
+    session_root = _session_root_dir(user_id, session_id, create=True)
     step_root = workflow_step_dir(user_id, session_id, run_id, step_id, create=True)
     metadata_path = step_root / "transaction.json"
-    metadata = _read_json(metadata_path)
+    metadata = _recover_incomplete_commit(session_root, step_root)
     if metadata.get("status") == "committed":
         snapshot = step_root / "snapshot"
-        _clear_visible_workspace(session_root)
-        _copy_tree_contents(snapshot, session_root, skip_reserved=False)
+        _publish_version(session_root, snapshot, uuid4().hex)
     metadata.update({"status": "rolled_back", "rolled_back_at": _utc_now()})
     _write_json(metadata_path, metadata)
     return {
@@ -159,13 +228,12 @@ def restore_step_version(
     *,
     committed: bool,
 ) -> None:
-    session_root = session_files_dir(user_id, session_id, create=True)
+    session_root = _session_root_dir(user_id, session_id, create=True)
     step_root = workflow_step_dir(user_id, session_id, run_id, step_id, create=False)
     source = step_root / ("committed" if committed else "snapshot")
     if not source.exists():
         raise FileNotFoundError(f"Workspace version is unavailable for step {step_id}.")
-    _clear_visible_workspace(session_root)
-    _copy_tree_contents(source, session_root, skip_reserved=False)
+    _publish_version(session_root, source, uuid4().hex)
 
 
 def load_tool_receipt(user_id: str, session_id: str, run_id: str, step_id: str, operation_key: str) -> dict | None:
