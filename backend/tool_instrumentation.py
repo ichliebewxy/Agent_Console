@@ -9,6 +9,7 @@ from agent_state import bind_tool_call_id, consume_tool_call_budget, record_tool
 from event_stream import emit_tool_step
 from runtime_context import current_runtime_context
 from settings import AGENT_TOOL_CALL_LIMIT
+from tool_result import is_error_result
 from workspace_transaction import load_tool_receipt, save_tool_receipt
 
 
@@ -160,18 +161,7 @@ def _replay_or_unknown(tool_name: str, call_id: str, kwargs: dict, operation_key
 
 
 def _result_phase(result) -> str:
-    error_prefixes = (
-        "TOOL_ERROR:",
-        "OPENCLI_ERROR:",
-        "SPECIALIST_ERROR:",
-        "SKILL_ERROR:",
-        "WORKSPACE_ERROR:",
-        "LOCAL_RUNTIME_ERROR:",
-        "PERMISSION_DENIED:",
-    )
-    if isinstance(result, str) and result.startswith(error_prefixes):
-        return "error"
-    return "result"
+    return "error" if is_error_result(result) else "result"
 
 
 def instrument_tool(tool_obj):

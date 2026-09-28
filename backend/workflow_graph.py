@@ -13,6 +13,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 from runtime_context import bind_runtime_context
 from settings import PLAN_EXECUTE_MAX_STEPS, WORKFLOW_MAX_RETRIES
+from tool_result import contains_error_result
 from workflow_state import FLOW_VERSION, WorkflowState, utc_now
 from workspace_transaction import (
     begin_step_transaction,
@@ -22,17 +23,6 @@ from workspace_transaction import (
 
 StepExecutor = Callable[[str], Awaitable[dict]]
 
-_ERROR_PREFIXES = (
-    "TOOL_ERROR:",
-    "OPENCLI_ERROR:",
-    "SPECIALIST_ERROR:",
-    "SKILL_ERROR:",
-    "WORKSPACE_ERROR:",
-    "LOCAL_RUNTIME_ERROR:",
-    "PERMISSION_DENIED:",
-    "TOOL_CALL_LIMIT_REACHED:",
-    "UNKNOWN_EFFECT:",
-)
 _TRANSIENT_MARKERS = (
     "timeout",
     "timed out",
@@ -239,7 +229,7 @@ async def _validate_step(state: WorkflowState) -> dict:
     has_error = (
         not output
         or bool(failed_events)
-        or any(prefix in error_text for prefix in _ERROR_PREFIXES)
+        or contains_error_result(error_text)
     )
     if not has_error:
         result["validation"] = "success"
