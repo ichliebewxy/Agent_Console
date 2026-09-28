@@ -1,7 +1,15 @@
 """Milvus 客户端 - 支持密集向量+稀疏向量混合检索"""
 from threading import Lock
-from pymilvus import MilvusClient, DataType, AnnSearchRequest, RRFRanker
-from settings import MILVUS_COLLECTION, MILVUS_DENSE_DIM, MILVUS_HOST, MILVUS_PORT, MILVUS_TIMEOUT
+
+from pymilvus import AnnSearchRequest, DataType, MilvusClient, RRFRanker
+from settings import (
+    MILVUS_COLLECTION,
+    MILVUS_DENSE_DIM,
+    MILVUS_HOST,
+    MILVUS_PORT,
+    MILVUS_TIMEOUT,
+)
+
 
 class MilvusManager:
     """Milvus 连接和集合管理 - 支持混合检索"""
@@ -153,6 +161,7 @@ class MilvusManager:
                 filter=filter_expr,
                 output_fields=output_fields or ["filename", "file_type"],
                 limit=limit,
+                consistency_level="Strong",
                 timeout=self.timeout,
             )
         )
@@ -213,6 +222,7 @@ class MilvusManager:
                 ranker=reranker,
                 limit=top_k,
                 output_fields=output_fields,
+                consistency_level="Strong",
                 timeout=self.timeout,
             )
         )
@@ -234,6 +244,7 @@ class MilvusManager:
                 limit=top_k,
                 filter=filter_expr,
                 output_fields=output_fields,
+                consistency_level="Strong",
                 timeout=self.timeout,
             )
         )

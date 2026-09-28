@@ -1,6 +1,7 @@
 """Write document chunks to Milvus with dense and sparse embeddings."""
+from embedding import EmbeddingService
+from embedding import embedding_service as default_embedding_service
 from encoding_utils import safe_print
-from embedding import EmbeddingService, embedding_service as default_embedding_service
 from milvus_client import MilvusManager
 
 
@@ -44,6 +45,7 @@ class MilvusWriter:
                         "parent_chunk_id": doc.get("parent_chunk_id", ""),
                         "root_chunk_id": doc.get("root_chunk_id", ""),
                         "chunk_level": doc.get("chunk_level", 0),
+                        "document_version": doc.get("document_version", ""),
                     }
                     for doc, dense_emb, sparse_emb in zip(batch, dense_embeddings, sparse_embeddings)
                 ]

@@ -1,5 +1,6 @@
 """父级分块文档存储（用于 Auto-merging Retriever）"""
 import json
+import threading
 from pathlib import Path
 from typing import Dict, List
 
@@ -11,6 +12,7 @@ class ParentChunkStore:
         base_dir = Path(__file__).resolve().parent
         self.store_path = store_path or (base_dir.parent / "data" / "parent_chunks.json")
         self.store_path.parent.mkdir(parents=True, exist_ok=True)
+        self._write_lock = threading.Lock()
 
     def _load(self) -> Dict[str, dict]:
         if not self.store_path.exists():
@@ -35,28 +37,30 @@ class ParentChunkStore:
         if not docs:
             return 0
 
-        store = self._load()
-        upserted = 0
-        for doc in docs:
-            chunk_id = (doc.get("chunk_id") or "").strip()
-            if not chunk_id:
-                continue
-            store[chunk_id] = {
-                "text": doc.get("text", ""),
-                "filename": doc.get("filename", ""),
-                "file_type": doc.get("file_type", ""),
-                "file_path": doc.get("file_path", ""),
-                "page_number": doc.get("page_number", 0),
-                "chunk_id": chunk_id,
-                "parent_chunk_id": doc.get("parent_chunk_id", ""),
-                "root_chunk_id": doc.get("root_chunk_id", ""),
-                "chunk_level": int(doc.get("chunk_level", 0) or 0),
-                "chunk_idx": int(doc.get("chunk_idx", 0) or 0),
-            }
-            upserted += 1
+        with self._write_lock:
+            store = self._load()
+            upserted = 0
+            for doc in docs:
+                chunk_id = (doc.get("chunk_id") or "").strip()
+                if not chunk_id:
+                    continue
+                store[chunk_id] = {
+                    "text": doc.get("text", ""),
+                    "filename": doc.get("filename", ""),
+                    "file_type": doc.get("file_type", ""),
+                    "file_path": doc.get("file_path", ""),
+                    "page_number": doc.get("page_number", 0),
+                    "chunk_id": chunk_id,
+                    "parent_chunk_id": doc.get("parent_chunk_id", ""),
+                    "root_chunk_id": doc.get("root_chunk_id", ""),
+                    "chunk_level": int(doc.get("chunk_level", 0) or 0),
+                    "chunk_idx": int(doc.get("chunk_idx", 0) or 0),
+                    "document_version": doc.get("document_version", ""),
+                }
+                upserted += 1
 
-        self._save(store)
-        return upserted
+            self._save(store)
+            return upserted
 
     def get_documents_by_ids(self, chunk_ids: List[str]) -> List[dict]:
         if not chunk_ids:
@@ -69,13 +73,23 @@ class ParentChunkStore:
         if not filename:
             return 0
 
-        store = self._load()
-        before = len(store)
-        filtered = {
-            key: value for key, value in store.items()
-            if value.get("filename") != filename
-        }
-        deleted = before - len(filtered)
-        if deleted > 0:
-            self._save(filtered)
-        return deleted
+        with self._write_lock:
+            store = self._load()
+            before = len(store)
+            filtered = {
+                key: value for key, value in store.items()
+                if value.get("filename") != filename
+            }
+            deleted = before - len(filtered)
+            if deleted > 0:
+                self._save(filtered)
+            return deleted
+
+    def delete_by_chunk_prefix(self, prefix: str) -> int:
+        with self._write_lock:
+            store = self._load()
+            filtered = {key: value for key, value in store.items() if not key.startswith(prefix)}
+            deleted = len(store) - len(filtered)
+            if deleted:
+                self._save(filtered)
+            return deleted

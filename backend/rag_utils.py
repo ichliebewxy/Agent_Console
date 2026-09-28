@@ -1,6 +1,7 @@
 """Local hybrid retrieval orchestration."""
 from typing import Any, Dict
 
+from document_versions import DocumentVersionStore
 from embedding import embedding_service as _embedding_service
 from milvus_client import MilvusManager
 from ops_store import record_tool_failure
@@ -15,6 +16,7 @@ from settings import (
 )
 
 _milvus_manager = MilvusManager()
+_document_versions = DocumentVersionStore()
 
 
 def _base_meta(candidate_k: int) -> Dict[str, Any]:
@@ -60,9 +62,11 @@ def _finalize_retrieval(query: str, retrieved: list[dict], top_k: int, candidate
 
 def retrieve_documents(query: str, top_k: int = 5) -> Dict[str, Any]:
     candidate_k = max(top_k * 3, top_k)
-    filter_expr = f"chunk_level == {LEAF_RETRIEVE_LEVEL}"
-
     try:
+        filter_expr = f"chunk_level == {LEAF_RETRIEVE_LEVEL}"
+        active_filter = _document_versions.active_filter()
+        if active_filter:
+            filter_expr += f" and ({active_filter})"
         retrieved = _search_local(query, candidate_k, filter_expr)
         docs, meta = _finalize_retrieval(query, retrieved, top_k, candidate_k)
         if not docs:

@@ -2,17 +2,24 @@
 import asyncio
 import os
 import re
+import threading
+import weakref
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
-
 from document_loader import DocumentLoader
+from document_versions import DocumentVersionStore, version_chunk_prefix, version_filter
 from embedding import embedding_service
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from milvus_client import MilvusManager
 from milvus_writer import MilvusWriter
 from parent_chunk_store import ParentChunkStore
-from schemas import DocumentDeleteResponse, DocumentInfo, DocumentListResponse, DocumentUploadResponse
+from schemas import (
+    DocumentDeleteResponse,
+    DocumentInfo,
+    DocumentListResponse,
+    DocumentUploadResponse,
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = BASE_DIR.parent / "data" / "documents"
@@ -33,13 +40,29 @@ loader = DocumentLoader()
 parent_chunk_store = ParentChunkStore()
 milvus_manager = MilvusManager()
 milvus_writer = MilvusWriter(embedding_service=embedding_service, milvus_manager=milvus_manager)
+document_versions = DocumentVersionStore()
+_DOCUMENT_LOCKS: weakref.WeakValueDictionary[str, asyncio.Lock] = weakref.WeakValueDictionary()
+_DOCUMENT_LOCKS_GUARD = threading.Lock()
+
+
+def _document_lock(filename: str) -> asyncio.Lock:
+    with _DOCUMENT_LOCKS_GUARD:
+        lock = _DOCUMENT_LOCKS.get(filename)
+        if lock is None:
+            lock = asyncio.Lock()
+            _DOCUMENT_LOCKS[filename] = lock
+        return lock
 
 
 @router.get("/documents", response_model=DocumentListResponse)
 async def list_documents():
     try:
         milvus_manager.init_collection()
-        rows = milvus_manager.query(output_fields=["filename", "file_type"], limit=10000)
+        rows = milvus_manager.query(
+            filter_expr=document_versions.active_filter(),
+            output_fields=["filename", "file_type"],
+            limit=10000,
+        )
         file_stats = {}
         for item in rows:
             filename = item.get("filename", "")
@@ -63,35 +86,10 @@ async def upload_document(file: UploadFile = File(...)):
     try:
         os.makedirs(UPLOAD_DIR, exist_ok=True)
         staged_path = await _save_upload(file, filename)
-        final_path = UPLOAD_DIR / filename
-        new_docs = await asyncio.to_thread(loader.load_document, str(staged_path), filename)
-        if not new_docs:
-            raise HTTPException(status_code=500, detail="文档处理失败，未能提取内容")
-
-        for document in new_docs:
-            document["file_path"] = str(final_path)
-        parent_docs = [doc for doc in new_docs if int(doc.get("chunk_level", 0) or 0) in (1, 2)]
-        leaf_docs = [doc for doc in new_docs if int(doc.get("chunk_level", 0) or 0) == 3]
-        if not leaf_docs:
-            raise HTTPException(status_code=500, detail="文档处理失败，未生成可检索叶子分块")
-
-        # Parsing happens against a staging file. Only replace the saved source
-        # after successful extraction, so a bad re-upload cannot destroy it.
-        os.replace(staged_path, final_path)
-        staged_path = None
-        await asyncio.to_thread(milvus_manager.init_collection)
-        await asyncio.to_thread(_delete_existing, filename)
-        try:
-            await asyncio.to_thread(milvus_writer.write_documents, leaf_docs)
-            await asyncio.to_thread(parent_chunk_store.upsert_documents, parent_docs)
-        except Exception:
-            await asyncio.to_thread(_delete_existing, filename)
-            raise
-        return DocumentUploadResponse(
-            filename=filename,
-            chunks_processed=len(leaf_docs),
-            message=f"成功处理 {filename}！叶子分片 {len(leaf_docs)} 个，父级片段 {len(parent_docs)} 个。",
-        )
+        async with _document_lock(filename):
+            result = await _publish_document(staged_path, filename)
+            staged_path = None
+            return result
     except HTTPException:
         raise
     except Exception as exc:
@@ -103,9 +101,12 @@ async def upload_document(file: UploadFile = File(...)):
 
 @router.delete("/documents/{filename}", response_model=DocumentDeleteResponse)
 async def delete_document(filename: str):
+    filename = _validated_filename(filename)
     try:
-        milvus_manager.init_collection()
-        count = _delete_existing(filename)
+        async with _document_lock(filename):
+            await asyncio.to_thread(milvus_manager.init_collection)
+            count = await asyncio.to_thread(_delete_existing, filename)
+            await asyncio.to_thread(document_versions.remove, filename)
         return DocumentDeleteResponse(filename=filename, chunks_deleted=count, message=f"成功删除文档 {filename} 的向量数据")
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"删除文档失败: {exc}")
@@ -118,19 +119,100 @@ def _filename_filter(filename: str) -> str:
 
 def _delete_existing(filename: str) -> int:
     filter_expr = _filename_filter(filename)
-    delete_count = 0
-    try:
-        rows = milvus_manager.query(filter_expr=filter_expr, output_fields=["text"], limit=10000)
-        embedding_service.increment_remove_documents([row.get("text", "") for row in rows])
-        result = milvus_manager.delete(filter_expr)
-        delete_count = result.get("delete_count", 0) if isinstance(result, dict) else 0
-    except Exception:
-        pass
-    try:
-        parent_chunk_store.delete_by_filename(filename)
-    except Exception:
-        pass
+    rows = milvus_manager.query(filter_expr=filter_expr, output_fields=["text"], limit=10000)
+    result = milvus_manager.delete(filter_expr)
+    delete_count = result.get("delete_count", 0) if isinstance(result, dict) else 0
+    embedding_service.increment_remove_documents([row.get("text", "") for row in rows])
+    parent_chunk_store.delete_by_filename(filename)
     return delete_count
+
+
+def _delete_version(filename: str, version: str) -> int:
+    filter_expr = version_filter(filename, version)
+    rows = milvus_manager.query(filter_expr=filter_expr, output_fields=["text"], limit=10000)
+    result = milvus_manager.delete(filter_expr)
+    embedding_service.increment_remove_documents([row.get("text", "") for row in rows])
+    parent_chunk_store.delete_by_chunk_prefix(version_chunk_prefix(filename, version))
+    source_path = UPLOAD_DIR / ".versions" / version / filename if version else UPLOAD_DIR / filename
+    source_path.unlink(missing_ok=True)
+    if version:
+        try:
+            source_path.parent.rmdir()
+        except FileNotFoundError:
+            pass
+    return result.get("delete_count", 0) if isinstance(result, dict) else 0
+
+
+def _drain_pending_cleanup(filename: str) -> None:
+    active = document_versions.active_version(filename)
+    for version in document_versions.pending_cleanup(filename):
+        if version == active:
+            continue
+        try:
+            _delete_version(filename, version)
+            document_versions.clear_cleanup(filename, version)
+        except Exception as exc:
+            print(f"[documents] Version cleanup deferred: {exc}")
+
+
+async def _publish_document(staged_path: Path, filename: str) -> DocumentUploadResponse:
+    new_docs = await asyncio.to_thread(loader.load_document, str(staged_path), filename)
+    if not new_docs:
+        raise HTTPException(status_code=500, detail="文档处理失败，未能提取内容")
+    leaf_docs = [doc for doc in new_docs if int(doc.get("chunk_level", 0) or 0) == 3]
+    if not leaf_docs:
+        raise HTTPException(status_code=500, detail="文档处理失败，未生成可检索叶子分块")
+
+    await asyncio.to_thread(milvus_manager.init_collection)
+    old_version = await asyncio.to_thread(document_versions.prepare, filename)
+    await asyncio.to_thread(_drain_pending_cleanup, filename)
+    version = uuid4().hex
+    prefix = version_chunk_prefix(filename, version)
+    version_dir = UPLOAD_DIR / ".versions" / version
+    version_dir.mkdir(parents=True, exist_ok=False)
+    source_path = version_dir / filename
+    for document in new_docs:
+        document["file_path"] = str(source_path)
+        document["document_version"] = version
+        for key in ("chunk_id", "parent_chunk_id", "root_chunk_id"):
+            if document.get(key):
+                document[key] = prefix + document[key]
+    parent_docs = [doc for doc in new_docs if int(doc.get("chunk_level", 0) or 0) in (1, 2)]
+
+    committed = False
+    try:
+        await asyncio.to_thread(document_versions.mark_cleanup, filename, version)
+        os.replace(staged_path, source_path)
+        await asyncio.to_thread(milvus_writer.write_documents, leaf_docs)
+        await asyncio.to_thread(parent_chunk_store.upsert_documents, parent_docs)
+        await asyncio.to_thread(document_versions.mark_cleanup, filename, old_version)
+        await asyncio.to_thread(document_versions.activate, filename, version)
+        committed = True
+    except Exception:
+        # If SQLite committed before surfacing an error, the new version is
+        # already visible and must never be removed by this cleanup path.
+        if await asyncio.to_thread(document_versions.active_version, filename) == version:
+            committed = True
+        else:
+            try:
+                await asyncio.to_thread(_delete_version, filename, version)
+                await asyncio.to_thread(document_versions.clear_cleanup, filename, version)
+            except Exception as cleanup_error:
+                print(f"[documents] New version cleanup deferred: {cleanup_error}")
+            raise
+
+    if committed and old_version != version:
+        try:
+            await asyncio.to_thread(document_versions.clear_cleanup, filename, version)
+        except Exception as cleanup_error:
+            print(f"[documents] Cleanup journal update deferred: {cleanup_error}")
+        # The active-version filter keeps old rows invisible if cleanup fails.
+        await asyncio.to_thread(_drain_pending_cleanup, filename)
+    return DocumentUploadResponse(
+        filename=filename,
+        chunks_processed=len(leaf_docs),
+        message=f"成功处理 {filename}！叶子分片 {len(leaf_docs)} 个，父级片段 {len(parent_docs)} 个。",
+    )
 
 
 def _validated_filename(raw_filename: str) -> str:
