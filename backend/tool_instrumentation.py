@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from langchain_core.tools import StructuredTool
 
-from agent_state import consume_tool_call_budget, record_tool_event
+from agent_state import bind_tool_call_id, consume_tool_call_budget, record_tool_event
 from event_stream import emit_tool_step
 from runtime_context import current_runtime_context
 from settings import AGENT_TOOL_CALL_LIMIT
@@ -198,7 +198,8 @@ def instrument_tool(tool_obj):
             return cached
         _emit(_tool_step("start", tool_obj.name, call_id, args=kwargs, operation_key=operation_key))
         try:
-            result = await tool_obj.ainvoke(kwargs)
+            with bind_tool_call_id(call_id):
+                result = await tool_obj.ainvoke(kwargs)
         except Exception as exc:
             _save_receipt(receipt_target, {"status": "error", "error": str(exc)})
             _emit(
@@ -252,7 +253,8 @@ def instrument_tool(tool_obj):
             return cached
         _emit(_tool_step("start", tool_obj.name, call_id, args=kwargs, operation_key=operation_key))
         try:
-            result = tool_obj.invoke(kwargs)
+            with bind_tool_call_id(call_id):
+                result = tool_obj.invoke(kwargs)
         except Exception as exc:
             _save_receipt(receipt_target, {"status": "error", "error": str(exc)})
             _emit(

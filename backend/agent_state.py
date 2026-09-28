@@ -5,15 +5,45 @@ tool, the tool wrappers, and the chat runner: they all read one budget and one
 trace capture without importing each other.
 """
 
+import copy
+import threading
+from contextlib import contextmanager
 from contextvars import ContextVar
-from typing import Optional
+from uuid import uuid4
 
 from settings import AGENT_TOOL_CALL_LIMIT
 
-_LAST_RAG_CONTEXT: ContextVar[Optional[dict]] = ContextVar(
-    "agent_last_rag_context",
-    default=None,
+
+class RagTraceCapture:
+    """A per-turn sink shared by copied task and worker-thread contexts."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._traces: dict[str, dict] = {}
+
+    def record(self, trace: dict, call_id: str | None) -> None:
+        with self._lock:
+            self._traces[call_id or uuid4().hex] = copy.deepcopy(trace)
+
+    def snapshot(self) -> dict | None:
+        with self._lock:
+            calls = list(self._traces.items())
+        if not calls:
+            return None
+        call_id, latest = calls[-1]
+        result = {**latest, "tool_call_id": call_id}
+        if len(calls) > 1:
+            result["tool_calls"] = [
+                {"tool_call_id": item_id, "rag_trace": item_trace}
+                for item_id, item_trace in calls
+            ]
+        return {"rag_trace": result}
+
+
+_RAG_CAPTURE: ContextVar[RagTraceCapture | None] = ContextVar(
+    "agent_rag_trace_capture", default=None
 )
+_TOOL_CALL_ID: ContextVar[str | None] = ContextVar("agent_tool_call_id", default=None)
 _TOOL_CALL_STATE: ContextVar[dict | None] = ContextVar("agent_tool_call_state", default=None)
 _TOOL_EVENT_LOG: ContextVar[list[dict] | None] = ContextVar(
     "agent_tool_event_log",
@@ -21,15 +51,53 @@ _TOOL_EVENT_LOG: ContextVar[list[dict] | None] = ContextVar(
 )
 
 
-def set_last_rag_context(context: dict) -> None:
-    _LAST_RAG_CONTEXT.set(context)
+def begin_rag_trace_capture() -> None:
+    _RAG_CAPTURE.set(RagTraceCapture())
 
 
-def get_last_rag_context(clear: bool = True) -> Optional[dict]:
-    context = _LAST_RAG_CONTEXT.get()
+@contextmanager
+def bind_tool_call_id(call_id: str):
+    token = _TOOL_CALL_ID.set(call_id)
+    try:
+        yield
+    finally:
+        _TOOL_CALL_ID.reset(token)
+
+
+def record_rag_trace(trace: dict) -> None:
+    capture = _RAG_CAPTURE.get()
+    if capture is None:
+        capture = RagTraceCapture()
+        _RAG_CAPTURE.set(capture)
+    capture.record(trace, _TOOL_CALL_ID.get())
+
+
+def get_last_rag_context(clear: bool = True) -> dict | None:
+    capture = _RAG_CAPTURE.get()
+    context = capture.snapshot() if capture else None
     if clear:
-        _LAST_RAG_CONTEXT.set(None)
+        _RAG_CAPTURE.set(None)
     return context
+
+
+def merge_rag_traces(previous: dict | None, current: dict | None) -> dict | None:
+    if not current:
+        return previous
+    if not previous:
+        return current
+    calls = []
+    seen = set()
+    for trace in (previous, current):
+        entries = trace.get("tool_calls") or [
+            {"tool_call_id": trace.get("tool_call_id"), "rag_trace": trace}
+        ]
+        for entry in entries:
+            call_id = entry.get("tool_call_id")
+            if call_id is None or call_id not in seen:
+                calls.append(entry)
+                if call_id is not None:
+                    seen.add(call_id)
+    return {**current, "tool_calls": calls}
 
 
 def reset_tool_call_guards() -> None:

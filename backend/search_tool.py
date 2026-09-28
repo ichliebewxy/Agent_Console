@@ -2,7 +2,7 @@
 
 from langchain_core.tools import tool
 
-from agent_state import current_tool_call_state, set_last_rag_context
+from agent_state import current_tool_call_state, record_rag_trace
 from ops_store import record_tool_failure
 
 
@@ -59,7 +59,7 @@ def search_knowledge_base(query: str) -> str:
     docs = rag_result.get("docs", []) if isinstance(rag_result, dict) else []
     rag_trace = rag_result.get("rag_trace", {}) if isinstance(rag_result, dict) else {}
     if rag_trace:
-        set_last_rag_context({"rag_trace": rag_trace})
+        record_rag_trace(rag_trace)
 
     status_text = _format_search_status(rag_trace, len(docs))
     if not docs:
