@@ -136,6 +136,22 @@ window.NebulaNestApp = {
         breaks: true,
         gfm: true,
       });
+      if (window.DOMPurify) {
+        DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+          for (const attribute of ["href", "src"]) {
+            if (!node.hasAttribute(attribute)) continue;
+            try {
+              const url = new URL(node.getAttribute(attribute), window.location.href);
+              const allowed = attribute === "href"
+                ? ["http:", "https:", "mailto:"].includes(url.protocol)
+                : ["http:", "https:"].includes(url.protocol);
+              if (!allowed) node.removeAttribute(attribute);
+            } catch (_) {
+              node.removeAttribute(attribute);
+            }
+          }
+        });
+      }
     },
 
     restoreIdentity() {
@@ -197,7 +213,13 @@ window.NebulaNestApp = {
     },
 
     parseMarkdown(text) {
-      return marked.parse(text || "");
+      if (!window.DOMPurify) return this.escapeHtml(text);
+      return DOMPurify.sanitize(marked.parse(text || ""), {
+        USE_PROFILES: { html: true },
+        FORBID_TAGS: ["style", "iframe", "object", "embed", "form", "input", "button", "textarea", "select", "option"],
+        FORBID_ATTR: ["style", "target", "srcset"],
+        ALLOW_DATA_ATTR: false,
+      });
     },
 
     createId() {
