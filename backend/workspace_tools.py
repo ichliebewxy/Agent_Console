@@ -5,8 +5,11 @@ import os
 from pathlib import Path
 
 from langchain_core.tools import tool
-
-from runtime_context import current_runtime_context, session_async_lock, session_files_dir
+from runtime_context import (
+    current_runtime_context,
+    session_file_lock,
+    session_files_dir,
+)
 from settings import WORKSPACE_FILE_MAX_CHARS
 
 
@@ -38,7 +41,7 @@ def _list_workspace_files(pattern: str, workspace: Path) -> str:
 async def list_workspace_files(pattern: str = "**/*") -> str:
     """List up to 200 files in the current agent_workspace/sessions session using a relative glob."""
     context = current_runtime_context()
-    async with session_async_lock(context.user_id, context.session_id):
+    async with session_file_lock(context.user_id, context.session_id):
         workspace = session_files_dir(create=True)
         return await asyncio.to_thread(_list_workspace_files, pattern, workspace)
 
@@ -67,7 +70,7 @@ def _read_workspace_file(path: str, workspace: Path) -> str:
 async def read_workspace_file(path: str) -> str:
     """Read a UTF-8 text file from the current agent_workspace/sessions session by relative path."""
     context = current_runtime_context()
-    async with session_async_lock(context.user_id, context.session_id):
+    async with session_file_lock(context.user_id, context.session_id):
         workspace = session_files_dir(create=True)
         return await asyncio.to_thread(_read_workspace_file, path, workspace)
 
@@ -102,7 +105,7 @@ def _write_workspace_file(
 async def write_workspace_file(path: str, content: str, overwrite: bool = False) -> str:
     """Write a UTF-8 text artifact under the current agent_workspace/sessions session; overwrite must be explicit."""
     context = current_runtime_context()
-    async with session_async_lock(context.user_id, context.session_id):
+    async with session_file_lock(context.user_id, context.session_id):
         workspace = session_files_dir(create=True)
         return await asyncio.to_thread(
             _write_workspace_file,

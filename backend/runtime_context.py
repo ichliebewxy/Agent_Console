@@ -1,10 +1,10 @@
 """Per-request identity and isolated session workspace resolution."""
+import asyncio
 import hashlib
 import re
 import shutil
 import threading
 import weakref
-import asyncio
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -26,6 +26,9 @@ _RUNTIME_CONTEXT: ContextVar[AgentRuntimeContext | None] = ContextVar(
     default=None,
 )
 _SESSION_LOCKS: weakref.WeakValueDictionary[str, asyncio.Lock] = (
+    weakref.WeakValueDictionary()
+)
+_FILE_LOCKS: weakref.WeakValueDictionary[str, asyncio.Lock] = (
     weakref.WeakValueDictionary()
 )
 _SESSION_LOCKS_GUARD = threading.Lock()
@@ -65,13 +68,24 @@ def session_workspace_key(user_id: str, session_id: str) -> str:
 
 
 def session_async_lock(user_id: str, session_id: str) -> asyncio.Lock:
-    """Return the in-process lock that serializes one session's file mutations."""
+    """Serialize whole conversation turns and workflow runs for one session."""
     key = session_workspace_key(user_id, session_id)
     with _SESSION_LOCKS_GUARD:
         lock = _SESSION_LOCKS.get(key)
         if lock is None:
             lock = asyncio.Lock()
             _SESSION_LOCKS[key] = lock
+        return lock
+
+
+def session_file_lock(user_id: str, session_id: str) -> asyncio.Lock:
+    """Serialize file tools without re-acquiring the outer conversation lock."""
+    key = session_workspace_key(user_id, session_id)
+    with _SESSION_LOCKS_GUARD:
+        lock = _FILE_LOCKS.get(key)
+        if lock is None:
+            lock = asyncio.Lock()
+            _FILE_LOCKS[key] = lock
         return lock
 
 
