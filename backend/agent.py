@@ -3,9 +3,8 @@ import asyncio
 import json
 from uuid import uuid4
 
-from langchain.agents import create_agent
-from langchain_core.messages import AIMessage, AIMessageChunk, HumanMessage, SystemMessage
-
+import memory_service
+import plan_execute
 from agent_prompt import SYSTEM_PROMPT
 from agent_state import (
     consume_tool_events,
@@ -15,19 +14,28 @@ from agent_state import (
 )
 from artifact_service import list_session_artifacts
 from chat_models import build_chat_model
+from checkpoint_service import (
+    get_run_state,
+    get_workflow,
+    register_run,
+    workflow_config,
+)
 from conversation_storage import ConversationStorage
 from core_tools import TOOLS
-import memory_service
-import plan_execute
 from event_stream import set_rag_step_queue, set_tool_step_queue
+from langchain.agents import create_agent
+from langchain_core.messages import (
+    AIMessage,
+    AIMessageChunk,
+    HumanMessage,
+    SystemMessage,
+)
 from runtime_context import bind_runtime_context, session_async_lock
 from settings import AGENT_TOOL_CALL_LIMIT, PLAN_EXECUTE_ENABLED
 from subagents import build_subagent_tools
 from tool_instrumentation import instrument_tools
 from workflow_state import initial_workflow_state, plan_payload, public_workflow_state
 from workflow_stream import stream_workflow_events
-from checkpoint_service import get_run_state, get_workflow, register_run, workflow_config
-
 
 agent = None
 model = None
@@ -47,8 +55,8 @@ async def init_agent_async():
         model = _create_chat_model()
         from core_tools import REVIEW_TOOLS
         from mcp_service import get_discovered_mcp_tools
-        from skill_service import SKILL_TOOLS
         from search_tool import search_knowledge_base
+        from skill_service import SKILL_TOOLS
 
         mcp_tools = get_discovered_mcp_tools()
         runtime_tools = [
@@ -270,6 +278,11 @@ async def chat_with_agent(
     user_id: str = "default_user",
     session_id: str = "default_session",
 ):
+    async with session_async_lock(user_id, session_id):
+        return await _chat_with_agent_locked(user_text, user_id, session_id)
+
+
+async def _chat_with_agent_locked(user_text: str, user_id: str, session_id: str):
     if agent is None:
         raise RuntimeError("主 Agent 尚未初始化，请先等待 init_agent_async() 完成。")
     with bind_runtime_context(user_id, session_id):
@@ -288,16 +301,14 @@ async def chat_with_agent(
                 user_text,
                 history=_serialize_history(history),
             )
-            # Step staging protects individual mutations. Serializing full
-            # workflow runs per session also protects the shared visible
-            # workspace when two browser tabs submit tasks at once.
-            async with session_async_lock(user_id, session_id):
-                await register_run(initial)
-                await get_workflow().ainvoke(
-                    initial,
-                    workflow_config(run_id),
-                    durability="sync",
-                )
+            # The turn lock covers history loading, workflow mutations and
+            # response persistence for this session.
+            await register_run(initial)
+            await get_workflow().ainvoke(
+                initial,
+                workflow_config(run_id),
+                durability="sync",
+            )
             workflow_data = await get_run_state(run_id)
             plan_data = {
                 "objective": workflow_data.get("objective", ""),
@@ -321,22 +332,21 @@ async def chat_with_agent(
                 set_tool_step_queue(None)
             rag_context = get_last_rag_context(clear=True)
             rag_trace = rag_context.get("rag_trace") if rag_context else None
-        async with session_async_lock(user_id, session_id):
-            artifacts = await asyncio.to_thread(
-                list_session_artifacts,
-                user_id,
-                session_id,
-            )
-            _persist_response(
-                user_id,
-                session_id,
-                messages,
-                response,
-                rag_trace,
-                artifacts,
-                plan=plan_data,
-                workflow=workflow_data,
-            )
+        artifacts = await asyncio.to_thread(
+            list_session_artifacts,
+            user_id,
+            session_id,
+        )
+        _persist_response(
+            user_id,
+            session_id,
+            messages,
+            response,
+            rag_trace,
+            artifacts,
+            plan=plan_data,
+            workflow=workflow_data,
+        )
         _schedule_remember(user_id, user_text, session_id)
         return {
             "response": response,
@@ -450,11 +460,10 @@ async def _chat_with_agent_stream_bound(
                 user_text,
                 history=_serialize_history(history),
             )
-            async with session_async_lock(user_id, session_id):
-                async for event in stream_workflow_events(initial):
-                    if event.get("type") == "content":
-                        full_response += event.get("content", "")
-                    yield _sse_event(event)
+            async for event in stream_workflow_events(initial):
+                if event.get("type") == "content":
+                    full_response += event.get("content", "")
+                yield _sse_event(event)
             workflow_data = await get_run_state(workflow_run_id)
             plan_data = {
                 "objective": workflow_data.get("objective", ""),
@@ -482,6 +491,10 @@ async def _chat_with_agent_stream_bound(
         set_tool_step_queue(None)
         if agent_task is not None and not agent_task.done():
             agent_task.cancel()
+            try:
+                await agent_task
+            except asyncio.CancelledError:
+                pass
 
     if workflow_data is not None:
         rag_trace = workflow_data.get("rag_trace")
@@ -491,22 +504,21 @@ async def _chat_with_agent_stream_bound(
     if rag_trace:
         payload = json.dumps({"type": "trace", "rag_trace": rag_trace}, ensure_ascii=False)
         yield f"data: {payload}\n\n"
-    async with session_async_lock(user_id, session_id):
-        artifacts = await asyncio.to_thread(
-            list_session_artifacts,
-            user_id,
-            session_id,
-        )
-        _persist_response(
-            user_id,
-            session_id,
-            messages,
-            full_response,
-            rag_trace,
-            artifacts,
-            plan=plan_data,
-            workflow=workflow_data,
-        )
+    artifacts = await asyncio.to_thread(
+        list_session_artifacts,
+        user_id,
+        session_id,
+    )
+    _persist_response(
+        user_id,
+        session_id,
+        messages,
+        full_response,
+        rag_trace,
+        artifacts,
+        plan=plan_data,
+        workflow=workflow_data,
+    )
     _schedule_remember(user_id, user_text, session_id)
     artifact_payload = json.dumps(
         {"type": "artifacts", "artifacts": artifacts},
@@ -521,6 +533,7 @@ async def chat_with_agent_stream(
     user_id: str = "default_user",
     session_id: str = "default_session",
 ):
-    with bind_runtime_context(user_id, session_id):
-        async for event in _chat_with_agent_stream_bound(user_text, user_id, session_id):
-            yield event
+    async with session_async_lock(user_id, session_id):
+        with bind_runtime_context(user_id, session_id):
+            async for event in _chat_with_agent_stream_bound(user_text, user_id, session_id):
+                yield event
