@@ -14,14 +14,12 @@ import os
 from pathlib import Path
 from typing import Literal
 
+from bash_tool import bash, review_bash_command
 from langchain_core.tools import tool
-
-from bash_tool import bash
-from bash_tool import review_bash_command
 from runtime_context import (
     active_workspace_dir,
     current_runtime_context,
-    session_async_lock,
+    session_file_lock,
     session_files_dir,
 )
 from settings import WORKSPACE_FILE_MAX_CHARS
@@ -63,7 +61,7 @@ def _read(path: str, limit: int | None, workspace: Path) -> str:
 async def read_file(path: str, limit: int | None = None) -> str:
     """Read a UTF-8 text file from the current session workspace."""
     context = current_runtime_context()
-    async with session_async_lock(context.user_id, context.session_id):
+    async with session_file_lock(context.user_id, context.session_id):
         return await asyncio.to_thread(_read, path, limit, _workspace())
 
 
@@ -86,7 +84,7 @@ def _write(path: str, content: str, workspace: Path) -> str:
 async def write_file(path: str, content: str) -> str:
     """Write UTF-8 content to a file in the current session workspace."""
     context = current_runtime_context()
-    async with session_async_lock(context.user_id, context.session_id):
+    async with session_file_lock(context.user_id, context.session_id):
         return await asyncio.to_thread(_write, path, content, _workspace())
 
 
@@ -106,7 +104,7 @@ def _edit(path: str, old_text: str, new_text: str, workspace: Path) -> str:
 async def edit_file(path: str, old_text: str, new_text: str) -> str:
     """Replace the first exact occurrence of old_text in a session file."""
     context = current_runtime_context()
-    async with session_async_lock(context.user_id, context.session_id):
+    async with session_file_lock(context.user_id, context.session_id):
         return await asyncio.to_thread(_edit, path, old_text, new_text, _workspace())
 
 
@@ -127,7 +125,7 @@ def _glob(pattern: str, workspace: Path) -> str:
 async def glob(pattern: str) -> str:
     """Find files by a relative glob pattern in the current session workspace."""
     context = current_runtime_context()
-    async with session_async_lock(context.user_id, context.session_id):
+    async with session_file_lock(context.user_id, context.session_id):
         return await asyncio.to_thread(_glob, pattern, _workspace())
 
 
