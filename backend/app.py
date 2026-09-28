@@ -25,12 +25,14 @@ from embedding import embedding_service
 import memory_service
 from runtime_catalog_service import refresh_runtime_catalogs
 from settings import MILVUS_DENSE_DIM
+from workspace_transaction import recover_workspace_transactions
 
 FRONTEND_DIR = BASE_DIR / "frontend"
 
 # 1. 在这里定义 lifespan 上下文管理器
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    await asyncio.to_thread(recover_workspace_transactions)
     print("Warming up embedding model...")
     embedding_info = await asyncio.to_thread(embedding_service.warm_up)
     if embedding_info["dim"] != MILVUS_DENSE_DIM:

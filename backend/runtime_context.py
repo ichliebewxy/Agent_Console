@@ -1,6 +1,7 @@
 """Per-request identity and isolated session workspace resolution."""
 import asyncio
 import hashlib
+import json
 import re
 import shutil
 import threading
@@ -89,6 +90,18 @@ def session_file_lock(user_id: str, session_id: str) -> asyncio.Lock:
         return lock
 
 
+def _session_root_dir(user_id: str, session_id: str, *, create: bool = True) -> Path:
+    """Physical session container for versions and durable workflow records."""
+    key = session_workspace_key(user_id, session_id)
+    root = (BACKEND_TMP_DIR / key).resolve()
+    tmp_root = BACKEND_TMP_DIR.resolve()
+    if not root.is_relative_to(tmp_root):
+        raise RuntimeError("Resolved session workspace escaped its configured root.")
+    if create:
+        root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
 def session_files_dir(
     user_id: str | None = None,
     session_id: str | None = None,
@@ -99,14 +112,24 @@ def session_files_dir(
         context = current_runtime_context()
         user_id = context.user_id
         session_id = context.session_id
-    key = session_workspace_key(user_id, session_id)
-    root = (BACKEND_TMP_DIR / key).resolve()
-    tmp_root = BACKEND_TMP_DIR.resolve()
-    if not root.is_relative_to(tmp_root):
-        raise RuntimeError("Resolved session workspace escaped its configured root.")
-    if create:
-        root.mkdir(parents=True, exist_ok=True)
-    return root
+    root = _session_root_dir(user_id, session_id, create=create)
+    manifest = root / ".active_version.json"
+    if not manifest.exists():
+        return root  # Existing sessions remain readable until their first commit.
+    try:
+        version = json.loads(manifest.read_text(encoding="utf-8"))["version"]
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise RuntimeError("Session workspace version manifest is invalid.") from exc
+    if not isinstance(version, str) or not re.fullmatch(r"[0-9a-f]{32}", version):
+        raise RuntimeError("Session workspace version manifest is invalid.")
+    visible = root / ".versions" / version
+    if (
+        not visible.is_dir()
+        or visible.is_symlink()
+        or not visible.resolve().is_relative_to(root)
+    ):
+        raise RuntimeError("Active session workspace version is missing.")
+    return visible
 
 
 def _safe_workflow_segment(value: str, label: str) -> str:
@@ -123,7 +146,7 @@ def workflow_step_dir(
     *,
     create: bool = True,
 ) -> Path:
-    session_root = session_files_dir(user_id, session_id, create=create)
+    session_root = _session_root_dir(user_id, session_id, create=create)
     run_segment = _safe_workflow_segment(run_id, "run id")
     step_segment = _safe_workflow_segment(step_id, "step id")
     root = (session_root / "runs" / run_segment / "steps" / step_segment).resolve()
@@ -153,7 +176,7 @@ def active_workspace_dir(*, create: bool = True) -> Path:
 
 def delete_session_files(user_id: str, session_id: str) -> None:
     """Remove only the hashed file directory belonging to one deleted session."""
-    root = session_files_dir(user_id, session_id, create=False)
+    root = _session_root_dir(user_id, session_id, create=False)
     tmp_root = BACKEND_TMP_DIR.resolve()
     if root.parent != tmp_root:
         raise RuntimeError("Refusing to remove a path outside agent_workspace/sessions.")
