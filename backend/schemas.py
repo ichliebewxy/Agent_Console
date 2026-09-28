@@ -34,6 +34,8 @@ class RetrievedChunk(BaseModel):
 class RagTrace(BaseModel):
     tool_used: bool
     tool_name: str
+    tool_call_id: Optional[str] = None
+    tool_calls: Optional[List[Dict[str, Any]]] = None
     query: Optional[str] = None
     expanded_query: Optional[str] = None
     step_back_question: Optional[str] = None

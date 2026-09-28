@@ -8,6 +8,7 @@ import memory_service
 import plan_execute
 from agent_prompt import SYSTEM_PROMPT
 from agent_state import (
+    begin_rag_trace_capture,
     consume_tool_events,
     get_conversation_history,
     get_last_rag_context,
@@ -139,7 +140,7 @@ def _history_digest(history: list) -> str:
 def _prepare_messages(user_text: str, user_id: str, session_id: str):
     """Return the model context and the untouched persisted history."""
     raw_history = storage.load(user_id, session_id)
-    get_last_rag_context(clear=True)
+    begin_rag_trace_capture()
     reset_tool_call_guards()
     model_history = raw_history
     if len(raw_history) > 50:
@@ -269,7 +270,7 @@ def _should_plan_execute(user_text: str) -> bool:
 async def execute_workflow_step(instruction: str) -> dict:
     """Execute one graph step and return serializable evidence for validation."""
     reset_tool_call_guards()
-    get_last_rag_context(clear=True)
+    begin_rag_trace_capture()
     # 步骤执行必须携带本轮之前的会话历史，否则多轮任务会丢失起点、目的地等
     # 已在上文中确认的信息（该历史由 workflow_graph 在调用前注入 ContextVar）。
     messages = _messages_from_history(get_conversation_history())

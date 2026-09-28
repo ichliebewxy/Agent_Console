@@ -8,7 +8,7 @@ import re
 from collections.abc import Awaitable, Callable
 
 import plan_execute
-from agent_state import set_conversation_history
+from agent_state import merge_rag_traces, set_conversation_history
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 from runtime_context import bind_runtime_context
@@ -218,7 +218,7 @@ def _make_execute_node(execute_step: StepExecutor):
         return {
             "attempts": attempts,
             "results": results,
-            "rag_trace": execution.get("rag_trace") or state.get("rag_trace"),
+            "rag_trace": merge_rag_traces(state.get("rag_trace"), execution.get("rag_trace")),
             "updated_at": utc_now(),
         }
 
