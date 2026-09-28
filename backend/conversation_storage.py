@@ -2,6 +2,7 @@
 import json
 import os
 from datetime import datetime
+from uuid import uuid4
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
@@ -19,7 +20,8 @@ class ConversationStorage:
     def save(self, user_id: str, session_id: str, messages: list, metadata: dict | None = None, extra_message_data: list | None = None):
         data = self._load()
         data.setdefault(user_id, {})
-        previous_messages = data.get(user_id, {}).get(session_id, {}).get("messages", [])
+        previous_session = data[user_id].get(session_id, {})
+        previous_messages = previous_session.get("messages", [])
         serialized = []
         for idx, msg in enumerate(messages):
             previous = previous_messages[idx] if idx < len(previous_messages) else {}
@@ -47,13 +49,27 @@ class ConversationStorage:
                         record[key] = extra[key]
             serialized.append(record)
 
-        data[user_id][session_id] = {
+        session_record = {
             "messages": serialized,
-            "metadata": metadata or {},
+            "metadata": metadata if metadata is not None else previous_session.get("metadata", {}),
             "updated_at": datetime.now().isoformat(),
         }
-        with open(self.storage_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        if "context_summary" in previous_session:
+            session_record["context_summary"] = previous_session["context_summary"]
+        data[user_id][session_id] = session_record
+        self._write(data)
+
+    def load_context_summary(self, user_id: str, session_id: str) -> dict | None:
+        summary = self._load().get(user_id, {}).get(session_id, {}).get("context_summary")
+        return summary if isinstance(summary, dict) else None
+
+    def save_context_summary(self, user_id: str, session_id: str, summary: dict) -> None:
+        data = self._load()
+        session = data.get(user_id, {}).get(session_id)
+        if not isinstance(session, dict):
+            raise ValueError("Cannot summarize a missing conversation")
+        session["context_summary"] = summary
+        self._write(data)
 
     def update_workflow_projection(
         self,
@@ -82,8 +98,7 @@ class ConversationStorage:
                 record["content"] = workflow["final_response"]
             record["rag_trace"] = workflow.get("rag_trace")
             session["updated_at"] = datetime.now().isoformat()
-            with open(self.storage_file, "w", encoding="utf-8") as handle:
-                json.dump(data, handle, ensure_ascii=False, indent=2)
+            self._write(data)
             return True
         return False
 
@@ -112,9 +127,18 @@ class ConversationStorage:
         del data[user_id][session_id]
         if not data[user_id]:
             del data[user_id]
-        with open(self.storage_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        self._write(data)
         return True
+
+    def _write(self, data: dict) -> None:
+        temporary_path = f"{self.storage_file}.{uuid4().hex}.tmp"
+        try:
+            with open(temporary_path, "w", encoding="utf-8") as handle:
+                json.dump(data, handle, ensure_ascii=False, indent=2)
+            os.replace(temporary_path, self.storage_file)
+        finally:
+            if os.path.exists(temporary_path):
+                os.unlink(temporary_path)
 
     def _load(self) -> dict:
         if not os.path.exists(self.storage_file):
