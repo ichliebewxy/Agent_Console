@@ -1,6 +1,5 @@
 """LangChain main-agent construction, chat execution, and streaming."""
 import asyncio
-import hashlib
 import json
 from uuid import uuid4
 
@@ -22,6 +21,7 @@ from checkpoint_service import (
     register_run,
     workflow_config,
 )
+from context_compaction import ToolResultCompactionMiddleware, compact_session_history
 from conversation_storage import ConversationStorage
 from core_tools import TOOLS
 from event_stream import set_rag_step_queue, set_tool_step_queue
@@ -32,7 +32,11 @@ from langchain_core.messages import (
     HumanMessage,
     SystemMessage,
 )
-from runtime_context import bind_runtime_context, session_async_lock
+from runtime_context import (
+    active_workspace_dir,
+    bind_runtime_context,
+    session_async_lock,
+)
 from settings import AGENT_TOOL_CALL_LIMIT, PLAN_EXECUTE_ENABLED
 from subagents import build_subagent_tools
 from tool_instrumentation import instrument_tools
@@ -72,6 +76,12 @@ async def init_agent_async():
         agent = create_agent(
             model=model,
             tools=instrument_tools(runtime_tools),
+            middleware=[
+                ToolResultCompactionMiddleware(
+                    lambda: active_workspace_dir() / ".context_tool_results",
+                    display_root=".context_tool_results",
+                )
+            ],
             system_prompt=SYSTEM_PROMPT,
             name="main_agent",
         )
@@ -80,15 +90,6 @@ async def init_agent_async():
             "bash/read_file/write_file/edit_file/glob、review、Skills/Subagent；"
             f"启动发现 MCP({len(mcp_tools)})。"
         )
-
-
-def summarize_old_messages(chat_model, messages: list) -> str:
-    old_conversation = "\n".join(
-        f"{'用户' if msg.type == 'human' else '摘要' if msg.type == 'system' else 'AI'}: {msg.content}"
-        for msg in messages
-    )
-    prompt = f"请总结以下对话的关键信息：\n\n{old_conversation}\n总结："
-    return chat_model.invoke(prompt).content
 
 
 def _message_text(msg) -> str:
@@ -132,50 +133,12 @@ def _messages_from_history(history: list | None) -> list:
     return messages
 
 
-def _history_digest(history: list) -> str:
-    payload = json.dumps(_serialize_history(history), ensure_ascii=False, sort_keys=True)
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
 def _prepare_messages(user_text: str, user_id: str, session_id: str):
     """Return the model context and the untouched persisted history."""
     raw_history = storage.load(user_id, session_id)
     begin_rag_trace_capture()
     reset_tool_call_guards()
-    model_history = raw_history
-    if len(raw_history) > 50:
-        covered_count = len(raw_history) - 12
-        cached = storage.load_context_summary(user_id, session_id)
-        try:
-            cached_count = int(cached.get("covered_count", 0)) if cached else 0
-        except (TypeError, ValueError):
-            cached_count = 0
-        cache_valid = (
-            0 < cached_count <= covered_count
-            and isinstance(cached.get("text"), str)
-            and cached.get("source_digest") == _history_digest(raw_history[:cached_count])
-        )
-        if cache_valid and cached_count == covered_count:
-            summary = cached["text"]
-        else:
-            to_summarize = raw_history[:covered_count]
-            if cache_valid:
-                to_summarize = [
-                    SystemMessage(content=f"已有摘要：\n{cached['text']}"),
-                    *raw_history[cached_count:covered_count],
-                ]
-            summary = summarize_old_messages(model, to_summarize)
-            storage.save_context_summary(
-                user_id,
-                session_id,
-                {
-                    "text": summary,
-                    "covered_count": covered_count,
-                    "source_digest": _history_digest(raw_history[:covered_count]),
-                },
-            )
-        model_history = [SystemMessage(content=f"之前的对话摘要：\n{summary}"), *raw_history[covered_count:]]
-    messages = [*model_history, HumanMessage(content=user_text)]
+    messages = compact_session_history(raw_history, user_text, storage, model, user_id, session_id)
     return messages, raw_history
 
 
