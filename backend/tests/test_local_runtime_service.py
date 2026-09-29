@@ -1,4 +1,3 @@
-import asyncio
 import os
 import sys
 import tempfile
@@ -55,13 +54,37 @@ class LocalRuntimeTests(unittest.IsolatedAsyncioTestCase):
             workspace = Path(directory).resolve()
             with patch.dict(
                 os.environ,
-                {"DEMO_API_KEY": "secret", "DEMO_TOKEN": "secret", "KEEP_ME": "yes"},
+                {
+                    "DEMO_API_KEY": "secret",
+                    "DEMO_TOKEN": "secret",
+                    "PYTHONHOME": "other-python",
+                    "PYTHONPATH": "other-packages",
+                    "UV_INTERNAL__PYTHONHOME": "other-uv-python",
+                    "KEEP_ME": "yes",
+                },
             ):
                 environment = _local_environment(workspace)
             self.assertNotIn("DEMO_API_KEY", environment)
             self.assertNotIn("DEMO_TOKEN", environment)
+            self.assertNotIn("PYTHONHOME", environment)
+            self.assertNotIn("PYTHONPATH", environment)
+            self.assertNotIn("UV_INTERNAL__PYTHONHOME", environment)
             self.assertEqual(environment["KEEP_ME"], "yes")
             self.assertEqual(environment["TEMP"], str(workspace))
+
+    async def test_python_command_ignores_incompatible_parent_pythonhome(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            with (
+                patch("runtime_context.BACKEND_TMP_DIR", root),
+                patch.dict(os.environ, {"PYTHONHOME": str(root / "other-python")}),
+                bind_runtime_context("python-user", "python-session"),
+            ):
+                result = await run_local_command(
+                    f'"{sys.executable}" -c "import re; print(2 + 3)"'
+                )
+        self.assertIn("LOCAL_RUNTIME_EXIT_CODE=0", result)
+        self.assertIn("stdout:\n5", result)
 
     def test_bash_review_has_deny_priority_and_is_the_only_execution_tool(self):
         self.assertEqual(review_bash_command("python -c \"print(1)\"").behavior, "allow")
