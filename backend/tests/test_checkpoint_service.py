@@ -4,6 +4,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
+import httpx
+from fastapi import FastAPI
+
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
@@ -11,6 +14,8 @@ if str(BACKEND_DIR) not in sys.path:
 
 import checkpoint_service
 import plan_execute
+import routes_sessions
+from conversation_storage import ConversationStorage
 from runtime_context import active_workspace_dir, session_files_dir
 from workflow_state import initial_workflow_state
 
@@ -105,6 +110,34 @@ class CheckpointServiceTests(unittest.IsolatedAsyncioTestCase):
                     )
                     self.assertEqual(final_fork["run_status"], "completed")
                     self.assertEqual(calls, 2)
+
+                    other = initial_workflow_state("other-run", "other-user", "session", "保留")
+                    await checkpoint_service.register_run(other)
+                    storage = ConversationStorage(str(root / "history.json"))
+                    storage.save("user", "session", [])
+                    app = FastAPI()
+                    app.include_router(routes_sessions.router)
+                    with patch.object(routes_sessions, "storage", storage):
+                        async with httpx.AsyncClient(
+                            transport=httpx.ASGITransport(app=app),
+                            base_url="http://test",
+                        ) as client:
+                            response = await client.delete("/sessions/user/session")
+
+                    self.assertEqual(response.status_code, 200)
+                    self.assertEqual(response.json()["session_id"], "session")
+                    self.assertEqual(storage.list_sessions("user"), [])
+                    self.assertFalse(session_files_dir("user", "session", create=False).exists())
+                    self.assertEqual(await checkpoint_service.list_runs("user", "session"), [])
+                    self.assertEqual(len(await checkpoint_service.list_runs("other-user")), 1)
+                    self.assertEqual(await checkpoint_service.get_run_history(run_id), [])
+                    with self.assertRaises(KeyError):
+                        await checkpoint_service.get_run_state(run_id)
+                    for table in ("checkpoints", "writes"):
+                        async with checkpoint_service.get_checkpointer().conn.execute(
+                            f"SELECT COUNT(*) FROM {table} WHERE thread_id = ?", (run_id,)
+                        ) as cursor:
+                            self.assertEqual((await cursor.fetchone())[0], 0)
                 finally:
                     await checkpoint_service.close_checkpoint_service()
 
