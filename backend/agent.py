@@ -25,6 +25,13 @@ from context_compaction import ToolResultCompactionMiddleware, compact_session_h
 from conversation_storage import ConversationStorage
 from core_tools import TOOLS
 from event_stream import set_rag_step_queue, set_tool_step_queue
+from goal_mode import (
+    AgentCircuitOpen,
+    AgentCycleLimitMiddleware,
+    agent_cycle_budget,
+    prepare_goal_request,
+    run_goal_loop,
+)
 from langchain.agents import create_agent
 from langchain_core.messages import (
     AIMessage,
@@ -80,7 +87,8 @@ async def init_agent_async():
                 ToolResultCompactionMiddleware(
                     lambda: active_workspace_dir() / ".context_tool_results",
                     display_root=".context_tool_results",
-                )
+                ),
+                AgentCycleLimitMiddleware(),
             ],
             system_prompt=SYSTEM_PROMPT,
             name="main_agent",
@@ -203,6 +211,15 @@ def _extract_response(result) -> str:
         return result.content
     return str(result)
 
+
+def _command_response(user_text: str, user_id: str, session_id: str, response: str) -> dict:
+    history = storage.load(user_id, session_id)
+    storage.save(user_id, session_id, [
+        *history, HumanMessage(content=user_text), AIMessage(content=response),
+    ])
+    return {"response": response, "rag_trace": None, "artifacts": [], "plan": None, "workflow": None}
+
+
 def _sse_event(event: dict) -> str:
     newline = chr(10)
     return "data: " + json.dumps(event, ensure_ascii=False) + newline + newline
@@ -276,20 +293,24 @@ async def chat_with_agent(
     session_id: str = "default_session",
 ):
     async with session_async_lock(user_id, session_id):
-        return await _chat_with_agent_locked(user_text, user_id, session_id)
+        with agent_cycle_budget():
+            return await _chat_with_agent_locked(user_text, user_id, session_id)
 
 
 async def _chat_with_agent_locked(user_text: str, user_id: str, session_id: str):
     if agent is None:
         raise RuntimeError("主 Agent 尚未初始化，请先等待 init_agent_async() 完成。")
     with bind_runtime_context(user_id, session_id):
-        messages, raw_history = _prepare_messages(user_text, user_id, session_id)
+        directive = prepare_goal_request(user_text, storage, user_id, session_id)
+        if directive.response:
+            return _command_response(user_text, user_id, session_id, directive.response)
+        messages, raw_history = _prepare_messages(directive.prompt, user_id, session_id)
         # 记忆只注入本轮调用，不随 messages 一起持久化，避免逐轮累积脏上下文。
-        invoke_messages = await _augment_with_memory(user_text, user_id, messages)
+        invoke_messages = await _augment_with_memory(directive.prompt, user_id, messages)
 
         workflow_data = None
         plan_data = None
-        if _should_plan_execute(user_text):
+        if _should_plan_execute(user_text) and not directive.condition:
             run_id = str(uuid4())
             initial = initial_workflow_state(
                 run_id,
@@ -301,29 +322,44 @@ async def _chat_with_agent_locked(user_text: str, user_id: str, session_id: str)
             # The turn lock covers history loading, workflow mutations and
             # response persistence for this session.
             await register_run(initial)
-            await get_workflow().ainvoke(
-                initial,
-                workflow_config(run_id),
-                durability="sync",
-            )
-            workflow_data = await get_run_state(run_id)
-            plan_data = {
-                "objective": workflow_data.get("objective", ""),
-                "steps": workflow_data.get("steps", []),
-                "reflections": [],
-            }
-            response = workflow_data.get("final_response", "")
-            rag_trace = workflow_data.get("rag_trace")
+            try:
+                await get_workflow().ainvoke(
+                    initial,
+                    workflow_config(run_id),
+                    durability="sync",
+                )
+            except AgentCircuitOpen as exc:
+                response = str(exc)
+                rag_trace = None
+            else:
+                workflow_data = await get_run_state(run_id)
+                plan_data = {
+                    "objective": workflow_data.get("objective", ""),
+                    "steps": workflow_data.get("steps", []),
+                    "reflections": [],
+                }
+                response = workflow_data.get("final_response", "")
+                rag_trace = workflow_data.get("rag_trace")
         else:
             output_queue = asyncio.Queue()
             set_rag_step_queue(_RagStepQueueProxy(output_queue))
             set_tool_step_queue(_ToolStepQueueProxy(output_queue))
             try:
-                result = await agent.ainvoke(
-                    {"messages": invoke_messages},
-                    config={"recursion_limit": _AGENT_RECURSION_LIMIT},
-                )
-                response = _extract_response(result)
+                if directive.condition:
+                    response = await run_goal_loop(
+                        agent, model, directive.condition, invoke_messages,
+                        storage, user_id, session_id,
+                        recursion_limit=_AGENT_RECURSION_LIMIT,
+                    )
+                else:
+                    try:
+                        result = await agent.ainvoke(
+                            {"messages": invoke_messages},
+                            config={"recursion_limit": _AGENT_RECURSION_LIMIT},
+                        )
+                        response = _extract_response(result)
+                    except AgentCircuitOpen as exc:
+                        response = str(exc)
             finally:
                 set_rag_step_queue(None)
                 set_tool_step_queue(None)
@@ -386,11 +422,17 @@ async def _chat_with_agent_stream_bound(
 ):
     if agent is None:
         raise RuntimeError("主 Agent 尚未初始化，请先等待 init_agent_async() 完成。")
-    messages, raw_history = _prepare_messages(user_text, user_id, session_id)
+    directive = prepare_goal_request(user_text, storage, user_id, session_id)
+    if directive.response:
+        _command_response(user_text, user_id, session_id, directive.response)
+        yield _sse_event({"type": "content", "content": directive.response})
+        yield "data: [DONE]\n\n"
+        return
+    messages, raw_history = _prepare_messages(directive.prompt, user_id, session_id)
     # 记忆只注入本轮调用，不随 messages 一起持久化。
-    invoke_messages = await _augment_with_memory(user_text, user_id, messages)
+    invoke_messages = await _augment_with_memory(directive.prompt, user_id, messages)
 
-    use_workflow = _should_plan_execute(user_text)
+    use_workflow = _should_plan_execute(user_text) and not directive.condition
     workflow_data = None
     plan_data = None
     workflow_run_id = str(uuid4()) if use_workflow else None
@@ -410,6 +452,26 @@ async def _chat_with_agent_stream_bound(
         nonlocal full_response
         active_message_id = None
         try:
+            if directive.condition:
+                async def report_goal_progress(reason: str) -> None:
+                    await output_queue.put({
+                        "type": "plan_step",
+                        "step": {
+                            "icon": "↻",
+                            "phase": "goal",
+                            "label": "Goal 尚未满足，继续执行",
+                            "detail": reason,
+                        },
+                    })
+
+                full_response = await run_goal_loop(
+                    agent, model, directive.condition, invoke_messages,
+                    storage, user_id, session_id,
+                    recursion_limit=_AGENT_RECURSION_LIMIT,
+                    on_progress=report_goal_progress,
+                )
+                await output_queue.put({"type": "content", "content": full_response})
+                return
             async for msg, metadata in agent.astream(
                 {"messages": invoke_messages},
                 stream_mode="messages",
@@ -439,6 +501,9 @@ async def _chat_with_agent_stream_bound(
                                 "message_id": message_id,
                             }
                         )
+        except AgentCircuitOpen as exc:
+            full_response = str(exc)
+            await output_queue.put({"type": "content", "content": full_response})
         except Exception as exc:
             await output_queue.put({"type": "error", "content": str(exc)})
         finally:
@@ -457,17 +522,22 @@ async def _chat_with_agent_stream_bound(
                 user_text,
                 history=_serialize_history(messages[:-1]),
             )
-            async for event in stream_workflow_events(initial):
-                if event.get("type") == "content":
-                    full_response += event.get("content", "")
-                yield _sse_event(event)
-            workflow_data = await get_run_state(workflow_run_id)
-            plan_data = {
-                "objective": workflow_data.get("objective", ""),
-                "steps": workflow_data.get("steps", []),
-                "reflections": [],
-            }
-            full_response = workflow_data.get("final_response", "") or full_response
+            try:
+                async for event in stream_workflow_events(initial):
+                    if event.get("type") == "content":
+                        full_response += event.get("content", "")
+                    yield _sse_event(event)
+            except AgentCircuitOpen as exc:
+                full_response = str(exc)
+                yield _sse_event({"type": "content", "content": full_response})
+            else:
+                workflow_data = await get_run_state(workflow_run_id)
+                plan_data = {
+                    "objective": workflow_data.get("objective", ""),
+                    "steps": workflow_data.get("steps", []),
+                    "reflections": [],
+                }
+                full_response = workflow_data.get("final_response", "") or full_response
         else:
             agent_task = asyncio.create_task(_agent_worker())
             try:
@@ -532,5 +602,6 @@ async def chat_with_agent_stream(
 ):
     async with session_async_lock(user_id, session_id):
         with bind_runtime_context(user_id, session_id):
-            async for event in _chat_with_agent_stream_bound(user_text, user_id, session_id):
-                yield event
+            with agent_cycle_budget():
+                async for event in _chat_with_agent_stream_bound(user_text, user_id, session_id):
+                    yield event

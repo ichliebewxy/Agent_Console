@@ -1,7 +1,7 @@
 """Persistent chat session storage."""
 import json
 import os
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
@@ -69,6 +69,25 @@ class ConversationStorage:
         if not isinstance(session, dict):
             raise ValueError("Cannot summarize a missing conversation")
         session["context_summary"] = summary
+        self._write(data)
+
+    def load_goal_state(self, user_id: str, session_id: str) -> dict | None:
+        session = self._load().get(user_id, {}).get(session_id, {})
+        goal = (session.get("metadata") or {}).get("goal")
+        return dict(goal) if isinstance(goal, dict) else None
+
+    def save_goal_state(self, user_id: str, session_id: str, goal: dict | None) -> None:
+        data = self._load()
+        session = data.setdefault(user_id, {}).setdefault(session_id, {
+            "messages": [], "metadata": {}, "updated_at": datetime.now(UTC).isoformat(),
+        })
+        metadata = dict(session.get("metadata") or {})
+        if goal is None:
+            metadata.pop("goal", None)
+        else:
+            metadata["goal"] = dict(goal)
+        session["metadata"] = metadata
+        session["updated_at"] = datetime.now(UTC).isoformat()
         self._write(data)
 
     def update_workflow_projection(

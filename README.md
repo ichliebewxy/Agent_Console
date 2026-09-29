@@ -9,6 +9,7 @@ Agent Console 是一个面向本地可信环境的 LangChain 多 Agent + RAG 工
 ## 目录
 
 - [核心亮点](#核心亮点)
+- [Goal 模式与循环熔断](#goal-模式与循环熔断)
 - [系统架构](#系统架构)
 - [运行逻辑](#运行逻辑)
 - [OpenCLI Skill 详解](#opencli-skill-详解)
@@ -39,9 +40,18 @@ Agent Console 是一个面向本地可信环境的 LangChain 多 Agent + RAG 工
 | 会话工作区 | 每个 `user_id/session_id` 拥有独立的 `agent_workspace/sessions/<session-key>/`；脚本、缓存、预览等中间文件留在会话目录，最终产物统一放在其 `deliverables/` 子目录。 |
 | 工具安全 | Bash 默认拒绝，执行顺序为 deny → authorize → allow → default deny；阻止路径逃逸、shell 拼接、危险系统命令和高风险 OpenCLI。 |
 | 可观察但不扰人 | 前端展示当前对话实际产生的工具/RAG 轨迹和引用；没有引用时不展示检索轨迹。旧的“运行回调”只读页面和公开回调接口不再提供，失败记录仅留在服务端诊断文件。 |
-| 调用上限 | 每轮对话最多执行 `AGENT_TOOL_CALL_LIMIT` 次工具调用，默认 250 次；达到上限会停止继续调用并整理已有结果。 |
+| Goal 模式 | `/goal 完成条件` 保存会话目标；独立判断器根据实际执行记录判断完成情况，未达标则自动续轮。 |
+| 调用上限 | 每次请求最多进行 100 轮 Agent 模型调用，达到上限立即熔断；工具调用另有默认 250 次的独立上限。 |
 | Durable Plan-and-Execute | 多步骤任务由 LangGraph 状态图执行；每个 run 使用独立 `thread_id` 和 SQLite 检查点，步骤在私有 staging 中事务化执行，失败可重试、修改、跳过、终止或从历史检查点回滚。 |
 | 长期记忆（mem0） | 每轮回复结束后由独立的 extractMemories 后台任务读取主 Agent 的对话记录，分类、去重并保存有跨会话价值的记忆。 |
+
+## Goal 模式与循环熔断
+
+在聊天框输入 `/goal 完成条件` 即可设定当前会话的目标并立即开始执行。例如：`/goal 修复登录测试，直到 pytest tests/auth 的退出码为 0`。主 Agent 完成一轮后，独立、无工具的判断器查看该轮对话和工具结果；条件未满足时，将缺口反馈给 Agent 继续执行。Goal 模式直接使用主 Agent，不经过 Plan-and-Execute 工作流。
+
+输入 `/goal` 查看当前条件、状态、判断次数和最近原因；输入 `/goal clear` 清除。目标保存在会话元数据中，完成、无法完成或熔断后停止自动续轮。判断器出错时也会停止本次自动续轮，并保留目标供用户查看或继续。
+
+每次聊天请求最多允许 **100 次 Agent 模型调用**，主 Agent、Goal 自动续轮和 Skills 小 Agent 共享同一计数；第 101 次调用前立即抛出熔断异常。一次模型回复中调用多个工具仍只算一轮。Goal 判断器是独立的完成条件检查，不计入 Agent 循环轮数。原有的 `AGENT_TOOL_CALL_LIMIT` 只限制工具调用次数，默认 250 次。
 
 ## 长期记忆（mem0）
 
@@ -661,7 +671,7 @@ Invoke-RestMethod http://127.0.0.1:8080/documents
 | `CHAT_BASE_URL` | `https://api.deepseek.com` | OpenAI-compatible 模型服务地址。 |
 | `GRADE_MODEL` | `deepseek-v4-flash` | RAG 文档相关性评分模型。 |
 | `QUERY_EXPANSION_MODEL` | `CHAT_MODEL` | Step-back/HyDE/路由模型。 |
-| `AGENT_TOOL_CALL_LIMIT` | `250` | 每轮最大工具调用数；同时影响 Agent recursion limit。 |
+| `AGENT_TOOL_CALL_LIMIT` | `250` | 单次 Agent 执行的工具调用上限；同时影响 LangGraph recursion limit，与 100 轮 Agent 循环熔断独立。 |
 | `PLAN_EXECUTE_ENABLED` | `true` | 为多步骤任务启用“规划 → 执行 → 反省调整”模式；简单问答仍走单次直答。 |
 | `PLAN_EXECUTE_MAX_STEPS` | `6` | 单次任务最多拆解/执行的子任务步数上限。 |
 | `PLAN_EXECUTE_RESULT_MAX_CHARS` | `3000` | 反省时注入“上一步结果”的字符上限。 |

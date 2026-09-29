@@ -1,14 +1,14 @@
 """Lazy LangChain subagents exposed through explicit loading and delegation tools."""
 import asyncio
 
+from agent_prompt import build_skill_agent_prompt
+from goal_mode import AgentCircuitOpen, AgentCycleLimitMiddleware
 from langchain.agents import create_agent
 from langchain_core.messages import AIMessage
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
-
-from agent_prompt import build_skill_agent_prompt
-from tool_instrumentation import instrument_tools
 from settings import AGENT_TOOL_CALL_LIMIT
+from tool_instrumentation import instrument_tools
 
 
 class SkillDelegationRequest(BaseModel):
@@ -71,6 +71,7 @@ class SkillAgentRegistry:
             self._agent = create_agent(
                 model=self._model,
                 tools=instrument_tools(tools),
+                middleware=[AgentCycleLimitMiddleware()],
                 system_prompt=build_skill_agent_prompt(SKILL_REGISTRY.catalog()),
                 name="skills_specialist",
             )
@@ -87,6 +88,8 @@ class SkillAgentRegistry:
                 },
             )
             return _final_agent_text(result)
+        except AgentCircuitOpen:
+            raise
         except Exception as exc:
             return f"SKILL_AGENT_ERROR: Skills 小 Agent 执行失败：{exc}"
 

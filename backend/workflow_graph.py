@@ -9,6 +9,7 @@ from collections.abc import Awaitable, Callable
 
 import plan_execute
 from agent_state import merge_rag_traces, set_conversation_history
+from goal_mode import AgentCircuitOpen
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 from runtime_context import bind_runtime_context
@@ -187,6 +188,8 @@ def _make_execute_node(execute_step: StepExecutor):
             set_conversation_history(state.get("history") or [])
             try:
                 execution = await execute_step(_build_instruction(state))
+            except AgentCircuitOpen:
+                raise
             except Exception as exc:  # noqa: BLE001 - normalize executor failures for retry classification
                 # Infrastructure failures may surface as exceptions instead of
                 # serializable tool results. Convert them into normal workflow
