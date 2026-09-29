@@ -1,8 +1,12 @@
 import sys
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+
+from pptx import Presentation
+from pptx.util import Inches
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
@@ -72,6 +76,49 @@ class DocumentLoaderWordTests(unittest.TestCase):
         normalized = self.loader._normalize_word_text("\x01标题\r正文\x07单元格\x0c下一页")
 
         self.assertEqual(normalized, "标题\n正文\t单元格\x0c下一页")
+
+
+class DocumentLoaderPresentationTests(unittest.TestCase):
+    def setUp(self):
+        self.temp_directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_directory.cleanup)
+        self.root = Path(self.temp_directory.name)
+        self.loader = DocumentLoader(image_output_dir=str(self.root / "images"))
+        self.pptx_path = self.root / "source.pptx"
+        presentation = Presentation()
+        slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+        slide.shapes.add_textbox(Inches(1), Inches(1), Inches(5), Inches(1)).text = "旧版演示文稿正文"
+        presentation.save(self.pptx_path)
+
+    def test_binary_ppt_is_converted_before_parsing(self):
+        legacy_path = self.root / "legacy.ppt"
+        legacy_path.write_bytes(b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1")
+
+        def convert(_source, target):
+            shutil.copyfile(self.pptx_path, target)
+
+        with patch.object(
+            self.loader._presentation_reader,
+            "_convert_with_powerpoint",
+            side_effect=convert,
+        ) as converter:
+            documents = self.loader.load_document(str(legacy_path), legacy_path.name)
+
+        converter.assert_called_once()
+        self.assertTrue(any("旧版演示文稿正文" in item["text"] for item in documents))
+        self.assertTrue(all(item["file_type"] == "PPT" for item in documents))
+
+    def test_ppt_with_openxml_content_skips_conversion(self):
+        renamed_path = self.root / "renamed.ppt"
+        shutil.copyfile(self.pptx_path, renamed_path)
+
+        with patch.object(
+            self.loader._presentation_reader, "_convert_with_powerpoint"
+        ) as converter:
+            documents = self.loader.load_document(str(renamed_path), renamed_path.name)
+
+        converter.assert_not_called()
+        self.assertTrue(any("旧版演示文稿正文" in item["text"] for item in documents))
 
 
 if __name__ == "__main__":
