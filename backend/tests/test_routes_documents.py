@@ -6,7 +6,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from fastapi import HTTPException, UploadFile
+import httpx
+from fastapi import FastAPI, HTTPException, UploadFile
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 if str(BACKEND_DIR) not in sys.path:
@@ -62,6 +63,54 @@ class DocumentRouteTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(context.exception.status_code, 500)
             self.assertEqual(existing_path.read_bytes(), b"old source")
             self.assertEqual([path.name for path in upload_directory.iterdir()], ["report.doc"])
+
+    async def test_empty_upload_returns_422_without_replacing_existing_document(self):
+        with tempfile.TemporaryDirectory() as directory:
+            upload_directory = Path(directory)
+            existing_path = upload_directory / "report.txt"
+            existing_path.write_bytes(b"old source")
+            app = FastAPI()
+            app.include_router(routes_documents.router)
+            with (
+                patch("routes_documents.UPLOAD_DIR", upload_directory),
+                patch.object(routes_documents.milvus_manager, "init_collection") as init_collection,
+            ):
+                async with httpx.AsyncClient(
+                    transport=httpx.ASGITransport(app=app),
+                    base_url="http://test",
+                ) as client:
+                    for content in (b"", b"   \n"):
+                        with self.subTest(content=content):
+                            response = await client.post(
+                                "/documents/upload",
+                                files={"file": ("report.txt", content, "text/plain")},
+                            )
+                            self.assertEqual(response.status_code, 422)
+
+            init_collection.assert_not_called()
+            self.assertEqual(existing_path.read_bytes(), b"old source")
+            self.assertEqual([path.name for path in upload_directory.iterdir()], ["report.txt"])
+
+    async def test_document_without_leaf_chunks_returns_422(self):
+        with tempfile.TemporaryDirectory() as directory:
+            upload_directory = Path(directory)
+            with (
+                patch("routes_documents.UPLOAD_DIR", upload_directory),
+                patch.object(
+                    routes_documents.loader,
+                    "load_document",
+                    return_value=[{"chunk_level": 1, "text": "only parent"}],
+                ),
+                patch.object(routes_documents.milvus_manager, "init_collection") as init_collection,
+            ):
+                with self.assertRaises(HTTPException) as context:
+                    await routes_documents.upload_document(
+                        UploadFile(filename="report.txt", file=io.BytesIO(b"content"))
+                    )
+
+            self.assertEqual(context.exception.status_code, 422)
+            init_collection.assert_not_called()
+            self.assertEqual(list(upload_directory.iterdir()), [])
 
     async def test_failed_replacement_keeps_old_source_index_and_parents(self):
         class FakeMilvus:

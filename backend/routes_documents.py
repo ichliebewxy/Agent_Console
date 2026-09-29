@@ -86,6 +86,8 @@ async def upload_document(file: UploadFile = File(...)):
     try:
         os.makedirs(UPLOAD_DIR, exist_ok=True)
         staged_path = await _save_upload(file, filename)
+        if staged_path.stat().st_size == 0:
+            raise HTTPException(status_code=422, detail="文件内容为空")
         async with _document_lock(filename):
             result = await _publish_document(staged_path, filename)
             staged_path = None
@@ -158,10 +160,10 @@ def _drain_pending_cleanup(filename: str) -> None:
 async def _publish_document(staged_path: Path, filename: str) -> DocumentUploadResponse:
     new_docs = await asyncio.to_thread(loader.load_document, str(staged_path), filename)
     if not new_docs:
-        raise HTTPException(status_code=500, detail="文档处理失败，未能提取内容")
+        raise HTTPException(status_code=422, detail="文档未包含可提取的内容")
     leaf_docs = [doc for doc in new_docs if int(doc.get("chunk_level", 0) or 0) == 3]
     if not leaf_docs:
-        raise HTTPException(status_code=500, detail="文档处理失败，未生成可检索叶子分块")
+        raise HTTPException(status_code=422, detail="文档未生成可检索的内容")
 
     await asyncio.to_thread(milvus_manager.init_collection)
     old_version = await asyncio.to_thread(document_versions.prepare, filename)
