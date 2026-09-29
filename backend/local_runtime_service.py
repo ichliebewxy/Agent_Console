@@ -18,6 +18,12 @@ from settings import (
 )
 
 _INTERNAL_DIRS = {".cache", ".npm-cache", ".pycache", "__pycache__"}
+_PYTHON_RUNTIME_ENV_VARS = {
+    "PYTHONHOME",
+    "PYTHONPATH",
+    "PYTHONEXECUTABLE",
+    "UV_INTERNAL__PYTHONHOME",
+}
 
 
 def _snapshot(root: Path, limit: int = 5000) -> dict[str, tuple[int, int]]:
@@ -66,7 +72,8 @@ def _local_environment(workspace: Path) -> dict[str, str]:
     environment = {
         key: value
         for key, value in os.environ.items()
-        if not any(
+        if key.upper() not in _PYTHON_RUNTIME_ENV_VARS
+        and not any(
             marker in key.upper()
             for marker in ("API_KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL")
         )
