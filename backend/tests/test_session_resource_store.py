@@ -20,9 +20,14 @@ class SessionResourceStoreTests(unittest.TestCase):
                 "memory_write_scope": "session",
             })
             self.assertEqual(store.get("user", "a").skills, ("pdf",))
+            self.assertTrue(store.contains("user", "a"))
+            self.assertFalse(store.contains("user", "b"))
+            self.assertEqual(store.list_sessions("user"), ["a"])
+            self.assertEqual(store.list_sessions("other"), [])
             self.assertIsNone(store.get("user", "b").skills)
             self.assertEqual(SessionResourceStore(store.path).get("user", "a").project_id, "project")
             store.delete("user", "a")
+            self.assertFalse(store.contains("user", "a"))
             self.assertIsNone(store.get("user", "a").project_id)
 
     def test_invalid_project_scope_and_duplicate_skills_are_rejected(self):
