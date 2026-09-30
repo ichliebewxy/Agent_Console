@@ -9,6 +9,7 @@ wheels/
 # Virtual environments
 .venv
 .env    
+node_modules/
 
 # uv cache (local override for sandboxed sessions)
 .uv-cache/    

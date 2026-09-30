@@ -1,5 +1,4 @@
-// Run with jsdom, marked@4.3.0, dompurify@3.4.14 and highlight.js@11.7.0
-// available on NODE_PATH.
+// Run with npm test from frontend/ after npm ci.
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
