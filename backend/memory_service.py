@@ -219,6 +219,12 @@ def get_all(user_id, top_k=100):
     return list(result.get("results", []))
 
 
+def get_memory(memory_id):
+    memory = init_memory()
+    with _call_lock:
+        return memory.get(memory_id)
+
+
 def add_memory(text, user_id, metadata=None, infer=False):
     memory = init_memory()
     with _call_lock:
