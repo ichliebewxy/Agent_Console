@@ -88,8 +88,8 @@ async def clear_session_memories(user_id: str, session_id: str, scope: str):
 
 async def _checked_memory_id(user_id: str, session_id: str, scope: str, memory_id: str) -> str:
     namespace = _session_namespace(user_id, session_id, scope)
-    rows = await asyncio.to_thread(memory_service.get_all, namespace, 1000)
-    if not any(str(item.get("id")) == memory_id for item in rows):
+    item = await asyncio.to_thread(memory_service.get_memory, memory_id)
+    if not item or item.get("user_id") != namespace:
         raise HTTPException(status_code=404, detail="该范围内未找到记忆")
     return memory_id
 

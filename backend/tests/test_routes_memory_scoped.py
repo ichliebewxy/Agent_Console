@@ -50,7 +50,7 @@ class ScopedMemoryRouteTests(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaises(HTTPException) as disabled:
                     await routes_memory.list_session_memories("user", "one", "user")
                 self.assertEqual(disabled.exception.status_code, 403)
-                with patch.object(routes_memory.memory_service, "get_all", return_value=[]), \
+                with patch.object(routes_memory.memory_service, "get_memory", return_value={"id": "foreign", "user_id": "other"}), \
                      patch.object(routes_memory.memory_service, "update_memory") as update:
                     with self.assertRaises(HTTPException) as foreign:
                         await routes_memory.update_session_memory(
@@ -58,6 +58,23 @@ class ScopedMemoryRouteTests(unittest.IsolatedAsyncioTestCase):
                         )
                     self.assertEqual(foreign.exception.status_code, 404)
                     update.assert_not_called()
+
+    async def test_edits_scoped_memory_by_id_without_list_limit(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = SessionResourceStore(Path(directory) / "resources.json")
+            store.put("user", "one", {"memory_read_scopes": ["session"]})
+            namespace = routes_memory.resolve_memory_access("user", "one", store.get("user", "one")).reads[0][1]
+            with patch.object(routes_memory, "SESSION_RESOURCES", store), \
+                 patch.object(routes_memory.memory_service, "get_memory", return_value={"id": "old", "user_id": namespace}) as get, \
+                 patch.object(routes_memory.memory_service, "get_all") as get_all, \
+                 patch.object(routes_memory.memory_service, "update_memory") as update, \
+                 patch.object(routes_memory, "sync_extraction_file"):
+                await routes_memory.update_session_memory(
+                    "user", "one", "session", "old", MemoryUpdateRequest(memory="changed")
+                )
+            get.assert_called_once_with("old")
+            get_all.assert_not_called()
+            update.assert_called_once_with("old", "changed")
 
 
 if __name__ == "__main__":
