@@ -278,6 +278,10 @@ window.NebulaNestApp = {
     },
 
     handleNewChat() {
+      if (this.isLoading) {
+        this.notify("请先停止或等待当前回答完成");
+        return;
+      }
       this.messages = [];
       this.userInput = "";
       this.sessionId = "session_" + Date.now();

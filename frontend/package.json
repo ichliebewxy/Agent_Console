@@ -1,7 +1,7 @@
 {
   "private": true,
   "scripts": {
-    "test": "node --test tests/session-resources.test.cjs tests/markdown-safety.test.cjs tests/session-deletion.test.cjs"
+    "test": "node --test tests/session-resources.test.cjs tests/markdown-safety.test.cjs tests/session-deletion.test.cjs tests/session-switch.test.cjs"
   },
   "devDependencies": {
     "dompurify": "3.4.14",
