@@ -237,6 +237,28 @@ Object.assign(window.NebulaNestApp.methods, {
     }
   },
 
+  async deleteSession(sessionId) {
+    if (this.deletingSessionId || (this.isLoading && sessionId === this.sessionId)) return;
+    if (!window.confirm("确定删除该会话及其记忆和产物吗？此操作不可恢复。")) return;
+    this.deletingSessionId = sessionId;
+    try {
+      const response = await fetch(`/sessions/${encodeURIComponent(this.userId)}/${encodeURIComponent(sessionId)}`, {
+        method: "DELETE",
+      });
+      if (!response.ok && response.status !== 404) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || `HTTP ${response.status}`);
+      }
+      this.sessions = this.sessions.filter((session) => session.session_id !== sessionId);
+      if (sessionId === this.sessionId) this.handleNewChat();
+      this.notify("会话已删除");
+    } catch (error) {
+      this.notify(`删除会话失败：${error.message}`);
+    } finally {
+      this.deletingSessionId = null;
+    }
+  },
+
   async loadSession(sessionId) {
     this.sessionId = sessionId;
     this.activeView = "chat";

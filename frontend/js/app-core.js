@@ -11,6 +11,7 @@ window.NebulaNestApp = {
       userId: "user_" + Math.random().toString(36).slice(2, 11),
       sessionId: "session_" + Date.now(),
       sessions: [],
+      deletingSessionId: null,
       runtimeConfig: null,
       configLoading: false,
       sessionResources: { project_id: null, skills: null, memory_read_scopes: ["user", "session"], memory_write_scope: "session" },
@@ -286,9 +287,7 @@ window.NebulaNestApp = {
     },
 
     handleClearChat() {
-      if (!confirm("确定清空当前会话吗？")) return;
-      this.messages = [];
-      this.persistState();
+      return this.deleteSession(this.sessionId);
     },
 
     useSuggestion(text) {

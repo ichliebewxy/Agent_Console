@@ -57,7 +57,7 @@
           <strong>Agent Runtime</strong>
           <small>流式连接 · 隐私优先</small>
         </div>
-        <button class="danger-action" @click="handleClearChat">
+        <button class="danger-action" :disabled="isLoading || deletingSessionId !== null" @click="handleClearChat">
           <i class="fas fa-trash"></i><span>清空当前</span>
         </button>
       </div>
@@ -468,10 +468,14 @@
         </header>
         <div class="history-list">
           <div v-if="sessions.length === 0" class="muted-row">暂无历史记录</div>
-          <button v-for="session in sessions" :key="session.session_id" :class="['history-row', {active: session.session_id === sessionId}]" @click="loadSession(session.session_id)">
-            <span>{{ session.session_id }}</span>
-            <small>{{ session.message_count }} 条 · {{ new Date(session.updated_at).toLocaleString() }}</small>
-          </button>
+          <div v-for="session in sessions" :key="session.session_id" :class="['history-row', {active: session.session_id === sessionId}]">
+            <button class="history-open" type="button" @click="loadSession(session.session_id)">
+              <span>{{ session.session_id }}</span>
+              <small v-if="session.updated_at">{{ session.message_count }} 条 · {{ new Date(session.updated_at).toLocaleString() }}</small>
+              <small v-else>尚未对话 · 已保存会话资源</small>
+            </button>
+            <button class="history-delete icon-danger" type="button" :disabled="deletingSessionId !== null || (isLoading && session.session_id === sessionId)" :aria-label="'删除会话 ' + session.session_id" @click="deleteSession(session.session_id)"><i class="fas fa-trash"></i></button>
+          </div>
         </div>
       </aside>
     </main>
