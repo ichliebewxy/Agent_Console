@@ -120,6 +120,13 @@ class SessionDeleteResponse(BaseModel):
     message: str
 
 
+class SessionResourcesRequest(BaseModel):
+    project_id: Optional[RuntimeId] = None
+    skills: Optional[List[RuntimeId]] = None
+    memory_read_scopes: List[Literal["user", "project", "session"]] = Field(default_factory=lambda: ["user", "session"])
+    memory_write_scope: Literal["user", "project", "session"] = "session"
+
+
 class WorkflowActionRequest(BaseModel):
     action: Literal["retry", "modify", "skip", "abort"] = "retry"
     title: Optional[str] = None
