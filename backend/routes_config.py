@@ -1,5 +1,6 @@
 """Runtime MCP/Skill configuration APIs."""
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
 
 from config_service import CONFIG_STORE
 from mcp_config_service import MCP_STORE
@@ -13,9 +14,50 @@ from schemas import (
     SkillCreateRequest,
 )
 from skill_service import SKILL_REGISTRY
+from skill_bindings import SKILL_BINDINGS
 
 
 router = APIRouter()
+
+
+class SkillBindingsRequest(BaseModel):
+    bindings: dict[str, bool] = Field(default_factory=dict)
+
+
+def _save_bindings(user_id: str, project_id: str | None, bindings: dict[str, bool]) -> dict:
+    unknown = set(bindings) - set(SKILL_REGISTRY.names)
+    if unknown:
+        raise HTTPException(status_code=422, detail=f"Unknown skills: {', '.join(sorted(unknown))}")
+    try:
+        return {"bindings": SKILL_BINDINGS.put(user_id, project_id, bindings)}
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/skill-bindings/{user_id}")
+async def get_user_skill_bindings(user_id: str):
+    try:
+        return {"bindings": SKILL_BINDINGS.get(user_id)}
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.put("/skill-bindings/{user_id}")
+async def put_user_skill_bindings(user_id: str, request: SkillBindingsRequest):
+    return _save_bindings(user_id, None, request.bindings)
+
+
+@router.get("/skill-bindings/{user_id}/projects/{project_id}")
+async def get_project_skill_bindings(user_id: str, project_id: str):
+    try:
+        return {"bindings": SKILL_BINDINGS.get(user_id, project_id)}
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.put("/skill-bindings/{user_id}/projects/{project_id}")
+async def put_project_skill_bindings(user_id: str, project_id: str, request: SkillBindingsRequest):
+    return _save_bindings(user_id, project_id, request.bindings)
 
 
 def _runtime_config_snapshot(*, public: bool = True) -> dict:

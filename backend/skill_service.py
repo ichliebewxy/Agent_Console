@@ -107,9 +107,12 @@ class SkillRegistry:
         with self._lock:
             return tuple(self._skills)
 
-    def catalog(self, max_chars: int = SKILL_CATALOG_MAX_CHARS) -> str:
+    def catalog(self, max_chars: int = SKILL_CATALOG_MAX_CHARS, names: tuple[str, ...] | None = None) -> str:
         with self._lock:
             entries = list(self._skills.values())
+        if names is not None:
+            allowed = set(names)
+            entries = [entry for entry in entries if entry.name in allowed]
         if not entries:
             return "- (no skills found)"
         lines = [f"- {entry.name}: {entry.description}" for entry in entries]
@@ -222,12 +225,18 @@ SKILL_REGISTRY = SkillRegistry()
 @tool
 def load_skill(name: str) -> str:
     """Load full instructions for an exact skill name from the visible catalog."""
+    from skill_resolver import require_visible_skill
+    if not require_visible_skill(name, SKILL_REGISTRY.names):
+        return f"SKILL_ERROR: Skill '{name}' is not enabled for this session."
     return SKILL_REGISTRY.load(name)
 
 
 @tool
 def read_skill_resource(skill_name: str, relative_path: str) -> str:
     """Read a text resource referenced by a loaded skill, relative to its root."""
+    from skill_resolver import require_visible_skill
+    if not require_visible_skill(skill_name, SKILL_REGISTRY.names):
+        return f"SKILL_ERROR: Skill '{skill_name}' is not enabled for this session."
     return SKILL_REGISTRY.read_resource(skill_name, relative_path)
 
 
