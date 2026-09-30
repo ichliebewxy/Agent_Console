@@ -260,6 +260,10 @@ Object.assign(window.NebulaNestApp.methods, {
   },
 
   async loadSession(sessionId) {
+    if (this.isLoading) {
+      this.notify("请先停止或等待当前回答完成");
+      return;
+    }
     this.sessionId = sessionId;
     this.activeView = "chat";
     this.showHistorySidebar = false;
