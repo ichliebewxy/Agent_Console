@@ -4,6 +4,7 @@ import asyncio
 from fastapi import APIRouter, HTTPException
 
 from agent import storage
+from checkpoint_service import delete_session_runs
 from runtime_context import delete_session_files, session_async_lock
 from schemas import MessageInfo, SessionDeleteResponse, SessionInfo, SessionListResponse, SessionMessagesResponse
 
@@ -57,6 +58,7 @@ async def delete_session(user_id: str, session_id: str):
             if session_id not in storage.list_sessions(user_id):
                 raise HTTPException(status_code=404, detail="会话不存在")
             await asyncio.to_thread(delete_session_files, user_id, session_id)
+            await delete_session_runs(user_id, session_id)
             if not storage.delete_session(user_id, session_id):
                 raise HTTPException(status_code=404, detail="会话不存在")
         return SessionDeleteResponse(session_id=session_id, message="成功删除会话")

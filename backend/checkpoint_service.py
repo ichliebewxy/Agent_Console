@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from pathlib import Path
 from typing import Any
 
 os.environ.setdefault("LANGGRAPH_STRICT_MSGPACK", "true")
@@ -114,6 +113,26 @@ async def list_runs(user_id: str | None = None, session_id: str | None = None) -
     if session_id is not None:
         rows = [row for row in rows if row.get("session_id") == session_id]
     return sorted(rows, key=lambda row: row.get("updated_at", ""), reverse=True)
+
+
+async def delete_session_runs(user_id: str, session_id: str) -> None:
+    """Remove a session's run index entries and durable workflow state."""
+    async with _RUN_INDEX_LOCK:
+        index = await asyncio.to_thread(_read_run_index)
+        run_ids = [
+            run_id
+            for run_id, row in index.items()
+            if isinstance(row, dict)
+            and row.get("user_id") == user_id
+            and row.get("session_id") == session_id
+        ]
+        if not run_ids:
+            return
+        checkpointer = get_checkpointer()
+        for run_id in run_ids:
+            await checkpointer.adelete_thread(run_id)
+            index.pop(run_id)
+        await asyncio.to_thread(_write_run_index, index)
 
 
 def _checkpoint_id(config: dict | None) -> str | None:
