@@ -1,6 +1,6 @@
-from pydantic import BaseModel, Field, StringConstraints
-from typing import Annotated, Optional, List, Any, Dict, Literal
+from typing import Annotated, Any, Dict, List, Literal, Optional
 
+from pydantic import BaseModel, Field, StringConstraints
 
 RuntimeId = Annotated[
     str,
@@ -218,6 +218,7 @@ class MemoryInfo(BaseModel):
 
 class MemoryListResponse(BaseModel):
     memories: List[MemoryInfo] = Field(default_factory=list)
+    has_more: bool = False
     enabled: bool = True
     initialized: bool = True
 
