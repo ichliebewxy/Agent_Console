@@ -12,7 +12,6 @@ from uuid import uuid4
 
 from settings import PROJECT_ROOT
 
-
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 _SCOPES = {"user", "project", "session"}
 
@@ -77,6 +76,17 @@ class SessionResourceStore:
         with self._lock:
             record = self._read().get(key)
         return validate_resources(record) if record is not None else SessionResources()
+
+    def contains(self, user_id: str, session_id: str) -> bool:
+        key = self._key(user_id, session_id)
+        with self._lock:
+            return key in self._read()
+
+    def list_sessions(self, user_id: str) -> list[str]:
+        self._key(user_id, "session")
+        prefix = f"{user_id}\0"
+        with self._lock:
+            return [key[len(prefix):] for key in self._read() if key.startswith(prefix)]
 
     def put(self, user_id: str, session_id: str, value: dict) -> SessionResources:
         key = self._key(user_id, session_id)
