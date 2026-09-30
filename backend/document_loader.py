@@ -2,6 +2,7 @@
 import os
 import pathlib
 import uuid
+from contextlib import nullcontext
 import fitz  # PyMuPDF
 import pptx
 import pandas as pd
@@ -13,6 +14,7 @@ from langchain_core.messages import HumanMessage
 
 from encoding_utils import safe_print
 from word_document_reader import WordDocumentReader
+from presentation_reader import PresentationReader
 
 
 class DocumentLoader:
@@ -32,6 +34,7 @@ class DocumentLoader:
         self._splitter_level_2 = RecursiveCharacterTextSplitter(chunk_size=level_2_size, chunk_overlap=level_2_overlap, add_start_index=True, separators=separators)
         self._splitter_level_3 = RecursiveCharacterTextSplitter(chunk_size=level_3_size, chunk_overlap=level_3_overlap, add_start_index=True, separators=separators)
         self._word_reader = WordDocumentReader()
+        self._presentation_reader = PresentationReader()
 
         # 2. 初始化图片临时存储目录和视觉大模型
         self.image_output_dir = image_output_dir
@@ -171,28 +174,31 @@ class DocumentLoader:
 
             # 3. PPTX 处理（含文字和形状内的图片）
             elif file_lower.endswith((".pptx", ".ppt")):
-                prs = pptx.Presentation(file_path)
-                for i, slide in enumerate(prs.slides):
-                    slide_texts = []
-                    for shape in slide.shapes:
-                        if hasattr(shape, "text"):
-                            slide_texts.append(shape.text)
-                        if hasattr(shape, "image"):
-                            ext = shape.image.ext
-                            img_filename = f"{uuid.uuid4().hex}.{ext}"
-                            img_filepath = os.path.join(self.image_output_dir, img_filename)
-                            with open(img_filepath, "wb") as f:
-                                f.write(shape.image.blob)
-                            img_desc = self._image_to_text_summary(img_filepath)
-                            if img_desc:
-                                slide_texts.append(f"\n[第{i+1}页幻灯片图片描述]: {img_desc}\n")
-                                
-                    full_slide_text = "\n".join(slide_texts).strip()
-                    base_doc = {"filename": filename, "file_path": file_path, "file_type": "PPT", "page_number": i + 1}
-                    chunks = self._split_page_to_three_levels(full_slide_text, base_doc, page_global_chunk_idx)
-                    page_global_chunk_idx += len(chunks)
-                    documents.extend(chunks)
-
+                if file_lower.endswith(".ppt"):
+                    source = self._presentation_reader.open(file_path)
+                else:
+                    source = nullcontext(file_path)
+                with source as presentation_path:
+                    prs = pptx.Presentation(presentation_path)
+                    for i, slide in enumerate(prs.slides):
+                        slide_texts = []
+                        for shape in slide.shapes:
+                            if hasattr(shape, "text"):
+                                slide_texts.append(shape.text)
+                            if hasattr(shape, "image"):
+                                ext = shape.image.ext
+                                img_filename = f"{uuid.uuid4().hex}.{ext}"
+                                img_filepath = os.path.join(self.image_output_dir, img_filename)
+                                with open(img_filepath, "wb") as f:
+                                    f.write(shape.image.blob)
+                                img_desc = self._image_to_text_summary(img_filepath)
+                                if img_desc:
+                                    slide_texts.append(f"\n[第{i+1}页幻灯片图片描述]: {img_desc}\n")
+                        full_slide_text = "\n".join(slide_texts).strip()
+                        base_doc = {"filename": filename, "file_path": file_path, "file_type": "PPT", "page_number": i + 1}
+                        chunks = self._split_page_to_three_levels(full_slide_text, base_doc, page_global_chunk_idx)
+                        page_global_chunk_idx += len(chunks)
+                        documents.extend(chunks)
             # 4. Word 处理：OpenXML .docx 与旧版二进制 .doc 必须分流
             elif file_lower.endswith(".docx"):
                 full_text = self._extract_docx_text(file_path)
