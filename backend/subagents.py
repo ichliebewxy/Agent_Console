@@ -1,6 +1,4 @@
 """Lazy LangChain subagents exposed through explicit loading and delegation tools."""
-import asyncio
-
 from agent_prompt import build_skill_agent_prompt
 from goal_mode import AgentCircuitOpen, AgentCycleLimitMiddleware
 from langchain.agents import create_agent
@@ -55,27 +53,21 @@ def _final_agent_text(result) -> str:
 class SkillAgentRegistry:
     def __init__(self, model):
         self._model = model
-        self._agent = None
-        self._lock = asyncio.Lock()
 
     async def _get_agent(self):
-        if self._agent is not None:
-            return self._agent
-        async with self._lock:
-            if self._agent is not None:
-                return self._agent
-            from core_tools import CORE_TOOLS, REVIEW_TOOLS
-            from skill_service import SKILL_REGISTRY, SKILL_TOOLS
+        from core_tools import CORE_TOOLS, REVIEW_TOOLS
+        from skill_resolver import visible_skill_names
+        from skill_service import SKILL_REGISTRY, SKILL_TOOLS
 
-            tools = [*CORE_TOOLS, *SKILL_TOOLS, *REVIEW_TOOLS]
-            self._agent = create_agent(
-                model=self._model,
-                tools=instrument_tools(tools),
-                middleware=[AgentCycleLimitMiddleware()],
-                system_prompt=build_skill_agent_prompt(SKILL_REGISTRY.catalog()),
-                name="skills_specialist",
-            )
-            return self._agent
+        tools = [*CORE_TOOLS, *SKILL_TOOLS, *REVIEW_TOOLS]
+        catalog = SKILL_REGISTRY.catalog(names=visible_skill_names(SKILL_REGISTRY.names))
+        return create_agent(
+            model=self._model,
+            tools=instrument_tools(tools),
+            middleware=[AgentCycleLimitMiddleware()],
+            system_prompt=build_skill_agent_prompt(catalog),
+            name="skills_specialist",
+        )
 
     async def run(self, task: str) -> str:
         try:
@@ -100,10 +92,13 @@ class SkillAgentRegistry:
                 "SUBAGENT_ERROR: Unknown subagent. "
                 "Available subagents: skills_specialist"
             )
-        await self._get_agent()
+        from skill_resolver import visible_skill_names
+        from skill_service import SKILL_REGISTRY
+        names = visible_skill_names(SKILL_REGISTRY.names)
         return (
             "Loaded subagent: skills_specialist. It can load skills on demand, "
-            "use the five core tools, review commands, and return a specialist result."
+            "use the five core tools, review commands, and return a specialist result. "
+            f"Visible skills: {', '.join(names) or '(none)'}."
         )
 
 
