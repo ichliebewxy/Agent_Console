@@ -28,7 +28,11 @@ Object.assign(window.NebulaNestApp.methods, {
   async loadMemories() {
     this.memoriesLoading = true;
     try {
-      const response = await fetch(`/memory/${encodeURIComponent(this.userId)}`);
+      await this.loadSessionResources();
+      if (!this.sessionResources.memory_read_scopes.includes(this.memoryScope)) {
+        this.memoryScope = this.sessionResources.memory_read_scopes[0];
+      }
+      const response = await fetch(this.sessionMemoryUrl());
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
       this.memories = data.memories || [];
@@ -39,12 +43,17 @@ Object.assign(window.NebulaNestApp.methods, {
     }
   },
 
+  sessionMemoryUrl(memoryId = "") {
+    const base = `/memory/session/${encodeURIComponent(this.userId)}/${encodeURIComponent(this.sessionId)}/${encodeURIComponent(this.memoryScope)}`;
+    return memoryId ? `${base}/${encodeURIComponent(memoryId)}` : base;
+  },
+
   async addMemory() {
     const text = this.memoryForm.memory.trim();
     if (!text || this.memoriesAdding) return;
     this.memoriesAdding = true;
     try {
-      const response = await fetch(`/memory/${encodeURIComponent(this.userId)}`, {
+      const response = await fetch(this.sessionMemoryUrl(), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ memory: text, infer: this.memoryForm.infer }),
@@ -67,7 +76,7 @@ Object.assign(window.NebulaNestApp.methods, {
     const text = next.trim();
     if (!text) return;
     try {
-      const response = await fetch(`/memory/${encodeURIComponent(mem.id)}`, {
+      const response = await fetch(this.sessionMemoryUrl(mem.id), {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ memory: text }),
@@ -84,7 +93,7 @@ Object.assign(window.NebulaNestApp.methods, {
   async deleteMemory(memoryId) {
     if (!confirm("确定删除这条记忆吗？")) return;
     try {
-      const response = await fetch(`/memory/${encodeURIComponent(memoryId)}`, { method: "DELETE" });
+      const response = await fetch(this.sessionMemoryUrl(memoryId), { method: "DELETE" });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
       this.notify("记忆已删除");
@@ -95,9 +104,9 @@ Object.assign(window.NebulaNestApp.methods, {
   },
 
   async clearAllMemories() {
-    if (!confirm("确定清空当前用户的所有长期记忆吗？此操作不可恢复。")) return;
+    if (!confirm("确定清空当前范围的所有记忆吗？此操作不可恢复。")) return;
     try {
-      const response = await fetch(`/memory/user/${encodeURIComponent(this.userId)}`, { method: "DELETE" });
+      const response = await fetch(this.sessionMemoryUrl(), { method: "DELETE" });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
       this.notify("已清空全部记忆");

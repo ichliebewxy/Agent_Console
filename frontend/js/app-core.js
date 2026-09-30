@@ -13,6 +13,9 @@ window.NebulaNestApp = {
       sessions: [],
       runtimeConfig: null,
       configLoading: false,
+      sessionResources: { project_id: null, skills: null, memory_read_scopes: ["user", "session"], memory_write_scope: "session" },
+      sessionSkillSelection: false,
+      sessionResourcesLoading: false,
       mcpForm: {
         name: "",
         transport: "streamable_http",
@@ -35,6 +38,7 @@ window.NebulaNestApp = {
       isUploading: false,
       uploadProgress: "",
       memories: [],
+      memoryScope: "user",
       memoriesLoading: false,
       memoriesAdding: false,
       memoryForm: {
@@ -207,7 +211,10 @@ window.NebulaNestApp = {
       this.activeView = view;
       this.showHistorySidebar = false;
       if (view === "knowledge") this.loadDocuments();
-      if (view === "config") this.loadRuntimeConfig();
+      if (view === "config") {
+        this.loadRuntimeConfig();
+        this.loadSessionResources();
+      }
       if (view === "memory") this.loadMemories();
       this.persistState();
     },
