@@ -39,15 +39,19 @@ from langchain_core.messages import (
     HumanMessage,
     SystemMessage,
 )
+from memory_scope import resolve_memory_access
+from resource_context import build_resource_context
 from runtime_context import (
     active_workspace_dir,
     bind_runtime_context,
+    current_runtime_context,
     session_async_lock,
 )
+from session_resources import SESSION_RESOURCES
 from settings import AGENT_TOOL_CALL_LIMIT, PLAN_EXECUTE_ENABLED
 from subagents import build_subagent_tools
 from tool_instrumentation import instrument_tools
-from workflow_state import initial_workflow_state, plan_payload, public_workflow_state
+from workflow_state import initial_workflow_state
 from workflow_stream import stream_workflow_events
 
 agent = None
@@ -150,30 +154,6 @@ def _prepare_messages(user_text: str, user_id: str, session_id: str):
     return messages, raw_history
 
 
-def _format_memory_context(memories: list) -> str:
-    bullets = "\n".join(f"- {m}" for m in memories)
-    return (
-        "以下是当前用户相关的长期记忆（若与本轮问题无关可忽略）：\n"
-        f"{bullets}"
-    )
-
-
-async def _augment_with_memory(user_text: str, user_id: str, messages: list) -> list:
-    """把与当前问题相关的长期记忆注入为一条 system 消息。任何失败都不阻断对话。"""
-    if not memory_service.is_enabled():
-        return messages
-    try:
-        memories = await asyncio.to_thread(
-            memory_service.search_for_context, user_text, user_id
-        )
-    except Exception as exc:
-        print(f"[memory] 检索长期记忆失败，已跳过注入: {exc}")
-        return messages
-    if not memories:
-        return messages
-    return [SystemMessage(content=_format_memory_context(memories)), *messages]
-
-
 def _schedule_remember(user_id: str, user_message: str, session_id: str) -> None:
     """仅将有跨会话价值的信息异步写入长期记忆。"""
     if (
@@ -182,13 +162,17 @@ def _schedule_remember(user_id: str, user_message: str, session_id: str) -> None
     ):
         return
 
+    resources = SESSION_RESOURCES.get(user_id, session_id)
+    scope, namespace = resolve_memory_access(user_id, session_id, resources).write
+
     async def _run():
         try:
             await asyncio.to_thread(
                 memory_service.remember_conversation,
-                user_id,
+                namespace,
                 user_message,
                 session_id,
+                scope,
             )
         except Exception as exc:
             print(f"[memory] 写入长期记忆失败: {exc}")
@@ -255,6 +239,8 @@ async def execute_workflow_step(instruction: str) -> dict:
     # 已在上文中确认的信息（该历史由 workflow_graph 在调用前注入 ContextVar）。
     messages = _messages_from_history(get_conversation_history())
     messages.append(HumanMessage(content=instruction))
+    context = current_runtime_context()
+    messages = await build_resource_context(messages, instruction, context.user_id, context.session_id)
     result = await agent.ainvoke(
         {"messages": messages},
         config={"recursion_limit": _AGENT_RECURSION_LIMIT},
@@ -306,7 +292,7 @@ async def _chat_with_agent_locked(user_text: str, user_id: str, session_id: str)
             return _command_response(user_text, user_id, session_id, directive.response)
         messages, raw_history = _prepare_messages(directive.prompt, user_id, session_id)
         # 记忆只注入本轮调用，不随 messages 一起持久化，避免逐轮累积脏上下文。
-        invoke_messages = await _augment_with_memory(directive.prompt, user_id, messages)
+        invoke_messages = await build_resource_context(messages, directive.prompt, user_id, session_id)
 
         workflow_data = None
         plan_data = None
@@ -430,7 +416,7 @@ async def _chat_with_agent_stream_bound(
         return
     messages, raw_history = _prepare_messages(directive.prompt, user_id, session_id)
     # 记忆只注入本轮调用，不随 messages 一起持久化。
-    invoke_messages = await _augment_with_memory(directive.prompt, user_id, messages)
+    invoke_messages = await build_resource_context(messages, directive.prompt, user_id, session_id)
 
     use_workflow = _should_plan_execute(user_text) and not directive.condition
     workflow_data = None

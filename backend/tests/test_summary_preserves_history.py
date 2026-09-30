@@ -76,9 +76,10 @@ class SummaryHistoryTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.messages[0].artifacts[0].model_dump(), artifact)
             self.assertEqual(response.messages[-2].content, "new question")
             self.assertEqual(response.messages[-1].content, "new answer")
-            self.assertEqual(len(agent.contexts[0]), 14)
+            self.assertEqual(len(agent.contexts[0]), 15)
             self.assertEqual(agent.contexts[0][0].type, "system")
-            self.assertIn("concise summary", agent.contexts[0][0].content)
+            self.assertIn("Skill", agent.contexts[0][0].content)
+            self.assertIn("concise summary", agent.contexts[0][1].content)
             self.assertEqual(storage.load_context_summary("user", "session")["covered_count"], 40)
             self.assertEqual(len(model.prompts), 1)
 

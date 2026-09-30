@@ -11,10 +11,10 @@
 
 import asyncio
 
-from fastapi import APIRouter, HTTPException
-
 import memory_service
+from fastapi import APIRouter, HTTPException
 from memory_extraction import clear_extraction_files, job_status, sync_extraction_file
+from memory_scope import resolve_memory_access
 from schemas import (
     MemoryAddRequest,
     MemoryAddResponse,
@@ -24,8 +24,93 @@ from schemas import (
     MemoryStatusResponse,
     MemoryUpdateRequest,
 )
+from session_resources import SESSION_RESOURCES
 
 router = APIRouter()
+
+
+def _session_namespace(user_id: str, session_id: str, scope: str) -> str:
+    resources = SESSION_RESOURCES.get(user_id, session_id)
+    access = resolve_memory_access(user_id, session_id, resources)
+    namespaces = dict(access.reads)
+    if scope not in namespaces:
+        raise HTTPException(status_code=403, detail="当前会话未启用该记忆范围")
+    return namespaces[scope]
+
+
+@router.get("/memory/session/{user_id}/{session_id}/{scope}", response_model=MemoryListResponse)
+async def list_session_memories(user_id: str, session_id: str, scope: str):
+    try:
+        namespace = _session_namespace(user_id, session_id, scope)
+        rows = await asyncio.to_thread(memory_service.get_all, namespace)
+        return MemoryListResponse(
+            memories=[_to_info(item) for item in rows],
+            enabled=memory_service.is_enabled(),
+            initialized=memory_service.status()["initialized"],
+        )
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/memory/session/{user_id}/{session_id}/{scope}", response_model=MemoryAddResponse)
+async def add_session_memory(user_id: str, session_id: str, scope: str, request: MemoryAddRequest):
+    text = request.memory.strip()
+    if not text or len(text) > 4000:
+        raise HTTPException(status_code=422, detail="记忆内容必须为 1-4000 字符")
+    try:
+        namespace = _session_namespace(user_id, session_id, scope)
+        result = await asyncio.to_thread(
+            memory_service.add_memory, text, namespace,
+            {"source": "manual", "scope": scope, "session_id": session_id}, request.infer,
+        )
+        return MemoryAddResponse(message="已记录记忆", memory=text, results=result.get("results", []))
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.delete("/memory/session/{user_id}/{session_id}/{scope}", response_model=MemoryDeleteResponse)
+async def clear_session_memories(user_id: str, session_id: str, scope: str):
+    try:
+        namespace = _session_namespace(user_id, session_id, scope)
+        await asyncio.to_thread(memory_service.delete_all, namespace)
+        if scope == "user":
+            await asyncio.to_thread(clear_extraction_files, user_id)
+        return MemoryDeleteResponse(memory_id=scope, message="已清空该范围记忆")
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+async def _checked_memory_id(user_id: str, session_id: str, scope: str, memory_id: str) -> str:
+    namespace = _session_namespace(user_id, session_id, scope)
+    rows = await asyncio.to_thread(memory_service.get_all, namespace, 1000)
+    if not any(str(item.get("id")) == memory_id for item in rows):
+        raise HTTPException(status_code=404, detail="该范围内未找到记忆")
+    return memory_id
+
+
+@router.put("/memory/session/{user_id}/{session_id}/{scope}/{memory_id}", response_model=MemoryDeleteResponse)
+async def update_session_memory(user_id: str, session_id: str, scope: str, memory_id: str, request: MemoryUpdateRequest):
+    text = request.memory.strip()
+    if not text or len(text) > 4000:
+        raise HTTPException(status_code=422, detail="记忆内容必须为 1-4000 字符")
+    await _checked_memory_id(user_id, session_id, scope, memory_id)
+    await asyncio.to_thread(memory_service.update_memory, memory_id, text)
+    await asyncio.to_thread(sync_extraction_file, memory_id, text)
+    return MemoryDeleteResponse(memory_id=memory_id, message="记忆已更新")
+
+
+@router.delete("/memory/session/{user_id}/{session_id}/{scope}/{memory_id}", response_model=MemoryDeleteResponse)
+async def delete_session_memory(user_id: str, session_id: str, scope: str, memory_id: str):
+    await _checked_memory_id(user_id, session_id, scope, memory_id)
+    await asyncio.to_thread(memory_service.delete_memory, memory_id)
+    await asyncio.to_thread(sync_extraction_file, memory_id)
+    return MemoryDeleteResponse(memory_id=memory_id, message="记忆已删除")
 
 
 def _to_info(item) -> MemoryInfo:

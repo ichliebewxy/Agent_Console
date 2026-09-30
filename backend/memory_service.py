@@ -196,6 +196,22 @@ def search_for_context(query, user_id, top_k=None):
     ]
 
 
+def search_scoped_context(query, access, top_k=None):
+    """Search only namespaces already authorized by memory_scope."""
+    limit = top_k or MEM0_TOP_K
+    batches = []
+    for scope, namespace in access.reads:
+        batches.append((scope, search_for_context(query, namespace, top_k=limit)))
+    found = []
+    for index in range(limit):
+        for scope, texts in batches:
+            if index < len(texts):
+                found.append((scope, texts[index]))
+                if len(found) >= limit:
+                    return found
+    return found
+
+
 def get_all(user_id, top_k=100):
     memory = init_memory()
     with _call_lock:
@@ -215,14 +231,14 @@ def add_memory(text, user_id, metadata=None, infer=False):
     return result
 
 
-def remember_conversation(user_id, user_message, session_id=None):
+def remember_conversation(user_id, user_message, session_id=None, scope="user"):
     if not is_long_term_memory_candidate(user_message):
         return {"results": [], "skipped": True, "reason": "not_long_term"}
 
     memory = init_memory()
     # 长期记忆只描述用户；Agent 回复只属于当前会话上下文。
     messages = [{"role": "user", "content": user_message}]
-    metadata = {"source": "automatic", "scope": "long_term"}
+    metadata = {"source": "automatic", "scope": "long_term" if scope == "user" else scope}
     if session_id:
         metadata["session_id"] = session_id
     with _call_lock:

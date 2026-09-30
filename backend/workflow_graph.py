@@ -109,10 +109,18 @@ async def _init_run(state: WorkflowState) -> dict:
 
 
 async def _plan(state: WorkflowState) -> dict:
+    from resource_context import build_resource_context
+
+    with bind_runtime_context(state["user_id"], state["session_id"]):
+        resources = await build_resource_context(
+            [], state.get("request") or "", state["user_id"], state["session_id"]
+        )
     plan = await plan_execute.generate_plan(
         state.get("request") or "",
         max_steps=PLAN_EXECUTE_MAX_STEPS,
-        history=state.get("history") or [],
+        history=[
+            {"type": "system", "content": str(message.content)} for message in resources
+        ] + (state.get("history") or []),
     )
     return {
         **_plan_update(plan),

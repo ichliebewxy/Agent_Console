@@ -10,15 +10,19 @@ def visible_skill_names(installed: tuple[str, ...]) -> tuple[str, ...]:
         context = current_runtime_context()
     except RuntimeError:
         return installed
-    resources = SESSION_RESOURCES.get(context.user_id, context.session_id)
+    return resolve_skill_names(installed, context.user_id, context.session_id)
+
+
+def resolve_skill_names(installed: tuple[str, ...], user_id: str, session_id: str) -> tuple[str, ...]:
+    resources = SESSION_RESOURCES.get(user_id, session_id)
     allowed = set(installed)
-    for name, enabled in SKILL_BINDINGS.get(context.user_id).items():
+    for name, enabled in SKILL_BINDINGS.get(user_id).items():
         if enabled:
             allowed.add(name)
         else:
             allowed.discard(name)
     if resources.project_id:
-        for name, enabled in SKILL_BINDINGS.get(context.user_id, resources.project_id).items():
+        for name, enabled in SKILL_BINDINGS.get(user_id, resources.project_id).items():
             if enabled:
                 allowed.add(name)
             else:
