@@ -264,13 +264,18 @@ Object.assign(window.NebulaNestApp.methods, {
       this.notify("请先停止或等待当前回答完成");
       return;
     }
+    const userId = this.userId;
+    const requestId = ++this.historyRequestId;
     this.sessionId = sessionId;
     this.activeView = "chat";
     this.showHistorySidebar = false;
+    this.messages = [];
+    this.persistState();
     try {
-      const response = await fetch(`/sessions/${this.userId}/${sessionId}`);
+      const response = await fetch(`/sessions/${encodeURIComponent(userId)}/${encodeURIComponent(sessionId)}`);
       if (!response.ok) throw new Error("Failed to load session messages");
       const data = await response.json();
+      if (requestId !== this.historyRequestId || userId !== this.userId || sessionId !== this.sessionId) return;
       this.messages = (data.messages || []).map((msg) => ({
         id: this.createId(),
         text: msg.content,
@@ -286,7 +291,9 @@ Object.assign(window.NebulaNestApp.methods, {
       this.persistState();
       this.$nextTick(() => this.scrollToBottom());
     } catch (error) {
-      this.notify(`加载会话失败：${error.message}`);
+      if (requestId === this.historyRequestId && userId === this.userId && sessionId === this.sessionId) {
+        this.notify(`加载会话失败：${error.message}`);
+      }
     }
   },
 
