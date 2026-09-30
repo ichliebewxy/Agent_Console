@@ -11,6 +11,7 @@ window.NebulaNestApp = {
       userId: "user_" + Math.random().toString(36).slice(2, 11),
       sessionId: "session_" + Date.now(),
       sessions: [],
+      historyRequestId: 0,
       deletingSessionId: null,
       runtimeConfig: null,
       configLoading: false,
@@ -282,6 +283,7 @@ window.NebulaNestApp = {
         this.notify("请先停止或等待当前回答完成");
         return;
       }
+      this.historyRequestId += 1;
       this.messages = [];
       this.userInput = "";
       this.sessionId = "session_" + Date.now();

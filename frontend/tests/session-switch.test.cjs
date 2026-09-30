@@ -31,3 +31,43 @@ test("an active stream prevents replacing its session and message array", async 
   assert.equal(instance.messages[0].text, "pending response");
   assert.deepEqual(calls, []);
 });
+
+test("late history responses cannot overwrite the selected session", async () => {
+  let releaseOld;
+  const oldResponse = new Promise((resolve) => { releaseOld = resolve; });
+  context.fetch = async (url) => {
+    if (url.endsWith("/old")) return oldResponse;
+    return { ok: true, json: async () => ({ messages: [{ type: "human", content: "new history" }] }) };
+  };
+  const instance = Object.assign(context.window.NebulaNestApp.data(), context.window.NebulaNestApp.methods);
+  instance.userId = "user";
+  instance.persistState = () => {};
+  instance.$nextTick = (callback) => callback();
+  instance.$refs = {};
+
+  const oldLoad = instance.loadSession("old");
+  await instance.loadSession("new");
+  releaseOld({ ok: true, json: async () => ({ messages: [{ type: "human", content: "old history" }] }) });
+  await oldLoad;
+
+  assert.equal(instance.sessionId, "new");
+  assert.equal(instance.messages[0].text, "new history");
+});
+
+test("new chat invalidates an in-flight history load", async () => {
+  let releaseHistory;
+  context.fetch = () => new Promise((resolve) => { releaseHistory = resolve; });
+  const instance = Object.assign(context.window.NebulaNestApp.data(), context.window.NebulaNestApp.methods);
+  instance.userId = "user";
+  instance.persistState = () => {};
+  instance.$nextTick = (callback) => callback();
+  instance.$refs = {};
+
+  const pending = instance.loadSession("old");
+  instance.handleNewChat();
+  releaseHistory({ ok: true, json: async () => ({ messages: [{ type: "human", content: "stale" }] }) });
+  await pending;
+
+  assert.notEqual(instance.sessionId, "old");
+  assert.equal(instance.messages.length, 0);
+});
