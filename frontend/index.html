@@ -366,6 +366,8 @@
         </div>
 
         <div v-if="memories.length" class="memory-footer">
+          <button v-if="memoriesHasMore && memoryLimit < 10000" class="secondary-action inline" :disabled="memoriesLoading" @click="loadMoreMemories">加载更多记忆</button>
+          <span v-else-if="memoriesHasMore" class="muted-row">已达到 10000 条显示上限</span>
           <button class="danger-action" @click="clearAllMemories"><i class="fas fa-trash"></i>清空当前范围记忆</button>
         </div>
       </section>

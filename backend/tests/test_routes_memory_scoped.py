@@ -24,10 +24,11 @@ class ScopedMemoryRouteTests(unittest.IsolatedAsyncioTestCase):
             app = FastAPI()
             app.include_router(routes_memory.router)
             with patch.object(routes_memory, "SESSION_RESOURCES", store), \
-                 patch.object(routes_memory.memory_service, "get_all", return_value=[]):
-                response = TestClient(app).get("/memory/session/user/one/session")
+                 patch.object(routes_memory.memory_service, "get_all", return_value=[]) as get_all:
+                response = TestClient(app).get("/memory/session/user/one/session?limit=200")
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.json()["memories"], [])
+            self.assertEqual(get_all.call_args.args[1], 201)
 
     async def test_read_and_write_use_only_configured_namespace(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -75,6 +76,21 @@ class ScopedMemoryRouteTests(unittest.IsolatedAsyncioTestCase):
             get.assert_called_once_with("old")
             get_all.assert_not_called()
             update.assert_called_once_with("old", "changed")
+
+    async def test_scoped_memory_list_reports_more_after_first_page(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = SessionResourceStore(Path(directory) / "resources.json")
+            store.put("user", "one", {"memory_read_scopes": ["session"]})
+            rows = [{"id": str(index), "memory": f"fact {index}"} for index in range(101)]
+            with patch.object(routes_memory, "SESSION_RESOURCES", store), \
+                 patch.object(routes_memory.memory_service, "get_all", return_value=rows) as get_all:
+                first = await routes_memory.list_session_memories("user", "one", "session")
+                expanded = await routes_memory.list_session_memories("user", "one", "session", limit=200)
+            self.assertEqual(len(first.memories), 100)
+            self.assertTrue(first.has_more)
+            self.assertEqual(len(expanded.memories), 101)
+            self.assertFalse(expanded.has_more)
+            self.assertEqual(get_all.call_args.args[1], 201)
 
 
 if __name__ == "__main__":

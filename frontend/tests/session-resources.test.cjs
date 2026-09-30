@@ -22,6 +22,7 @@ function app(fetch) {
     sessionResources: { project_id: null, skills: null, memory_read_scopes: ["user", "session"], memory_write_scope: "session" },
     sessionSkillSelection: false, sessionResourcesLoading: false,
     memories: [], memoriesLoading: false,
+    memoryLimit: 100, memoryListKey: null, memoriesHasMore: false,
     notify(message) { throw new Error(message); },
   }, methods);
 }
@@ -60,7 +61,7 @@ test("memory panel reads the selected authorized scope", async () => {
   });
   await instance.loadMemories();
   assert.equal(instance.memoryScope, "session");
-  assert.equal(calls[1], "/memory/session/user/session/session");
+  assert.equal(calls[1], "/memory/session/user/session/session?limit=100");
   assert.equal(instance.memories[0].memory, "fact");
 });
 
@@ -102,9 +103,26 @@ test("a late response from another session cannot replace current memories or re
   assert.deepEqual(calls, [
     "/sessions/user/old/resources",
     "/sessions/user/new/resources",
-    "/memory/session/user/new/session",
+    "/memory/session/user/new/session?limit=100",
   ]);
   assert.equal(instance.sessionResources.memory_write_scope, "session");
   assert.equal(instance.memories[0].memory, "current");
   assert.equal(instance.memoriesLoading, false);
+});
+
+test("memory panel can request the next hundred entries", async () => {
+  const calls = [];
+  const instance = app(async (url) => {
+    calls.push(url);
+    if (url.endsWith("/resources")) return json({
+      project_id: null, skills: null, memory_read_scopes: ["session"], memory_write_scope: "session",
+    });
+    return json({ memories: [{ id: "one", memory: "fact" }], has_more: url.endsWith("limit=100") });
+  });
+  await instance.loadMemories();
+  assert.equal(instance.memoriesHasMore, true);
+  await instance.loadMoreMemories();
+  assert.equal(instance.memoryLimit, 200);
+  assert.equal(calls[3], "/memory/session/user/session/session?limit=200");
+  assert.equal(instance.memoriesHasMore, false);
 });

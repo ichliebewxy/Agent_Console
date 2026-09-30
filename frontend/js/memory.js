@@ -30,6 +30,7 @@ Object.assign(window.NebulaNestApp.methods, {
     const sessionId = this.sessionId;
     const requestId = this._memoryRequestId = (this._memoryRequestId || 0) + 1;
     this.memories = [];
+    this.memoriesHasMore = false;
     this.memoriesLoading = true;
     try {
       const resources = await this.loadSessionResources();
@@ -38,11 +39,17 @@ Object.assign(window.NebulaNestApp.methods, {
         this.memoryScope = resources.memory_read_scopes[0];
       }
       const scope = this.memoryScope;
-      const response = await fetch(this.sessionMemoryUrl("", userId, sessionId, scope));
+      const listKey = `${userId}\0${sessionId}\0${scope}`;
+      if (this.memoryListKey !== listKey) {
+        this.memoryListKey = listKey;
+        this.memoryLimit = 100;
+      }
+      const response = await fetch(`${this.sessionMemoryUrl("", userId, sessionId, scope)}?limit=${this.memoryLimit}`);
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
       if (requestId !== this._memoryRequestId || userId !== this.userId || sessionId !== this.sessionId || scope !== this.memoryScope) return;
       this.memories = data.memories || [];
+      this.memoriesHasMore = Boolean(data.has_more);
     } catch (error) {
       if (requestId === this._memoryRequestId && userId === this.userId && sessionId === this.sessionId) {
         this.notify(`加载记忆失败：${error.message}`);
@@ -50,6 +57,12 @@ Object.assign(window.NebulaNestApp.methods, {
     } finally {
       if (requestId === this._memoryRequestId) this.memoriesLoading = false;
     }
+  },
+
+  async loadMoreMemories() {
+    if (!this.memoriesHasMore || this.memoriesLoading || this.memoryLimit >= 10000) return;
+    this.memoryLimit = Math.min(this.memoryLimit + 100, 10000);
+    await this.loadMemories();
   },
 
   sessionMemoryUrl(memoryId = "", userId = this.userId, sessionId = this.sessionId, scope = this.memoryScope) {

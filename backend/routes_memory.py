@@ -10,9 +10,10 @@
 """
 
 import asyncio
+from typing import Annotated
 
 import memory_service
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from memory_extraction import clear_extraction_files, job_status, sync_extraction_file
 from memory_scope import resolve_memory_access
 from schemas import (
@@ -39,12 +40,16 @@ def _session_namespace(user_id: str, session_id: str, scope: str) -> str:
 
 
 @router.get("/memory/session/{user_id}/{session_id}/{scope}", response_model=MemoryListResponse)
-async def list_session_memories(user_id: str, session_id: str, scope: str):
+async def list_session_memories(
+    user_id: str, session_id: str, scope: str,
+    limit: Annotated[int, Query(ge=1, le=10000)] = 100,
+):
     try:
         namespace = _session_namespace(user_id, session_id, scope)
-        rows = await asyncio.to_thread(memory_service.get_all, namespace)
+        rows = await asyncio.to_thread(memory_service.get_all, namespace, limit + 1)
         return MemoryListResponse(
-            memories=[_to_info(item) for item in rows],
+            memories=[_to_info(item) for item in rows[:limit]],
+            has_more=len(rows) > limit,
             enabled=memory_service.is_enabled(),
             initialized=memory_service.status()["initialized"],
         )
@@ -137,14 +142,15 @@ async def memory_extraction_status(job_id: str, user_id: str):
 
 
 @router.get("/memory/{user_id}", response_model=MemoryListResponse)
-async def list_memories(user_id: str):
+async def list_memories(user_id: str, limit: Annotated[int, Query(ge=1, le=10000)] = 100):
     try:
-        results = await asyncio.to_thread(memory_service.get_all, user_id)
+        results = await asyncio.to_thread(memory_service.get_all, user_id, limit + 1)
         memories = [_to_info(item) for item in results]
         # 按更新时间倒序，便于前端展示最近记忆在前。
         memories.sort(key=lambda m: m.updated_at or "", reverse=True)
         return MemoryListResponse(
-            memories=memories,
+            memories=memories[:limit],
+            has_more=len(memories) > limit,
             enabled=memory_service.is_enabled(),
             initialized=memory_service.status()["initialized"],
         )
