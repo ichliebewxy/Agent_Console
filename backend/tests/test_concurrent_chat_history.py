@@ -43,7 +43,8 @@ class ConcurrentChatHistoryTests(unittest.IsolatedAsyncioTestCase):
             [message.content for message in history],
             ["first", "reply: first", "second", "reply: second"],
         )
-        self.assertEqual(seen_contexts[1], ["first", "reply: first", "second"])
+        self.assertIn("Skill", seen_contexts[1][0])
+        self.assertEqual(seen_contexts[1][1:], ["first", "reply: first", "second"])
 
     async def test_two_streamed_turns_keep_both_questions_and_answers(self):
         class FakeAgent:

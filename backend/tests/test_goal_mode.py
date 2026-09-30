@@ -94,9 +94,9 @@ class GoalModeTests(unittest.IsolatedAsyncioTestCase):
                 raise AgentCircuitOpen()
 
         registry = SkillAgentRegistry(object())
-        registry._agent = FailingAgent()
-        with self.assertRaises(AgentCircuitOpen):
-            await registry.run("task")
+        with patch.object(registry, "_get_agent", return_value=FailingAgent()):
+            with self.assertRaises(AgentCircuitOpen):
+                await registry.run("task")
 
     def test_goal_commands_are_scoped_to_session_and_persisted(self):
         with tempfile.TemporaryDirectory() as directory:
