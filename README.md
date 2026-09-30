@@ -864,9 +864,12 @@ node --check frontend/js/formatters.js
 
 ```powershell
 uv run python -m unittest discover -s backend/tests -p "test_*.py" -v
+cd frontend
+npm ci
+npm test
 ```
 
-测试覆盖 Agent 工具架构、Artifact token、配置服务、文档解析、LangChain runtime、本地运行限制、文档路由、Skill registry 和工具 instrumentation。涉及真实模型、Milvus、MCP 或 OpenCLI 的测试应在对应服务可用时运行；否则使用 mock/跳过外部集成测试。
+测试覆盖 Agent 工具架构、Artifact token、配置服务、文档解析、LangChain runtime、本地运行限制、文档路由、Skill registry、工具 instrumentation，以及前端会话资源和 Markdown 安全渲染。涉及真实模型、Milvus、MCP 或 OpenCLI 的测试应在对应服务可用时运行；否则使用 mock/跳过外部集成测试。
 
 ### 代码约定
 

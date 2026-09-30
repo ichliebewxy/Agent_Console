@@ -1,0 +1,12 @@
+{
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/session-resources.test.cjs tests/markdown-safety.test.cjs"
+  },
+  "devDependencies": {
+    "dompurify": "3.4.14",
+    "highlight.js": "11.7.0",
+    "jsdom": "26.1.0",
+    "marked": "4.3.0"
+  }
+}
