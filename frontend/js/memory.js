@@ -26,25 +26,34 @@ Object.assign(window.NebulaNestApp.methods, {
   },
 
   async loadMemories() {
+    const userId = this.userId;
+    const sessionId = this.sessionId;
+    const requestId = this._memoryRequestId = (this._memoryRequestId || 0) + 1;
+    this.memories = [];
     this.memoriesLoading = true;
     try {
-      await this.loadSessionResources();
-      if (!this.sessionResources.memory_read_scopes.includes(this.memoryScope)) {
-        this.memoryScope = this.sessionResources.memory_read_scopes[0];
+      const resources = await this.loadSessionResources();
+      if (!resources || requestId !== this._memoryRequestId || userId !== this.userId || sessionId !== this.sessionId) return;
+      if (!resources.memory_read_scopes.includes(this.memoryScope)) {
+        this.memoryScope = resources.memory_read_scopes[0];
       }
-      const response = await fetch(this.sessionMemoryUrl());
+      const scope = this.memoryScope;
+      const response = await fetch(this.sessionMemoryUrl("", userId, sessionId, scope));
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
+      if (requestId !== this._memoryRequestId || userId !== this.userId || sessionId !== this.sessionId || scope !== this.memoryScope) return;
       this.memories = data.memories || [];
     } catch (error) {
-      this.notify(`加载记忆失败：${error.message}`);
+      if (requestId === this._memoryRequestId && userId === this.userId && sessionId === this.sessionId) {
+        this.notify(`加载记忆失败：${error.message}`);
+      }
     } finally {
-      this.memoriesLoading = false;
+      if (requestId === this._memoryRequestId) this.memoriesLoading = false;
     }
   },
 
-  sessionMemoryUrl(memoryId = "") {
-    const base = `/memory/session/${encodeURIComponent(this.userId)}/${encodeURIComponent(this.sessionId)}/${encodeURIComponent(this.memoryScope)}`;
+  sessionMemoryUrl(memoryId = "", userId = this.userId, sessionId = this.sessionId, scope = this.memoryScope) {
+    const base = `/memory/session/${encodeURIComponent(userId)}/${encodeURIComponent(sessionId)}/${encodeURIComponent(scope)}`;
     return memoryId ? `${base}/${encodeURIComponent(memoryId)}` : base;
   },
 

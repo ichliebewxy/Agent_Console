@@ -63,3 +63,48 @@ test("memory panel reads the selected authorized scope", async () => {
   assert.equal(calls[1], "/memory/session/user/session/session");
   assert.equal(instance.memories[0].memory, "fact");
 });
+
+test("failed resource loading clears old memories and stops the memory request", async () => {
+  const calls = [];
+  const notices = [];
+  const instance = app(async (url) => {
+    calls.push(url);
+    return { ok: false, status: 503, json: async () => ({ detail: "unavailable" }) };
+  });
+  instance.memories = [{ id: "old", memory: "previous session" }];
+  instance.notify = (message) => notices.push(message);
+  await instance.loadMemories();
+  assert.deepEqual(calls, ["/sessions/user/session/resources"]);
+  assert.equal(instance.memories.length, 0);
+  assert.equal(instance.memoriesLoading, false);
+  assert.equal(instance.sessionResourcesLoading, false);
+  assert.equal(notices.length, 1);
+});
+
+test("a late response from another session cannot replace current memories or resources", async () => {
+  let releaseOld;
+  const oldResponse = new Promise((resolve) => { releaseOld = resolve; });
+  const calls = [];
+  const instance = app(async (url) => {
+    calls.push(url);
+    if (url === "/sessions/user/old/resources") return oldResponse;
+    if (url.endsWith("/resources")) return json({
+      project_id: null, skills: null, memory_read_scopes: ["session"], memory_write_scope: "session",
+    });
+    return json({ memories: [{ id: "new", memory: "current" }] });
+  });
+  instance.sessionId = "old";
+  const staleLoad = instance.loadMemories();
+  instance.sessionId = "new";
+  await instance.loadMemories();
+  releaseOld(json({ project_id: null, skills: ["old"], memory_read_scopes: ["user"], memory_write_scope: "user" }));
+  await staleLoad;
+  assert.deepEqual(calls, [
+    "/sessions/user/old/resources",
+    "/sessions/user/new/resources",
+    "/memory/session/user/new/session",
+  ]);
+  assert.equal(instance.sessionResources.memory_write_scope, "session");
+  assert.equal(instance.memories[0].memory, "current");
+  assert.equal(instance.memoriesLoading, false);
+});
