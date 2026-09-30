@@ -329,13 +329,18 @@
         <div class="section-head">
           <div>
             <h3>长期记忆</h3>
-            <p>基于 mem0 的用户长期记忆，跨会话本地持久化。每轮回复结束后会在后台抽取新记忆，新增时页面会提示。</p>
+            <p>按当前会话配置读取用户、项目或会话记忆。自动保存的新记忆写入配置指定的范围。</p>
           </div>
           <button class="secondary-action inline" @click="loadMemories"><i class="fas fa-rotate"></i>刷新</button>
         </div>
 
+        <label class="memory-scope-selector">查看范围
+          <select v-model="memoryScope" @change="loadMemories">
+            <option v-for="scope in sessionResources.memory_read_scopes" :key="scope" :value="scope">{{ scope === 'user' ? '用户' : scope === 'project' ? '项目' : '当前会话' }}</option>
+          </select>
+        </label>
         <div class="memory-composer">
-          <textarea v-model="memoryForm.memory" rows="2" placeholder="手动添加一条关于用户的事实，例如：用户喜欢简洁的代码风格"></textarea>
+          <textarea v-model="memoryForm.memory" rows="2" placeholder="手动添加当前范围的事实或偏好"></textarea>
           <div class="memory-composer-actions">
             <label class="check-line"><input v-model="memoryForm.infer" type="checkbox"> 由 LLM 抽取为结构化记忆（否则原文照存）</label>
             <button class="primary-action" :disabled="!memoryForm.memory.trim() || memoriesAdding" @click="addMemory">
@@ -346,7 +351,7 @@
 
         <div class="memory-list">
           <div v-if="memoriesLoading" class="skeleton-stack" aria-label="正在加载记忆"><span></span><span></span><span></span></div>
-          <div v-else-if="memories.length === 0" class="muted-row">暂无记忆。开始对话后 Agent 会自动记录，也可以手动添加。</div>
+          <div v-else-if="memories.length === 0" class="muted-row">该范围暂无记忆，可以手动添加。</div>
           <article v-for="mem in memories" :key="mem.id" class="memory-row">
             <div class="memory-row-main">
               <p>{{ mem.memory }}</p>
@@ -361,7 +366,7 @@
         </div>
 
         <div v-if="memories.length" class="memory-footer">
-          <button class="danger-action" @click="clearAllMemories"><i class="fas fa-trash"></i>清空全部记忆</button>
+          <button class="danger-action" @click="clearAllMemories"><i class="fas fa-trash"></i>清空当前范围记忆</button>
         </div>
       </section>
 
@@ -382,6 +387,22 @@
           <article><small>Skills</small><strong>{{ (runtimeConfig.skills || []).length }}</strong></article>
           <article><small>最近解析</small><strong class="config-time">{{ runtimeConfig.discovery && runtimeConfig.discovery.updated_at ? new Date(runtimeConfig.discovery.updated_at).toLocaleString() : '尚未解析' }}</strong></article>
         </div>
+
+        <section class="config-card session-resource-card">
+          <header><div><h4>当前会话资源：{{ sessionId }}</h4><p>选择本会话可加载的 Skill，以及记忆的读取和写入范围。初始配置将新记忆写入本会话。</p></div></header>
+          <form class="config-form" @submit.prevent="saveSessionResources" v-if="!sessionResourcesLoading">
+            <label class="wide">项目 ID（启用项目记忆时填写）<input v-model="sessionResources.project_id" pattern="[A-Za-z0-9][A-Za-z0-9_.-]*" placeholder="例如 crm"></label>
+            <label class="check-line wide"><input v-model="sessionSkillSelection" type="checkbox" @change="onSessionSkillModeChange"> 为当前会话单独选择 Skills（不勾选时继承用户和项目设置）</label>
+            <div v-if="sessionSkillSelection" class="wide tool-chips">
+              <label v-for="skill in (runtimeConfig && runtimeConfig.skills || [])" :key="skill.name" class="check-line"><input v-model="sessionResources.skills" :value="skill.name" type="checkbox"> {{ skill.name }}</label>
+            </div>
+            <div class="wide"><strong>读取记忆</strong><div class="tool-chips">
+              <label v-for="scope in ['user', 'project', 'session']" :key="scope" class="check-line"><input v-model="sessionResources.memory_read_scopes" :value="scope" type="checkbox" :disabled="scope === 'project' && !sessionResources.project_id"> {{ scope }}</label>
+            </div></div>
+            <label>新记忆写入范围<select v-model="sessionResources.memory_write_scope"><option value="session">当前会话</option><option value="user">当前用户</option><option value="project" :disabled="!sessionResources.project_id">当前项目</option></select></label>
+            <button class="primary-action" type="submit">保存会话配置</button>
+          </form>
+        </section>
 
         <div class="config-grid">
           <section class="config-card">
@@ -521,6 +542,7 @@
   <script src="js/chat.js?v=ui-refresh-1"></script>
   <script src="js/knowledge.js?v=ui-refresh-1"></script>
   <script src="js/config.js?v=ui-refresh-1"></script>
+  <script src="js/session-resources.js?v=ui-refresh-1"></script>
   <script src="js/memory.js?v=ui-refresh-1"></script>
   <script src="js/formatters.js?v=ui-refresh-1"></script>
   <script src="script.js?v=ui-refresh-1"></script>

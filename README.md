@@ -43,7 +43,7 @@ Agent Console 是一个面向本地可信环境的 LangChain 多 Agent + RAG 工
 | Goal 模式 | `/goal 完成条件` 保存会话目标；独立判断器根据实际执行记录判断完成情况，未达标则自动续轮。 |
 | 调用上限 | 每次请求最多进行 100 轮 Agent 模型调用，达到上限立即熔断；工具调用另有默认 250 次的独立上限。 |
 | Durable Plan-and-Execute | 多步骤任务由 LangGraph 状态图执行；每个 run 使用独立 `thread_id` 和 SQLite 检查点，步骤在私有 staging 中事务化执行，失败可重试、修改、跳过、终止或从历史检查点回滚。 |
-| 长期记忆（mem0） | 每轮回复结束后由独立的 extractMemories 后台任务读取主 Agent 的对话记录，分类、去重并保存有跨会话价值的记忆。 |
+| 分范围记忆（mem0） | 每个会话独立选择用户、项目、会话记忆的读取范围与默认写入范围。 |
 
 ## Goal 模式与循环熔断
 
@@ -55,17 +55,41 @@ Agent Console 是一个面向本地可信环境的 LangChain 多 Agent + RAG 工
 
 ## 长期记忆（mem0）
 
-主 Agent 通过 `backend/memory_service.py` 接入 mem0 长期记忆层，实现“跨会话还记得你”：
+主 Agent 通过 `backend/memory_service.py` 接入 mem0 记忆层。每个会话可以独立选择可读范围和默认写入范围：
 
 - **分层上下文**：同一 `session_id` 下的真实对话历史持续加载，多步工作流也会携带该历史；历史过长时摘要早期内容，无需依赖长期记忆来串起当前对话。
-- **轮后抽取**：主 Agent 完成最终回复并保存对话后，`stopHook` 在后台启动独立的 `extractMemories`。它只从本轮用户消息提取信息，按用户信息、偏好、长期项目、反馈纠正四类归档；先与现有记忆比对，并通过 `hasMemoryWritesSince` 排除本轮刚写入的重复内容。新增记忆同时写入 mem0 和 `data/mem0/extractions/` 下的独立 JSON 文件，页面会提示新增条数。
-- **上下文召回**：新一轮对话开始前，用当前问题做语义检索，把最相关的几条长期记忆作为 system 消息注入，Agent 无需用户重复自我介绍。
+- **轮后写入**：当前聊天路径只对具有长期价值的用户消息做后台记忆抽取，写入该会话配置的默认范围；默认是当前会话。用户可以在配置中心改为用户或项目范围。
+- **上下文召回**：新一轮对话开始前，仅检索当前会话允许读取的用户、项目、会话 namespace，去重并限制注入长度；项目 namespace 同时包含用户 ID，避免同名项目串用。
 - **本地化存储**：全部落在 `data/mem0/`（默认），包括本地 Qdrant 向量库与 SQLite 历史库；不依赖外部服务，模型使用项目已有的 `BAAI/bge-m3` 本地嵌入，DeepSeek 负责事实抽取。遥测默认关闭（`MEM0_TELEMETRY=False`）。
-- **手动管理**：前端“记忆”面板调用 `/memory/*` 接口，可查看、新增（原文照存或 LLM 抽取）、编辑、删除、清空某用户的记忆。
+- **手动管理**：前端“记忆”面板可按当前会话允许的范围查看、新增、编辑、删除或清空记忆。原有 `/memory/{user_id}` 接口仍管理用户范围。
 
 记忆配置已有代码默认值，通常不需要写入 `.env`。如需要覆盖，可使用 `MEMORY_ENABLED`、`MEM0_DIR`、`MEM0_MODEL` 和 `MEM0_TOP_K`。
 
 > 安装说明：mem0 及其本地 Qdrant 依赖已纳入 `pyproject.toml` 和 `uv.lock`，使用 `uv sync --frozen` 即可按锁定版本安装。
+
+## 会话资源隔离
+
+`backend/session_resources.py` 只负责持久化会话的资源配置；`skill_resolver.py` 计算本轮可见的 Skill；`memory_scope.py` 计算 mem0 namespace；`context_builder.py` 只组装本轮模型上下文。对话历史仍由 `ConversationStorage` 按 `user_id/session_id` 保存。各模块不共享可变的“当前 Skill/Memory”全局变量。
+
+会话配置保存在 `data/session_resources.json`。配置中心可设置项目 ID、会话 Skill 清单、记忆读取范围和默认写入范围。`skills: null` 表示继承安装目录及用户/项目默认绑定，空数组表示禁用全部 Skill。用户与项目的 Skill 覆盖规则保存在 `data/skill_bindings.json`；按用户 → 项目 → 会话的顺序解析，项目绑定使用同一用户内的项目 ID。Skill 正文仍在调用 `load_skill` 时才加载，`read_skill_resource` 也会再次检查当前会话的可见清单。切换会话配置后，下一轮从持久化的用户/助手消息重新组装资源上下文；工作流检查点只保留原始会话历史，规划和执行步骤会重新解析资源。此前助手的回答或对话摘要可能已经包含旧资源的信息，要求严格切换时应新建会话。
+
+主要 API：
+
+| 操作 | 路径 |
+| --- | --- |
+| 查看/替换会话资源配置 | `GET/PUT /sessions/{user_id}/{session_id}/resources` |
+| 查看/替换用户 Skill 默认绑定 | `GET/PUT /skill-bindings/{user_id}` |
+| 查看/替换项目 Skill 默认绑定 | `GET/PUT /skill-bindings/{user_id}/projects/{project_id}` |
+| 管理当前会话授权范围的记忆 | `GET/POST/DELETE /memory/session/{user_id}/{session_id}/{scope}` |
+| 编辑或删除范围内的一条记忆 | `PUT/DELETE /memory/session/{user_id}/{session_id}/{scope}/{memory_id}` |
+
+`PUT /sessions/.../resources` 示例：
+
+```json
+{"project_id":"crm","skills":["pdf"],"memory_read_scopes":["user","project","session"],"memory_write_scope":"session"}
+```
+
+项目 Skill 绑定示例：`{"bindings":{"pdf":false,"code-review":true}}`。这仍是面向本地可信环境的逻辑隔离；`user_id` 来自请求参数，部署到多用户环境前必须增加身份认证，并由服务端确定用户和项目归属。
 
 ## 系统架构
 
@@ -193,15 +217,15 @@ sequenceDiagram
     participant T as 工具层 (Core/MCP/RAG/Skill)
     participant S as ConversationStorage
     participant M as mem0 长期记忆
-    participant X as extractMemories
+    participant X as 后台记忆写入
 
     U->>F: 输入消息
     F->>R: POST /chat/stream(message, user_id, session_id)
     R->>A: chat_with_agent_stream()
     A->>S: load(user_id, session_id) 读取历史
     S-->>A: 历史消息（超过 50 条则先摘要旧消息）
-    A->>M: search_for_context 检索长期记忆
-    M-->>A: 相关记忆（仅本轮注入，不写入历史）
+    A->>M: search_scoped_context 仅检索授权范围
+    M-->>A: 带来源的相关记忆（仅本轮注入）
     alt 简单问答（未命中多步骤门控）
         A->>T: create_agent 循环（历史 + 当前消息）
         loop 工具调用（上限 AGENT_TOOL_CALL_LIMIT）
@@ -210,7 +234,7 @@ sequenceDiagram
         A-->>R: SSE content / content_boundary
     else 多步骤任务（plan-and-execute）
         A->>W: initial_workflow_state(history) + astream
-        W->>W: 规划(带历史) → 选择步骤 → 事务 → 执行步骤(带历史)
+        W->>W: 规划(重新解析资源) → 选择步骤 → 事务 → 执行步骤(重新解析资源)
         loop 每个子任务
             W->>T: execute_workflow_step(历史 + step 指令) → agent.ainvoke
             T-->>W: 步骤结果 / tool_events
@@ -219,13 +243,11 @@ sequenceDiagram
         W-->>A: SSE plan / execute / reflect / content
     end
     A->>S: save(历史 + 当前 + 回答) 持久化
-    A->>X: stopHook 后台启动（复用本轮对话记录）
-    X->>M: 读取现有记忆、抽取四类事实并去重
-    opt 确有新增记忆
-        X->>M: 写入 mem0 与独立 JSON 文件
-        F-->>U: 弹出新增记忆提示
+    opt 用户消息具有长期记忆价值
+        A->>X: 异步提交用户消息
+        X->>M: 写入配置指定的 namespace（默认会话）
     end
-    A-->>R: SSE trace(如有RAG) / artifacts / memory_extraction / [DONE]
+    A-->>R: SSE trace(如有RAG) / artifacts / [DONE]
     R-->>F: 流式事件（text/event-stream）
     F-->>U: 渲染回答 + 工具/RAG 轨迹
 ```
@@ -238,7 +260,7 @@ flowchart TD
     B --> C{历史长度超过 50}
     C -->|是| D[最早消息摘要后拼接近期消息]
     C -->|否| E[保留完整历史]
-    D --> F[_augment_with_memory 注入长期记忆]
+    D --> F[build_resource_context 解析 Skill 与记忆]
     E --> F
     F --> G{_should_plan_execute}
     G -->|否| H[create_agent 直接调用 带历史]
@@ -252,8 +274,8 @@ flowchart TD
 
 要点：
 
-- **历史持久化**：`ConversationStorage` 只保存真实对话轮次（用户 + 助手）；`_augment_with_memory` 注入的长期记忆是“本轮临时上下文”，不随历史落库，避免逐轮累积脏上下文。
-- **记忆分流**：每轮都会进入当前会话历史；轮后抽取器只把有跨会话价值且未重复的用户信息写入 mem0。
+- **历史持久化**：`ConversationStorage` 只保存真实对话轮次（用户 + 助手）；`build_resource_context` 注入的 Skill 目录和记忆只用于当前模型调用，不随历史落库。
+- **记忆分流**：每轮都会进入当前会话历史；有长期价值的用户消息另由后台任务写入当前会话配置的默认记忆范围。
 - **上下文的两个消费者**：简单问答把完整消息序列直接交给 `create_agent`；多步骤任务把历史序列化进 `WorkflowState.history`，再由规划器和每个步骤执行器分别读取，保证跨步骤、跨轮次的起点/目的地/已确认选择不丢失。
 - **工具轨迹**：核心工具、MCP、知识库检索、Skill/子代理调用都经 `tool_instrumentation.py` 包装成 `tool_step` / `rag_step` 事件推送 SSE，前端据此叠加渲染“检索与调用轨迹”。
 
@@ -695,7 +717,7 @@ Invoke-RestMethod http://127.0.0.1:8080/documents
 | `RERANK_MODEL` | 空 | 可选 rerank 模型；`.env.example` 示例为 `jina-reranker-v3`。 |
 | `RERANK_BINDING_HOST` | 空 | rerank API 地址；`.env.example` 示例为 `https://api.jina.ai`，未以 `/v1/rerank` 结尾时会自动补上。 |
 | `RERANK_API_KEY` | 空 | rerank API Key。三项同时存在才会调用 rerank。 |
-| `MEMORY_ENABLED` | `true` | 是否启用跨会话记忆；`.env.example` 中注释的 `false` 是关闭记忆的覆盖示例。 |
+| `MEMORY_ENABLED` | `true` | 是否启用自动记忆检索和写入；`.env.example` 中注释的 `false` 是关闭记忆的覆盖示例。 |
 | `MEM0_DIR` | `data/mem0` | 本地记忆数据目录。 |
 | `MEM0_MODEL` | `CHAT_MODEL` | 记忆抽取使用的对话模型。 |
 | `MEM0_TOP_K` | `5` | 每轮注入的记忆条数上限。 |
