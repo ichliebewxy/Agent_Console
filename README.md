@@ -802,7 +802,7 @@ Invoke-WebRequest http://127.0.0.1:9091/healthz
 - 确认上传内容确实是 `.doc`，若文档可以转换，优先另存为 `.docx`。
 - 不要直接在 `data/documents` 中手工改名破坏文件格式；上传接口会先 staging，失败不会覆盖旧文件。
 
-旧版二进制 `.ppt`/`.xls` 对底层解析器的兼容性取决于本机库和文件内容；遇到无法解析的文件时，优先在 Office/LibreOffice 中另存为 `.pptx`/`.xlsx` 后再上传。
+旧版二进制 `.ppt` 上传时会先转换为 `.pptx`：Windows 优先调用已安装的 Microsoft PowerPoint 和 `pywin32`，其余环境尝试 LibreOffice。若两者均不可用，请先另存为 `.pptx` 再上传。旧版 `.xls` 的兼容性仍取决于本机解析库和文件内容；无法解析时请先另存为 `.xlsx`。
 
 ### 上传成功但检索不到
 
