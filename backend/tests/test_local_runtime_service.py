@@ -110,6 +110,7 @@ class LocalRuntimeTests(unittest.IsolatedAsyncioTestCase):
         with (
             patch("bash_tool.run_local_command", new=AsyncMock()) as runtime,
             patch("bash_tool.record_bash_audit"),
+            patch("bash_tool.current_permission_mode", return_value="restricted"),
             bind_runtime_context("chain-user", "chain-session"),
         ):
             result = await bash.ainvoke({"command": "echo ok & whoami"})

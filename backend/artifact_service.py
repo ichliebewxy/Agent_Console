@@ -11,7 +11,7 @@ from functools import lru_cache
 from pathlib import Path
 from urllib.parse import quote
 
-from runtime_context import session_files_dir
+from runtime_context import workspace_directory
 from settings import ARTIFACT_SIGNING_KEY, BACKEND_TMP_DIR
 
 _INTERNAL_DIRS = {".cache", ".npm-cache", ".pycache", "__pycache__"}
@@ -23,7 +23,11 @@ DELIVERABLES_DIR = "deliverables"
 
 
 def _artifact_root(user_id: str, session_id: str) -> Path:
-    return session_files_dir(user_id, session_id, create=False) / DELIVERABLES_DIR
+    workspace = workspace_directory(user_id, session_id, create=False)
+    root = workspace / DELIVERABLES_DIR
+    if root.is_symlink() or not root.resolve().is_relative_to(workspace):
+        raise ValueError("Artifact directory escapes the working folder.")
+    return root.resolve()
 
 
 @lru_cache(maxsize=1)
@@ -48,7 +52,15 @@ def _signing_key() -> bytes:
 
 
 def artifact_access_token(user_id: str, session_id: str) -> str:
-    payload = f"{user_id}\0{session_id}".encode("utf-8")
+    from session_resources import SESSION_RESOURCES
+
+    # Preserve folderless-session links across workspace version commits.
+    # Selected-folder links are scoped to that folder, including when switching.
+    selected = SESSION_RESOURCES.get(user_id, session_id).workspace_dir
+    identity = f"{user_id}\0{session_id}"
+    if selected:
+        identity += f"\0{Path(selected).resolve()}"
+    payload = identity.encode("utf-8")
     digest = hmac.new(_signing_key(), payload, hashlib.sha256).digest()
     return base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
 

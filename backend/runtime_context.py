@@ -63,6 +63,37 @@ def current_runtime_context() -> AgentRuntimeContext:
     return context
 
 
+def current_permission_mode() -> str:
+    """Startup/MCP checks stay restricted; chats use their saved session policy."""
+    context = _RUNTIME_CONTEXT.get()
+    if context is None:
+        return "restricted"
+    from session_resources import SESSION_RESOURCES
+
+    return SESSION_RESOURCES.get(context.user_id, context.session_id).permission_mode
+
+
+def workspace_directory(user_id: str, session_id: str, *, create: bool = True) -> Path:
+    """The selected local folder, or the managed folder for a folderless chat."""
+    from session_resources import SESSION_RESOURCES
+
+    selected = SESSION_RESOURCES.get(user_id, session_id).workspace_dir
+    if selected:
+        root = Path(selected).resolve()
+        if not root.is_dir():
+            raise ValueError("所选工作文件夹不存在或无法访问，请重新选择或不选文件夹运行。")
+        return root
+    return session_files_dir(user_id, session_id, create=create).resolve()
+
+
+def resolve_workspace_path(path: str, root: Path | None = None) -> Path:
+    workspace = (root or active_workspace_dir()).resolve()
+    target = (workspace / path).resolve()
+    if current_permission_mode() == "restricted" and not target.is_relative_to(workspace):
+        raise ValueError("Path escapes the current session workspace.")
+    return target
+
+
 def session_workspace_key(user_id: str, session_id: str) -> str:
     raw = f"{user_id}\0{session_id}".encode("utf-8", errors="replace")
     return hashlib.sha256(raw).hexdigest()[:24]
@@ -160,6 +191,10 @@ def workflow_step_dir(
 
 def active_workspace_dir(*, create: bool = True) -> Path:
     context = current_runtime_context()
+    from session_resources import SESSION_RESOURCES
+
+    if SESSION_RESOURCES.get(context.user_id, context.session_id).workspace_dir:
+        return workspace_directory(context.user_id, context.session_id, create=create)
     if context.run_id and context.step_id:
         root = workflow_step_dir(
             context.user_id,

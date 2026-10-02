@@ -18,8 +18,14 @@ from schemas import (
     WorkflowStateResponse,
 )
 from runtime_context import session_async_lock
+from session_resources import SESSION_RESOURCES
 
 router = APIRouter(prefix="/runs", tags=["workflow-runs"])
+
+
+def _require_managed_workspace(state: dict) -> None:
+    if SESSION_RESOURCES.get(state["user_id"], state["session_id"]).workspace_dir:
+        raise HTTPException(status_code=409, detail="本地文件夹模式直接执行任务。请先切回不选文件夹运行，再恢复或回滚原会话工作流。")
 
 
 def _project_to_conversation(state: dict) -> None:
@@ -57,6 +63,7 @@ async def resume(run_id: str, request: WorkflowActionRequest):
     try:
         current = await get_run_state(run_id)
         async with session_async_lock(current["user_id"], current["session_id"]):
+            _require_managed_workspace(current)
             state = await resume_run(run_id, request.model_dump(exclude_none=True))
         _project_to_conversation(state)
         return WorkflowStateResponse(state=state)
@@ -71,6 +78,7 @@ async def fork(run_id: str, request: WorkflowForkRequest):
     try:
         current = await get_run_state(run_id)
         async with session_async_lock(current["user_id"], current["session_id"]):
+            _require_managed_workspace(current)
             state = await fork_run(
                 run_id,
                 request.checkpoint_id,

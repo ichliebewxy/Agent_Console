@@ -1,5 +1,6 @@
-"""Local command execution rooted in each chat session's agent_workspace/sessions directory."""
+"""Local command execution in a selected folder or a managed session directory."""
 import asyncio
+import locale
 import os
 import signal
 import subprocess
@@ -10,6 +11,7 @@ from runtime_context import (
     active_workspace_dir,
     current_runtime_context,
     session_file_lock,
+    current_permission_mode,
 )
 from settings import (
     LOCAL_RUN_COMMAND_MAX_CHARS,
@@ -17,7 +19,7 @@ from settings import (
     LOCAL_RUN_TIMEOUT,
 )
 
-_INTERNAL_DIRS = {".cache", ".npm-cache", ".pycache", "__pycache__"}
+_INTERNAL_DIRS = {".cache", ".npm-cache", ".pycache", "__pycache__", ".git", ".venv", "node_modules", "agent_workspace"}
 _PYTHON_RUNTIME_ENV_VARS = {
     "PYTHONHOME",
     "PYTHONPATH",
@@ -67,7 +69,7 @@ async def _drain(stream: asyncio.StreamReader, limit: int) -> bytes:
     return bytes(captured)
 
 
-def _local_environment(workspace: Path) -> dict[str, str]:
+def _local_environment(workspace: Path, *, relaxed: bool = False) -> dict[str, str]:
     """Keep normal runtimes available while withholding common credential variables."""
     environment = {
         key: value
@@ -81,16 +83,25 @@ def _local_environment(workspace: Path) -> dict[str, str]:
     workspace_text = str(workspace)
     environment.update(
         {
-            "HOME": workspace_text,
             "TMP": workspace_text,
             "TEMP": workspace_text,
             "TMPDIR": workspace_text,
             "XDG_CACHE_HOME": str(workspace / ".cache"),
             "PYTHONDONTWRITEBYTECODE": "1",
+            "PYTHONIOENCODING": "utf-8",
             "npm_config_cache": str(workspace / ".npm-cache"),
         }
     )
+    if not relaxed:
+        environment["HOME"] = workspace_text
     return environment
+
+
+def _decode_output(data: bytes) -> str:
+    try:
+        return data.decode("utf-8").strip()
+    except UnicodeDecodeError:
+        return data.decode(locale.getpreferredencoding(False), errors="replace").strip()
 
 
 async def _terminate_process_tree(process) -> None:
@@ -154,7 +165,7 @@ async def run_local_command(command: str) -> str:
         try:
             kwargs = {
                 "cwd": str(workspace),
-                "env": _local_environment(workspace),
+                "env": _local_environment(workspace, relaxed=current_permission_mode() == "relaxed"),
                 "stdout": asyncio.subprocess.PIPE,
                 "stderr": asyncio.subprocess.PIPE,
             }
@@ -204,8 +215,8 @@ async def run_local_command(command: str) -> str:
             if pending:
                 await asyncio.gather(*pending, return_exceptions=True)
 
-        output = stdout.decode("utf-8", errors="replace").strip()
-        error = stderr.decode("utf-8", errors="replace").strip()
+        output = _decode_output(stdout)
+        error = _decode_output(stderr)
         after = await asyncio.to_thread(_snapshot, workspace)
         changed = sorted(path for path, state in after.items() if before.get(path) != state)
         sections = [f"LOCAL_RUNTIME_EXIT_CODE={process.returncode}"]

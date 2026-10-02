@@ -72,8 +72,18 @@ class SkillAgentRegistry:
     async def run(self, task: str) -> str:
         try:
             skill_agent = await self._get_agent()
+            from resource_context import build_workspace_context
+            from runtime_context import current_runtime_context
+
+            messages = [{"role": "user", "content": task}]
+            try:
+                context = current_runtime_context()
+            except RuntimeError:
+                context = None
+            if context is not None:
+                messages.insert(0, build_workspace_context(context.user_id, context.session_id))
             result = await skill_agent.ainvoke(
-                {"messages": [{"role": "user", "content": task}]},
+                {"messages": messages},
                 config={
                     "recursion_limit": AGENT_TOOL_CALL_LIMIT * 2 + 8,
                     "callbacks": [],

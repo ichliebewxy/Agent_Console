@@ -228,6 +228,14 @@ class _ToolStepQueueProxy:
 def _should_plan_execute(user_text: str) -> bool:
     if not PLAN_EXECUTE_ENABLED:
         return False
+    try:
+        context = current_runtime_context()
+    except RuntimeError:
+        context = None
+    if context and SESSION_RESOURCES.get(context.user_id, context.session_id).workspace_dir:
+        # Managed staging/version rollback cannot cover an existing local project.
+        # Let the main agent perform multi-step project work directly.
+        return False
     return plan_execute.is_multi_step_task(user_text)
 
 

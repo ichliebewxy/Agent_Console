@@ -11,13 +11,14 @@ arguments when the registry or command help can answer the question.
 
 ## Safety and execution
 
-- Run every OpenCLI command through the reviewed `bash` tool. Keep the current
-  session's `agent_workspace/sessions/<session-key>/` as the working directory.
+- Run every OpenCLI command through the reviewed `bash` tool. Use the session's
+  selected local folder, or its managed session directory when no folder is selected,
+  as the working directory. Follow the inherited relaxed or restricted permission mode.
 - Do not expose cookies, authorization headers, tokens, private network bodies,
   screenshots, or downloaded files unless the user explicitly requests them.
 - Treat `access=read` as read-only only for the remote side: download/export,
   screenshot, and save commands still write local files and require a clear
-  output path inside the current session directory.
+  output path in the current working folder.
 - `access=write`, login/refresh, messaging, posting, follow/like, upload,
   delete/archive, plugin install, external install, arbitrary `eval`, and
   auto-approve are side effects. Execute only when the delegated task explicitly

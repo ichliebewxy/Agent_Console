@@ -12,7 +12,7 @@ Object.assign(window.NebulaNestApp.methods, {
 
   async handleSend() {
     const text = this.userInput.trim();
-    if (!text || this.isLoading || this.isComposing) return;
+    if (!text || this.isLoading || this.isComposing || this.sessionResourcesLoading || this.sessionResourcesSaving) return;
 
     this.messages.push({ id: this.createId(), text, isUser: true });
     this.userInput = "";

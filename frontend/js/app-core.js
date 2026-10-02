@@ -15,9 +15,17 @@ window.NebulaNestApp = {
       deletingSessionId: null,
       runtimeConfig: null,
       configLoading: false,
-      sessionResources: { project_id: null, skills: null, memory_read_scopes: ["user", "session"], memory_write_scope: "session" },
+      sessionResources: { project_id: null, skills: null, memory_read_scopes: ["user", "session"], memory_write_scope: "session", workspace_dir: null, permission_mode: "relaxed" },
       sessionSkillSelection: false,
       sessionResourcesLoading: false,
+      sessionResourcesSaving: false,
+      activeWorkspaceDir: null,
+      activePermissionMode: "relaxed",
+      showFolderPicker: false,
+      folderPathInput: "",
+      folderListing: null,
+      folderLoading: false,
+      folderError: "",
       mcpForm: {
         name: "",
         transport: "streamable_http",
@@ -130,6 +138,7 @@ window.NebulaNestApp = {
     this.configureMarked();
     this.restoreIdentity();
     this.restoreState();
+    this.loadSessionResources();
     this.syncShellContext();
     this.$nextTick(() => this.scrollToBottom());
   },
@@ -312,6 +321,15 @@ window.NebulaNestApp = {
   },
 
   watch: {
+    sessionId() {
+      this._resourceRequestId = (this._resourceRequestId || 0) + 1;
+      this.showFolderPicker = false;
+      this.activeWorkspaceDir = null;
+      this.activePermissionMode = "relaxed";
+      this.sessionResources = { project_id: null, skills: null, memory_read_scopes: ["user", "session"], memory_write_scope: "session", workspace_dir: null, permission_mode: "relaxed" };
+      this.sessionSkillSelection = false;
+      this.loadSessionResources();
+    },
     messages: {
       deep: true,
       handler() {

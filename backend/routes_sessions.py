@@ -21,6 +21,16 @@ from skill_service import SKILL_REGISTRY
 router = APIRouter()
 
 
+@router.get("/workspace/folders")
+async def browse_workspace_folders(path: str | None = None):
+    from workspace_selection import list_local_folders
+
+    try:
+        return await asyncio.to_thread(list_local_folders, path)
+    except (ValueError, OSError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @router.get("/sessions/{user_id}/{session_id}/resources")
 async def get_session_resources(user_id: str, session_id: str):
     try:

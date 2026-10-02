@@ -1,7 +1,7 @@
 """The fixed LangChain tool surface for the main coding agent.
 
-The surface mirrors the five tools from ``s02_tool_use`` while keeping all file
-operations inside the current session workspace.  MCP tools are intentionally
+The surface mirrors the five tools from ``s02_tool_use`` with session-selected
+working folders and file permissions. MCP tools are intentionally
 not declared here: they are discovered at startup from ``mcp_servers.json``.
 """
 
@@ -20,17 +20,13 @@ from runtime_context import (
     active_workspace_dir,
     current_runtime_context,
     session_file_lock,
-    session_files_dir,
+    resolve_workspace_path,
 )
 from settings import WORKSPACE_FILE_MAX_CHARS
 
 
 def _safe_path(relative_path: str, root: Path | None = None) -> Path:
-    workspace = (root or session_files_dir(create=True)).resolve()
-    target = (workspace / relative_path).resolve()
-    if not target.is_relative_to(workspace):
-        raise ValueError("Path escapes the current session workspace.")
-    return target
+    return resolve_workspace_path(relative_path, root)
 
 
 def _workspace() -> Path:
@@ -59,7 +55,7 @@ def _read(path: str, limit: int | None, workspace: Path) -> str:
 
 @tool("read_file")
 async def read_file(path: str, limit: int | None = None) -> str:
-    """Read a UTF-8 text file from the current session workspace."""
+    """Read UTF-8 text relative to the working folder; relaxed mode also accepts absolute paths."""
     context = current_runtime_context()
     async with session_file_lock(context.user_id, context.session_id):
         return await asyncio.to_thread(_read, path, limit, _workspace())
@@ -82,7 +78,7 @@ def _write(path: str, content: str, workspace: Path) -> str:
 
 @tool("write_file")
 async def write_file(path: str, content: str) -> str:
-    """Write UTF-8 content to a file in the current session workspace."""
+    """Write UTF-8 content relative to the working folder; relaxed mode also accepts absolute paths."""
     context = current_runtime_context()
     async with session_file_lock(context.user_id, context.session_id):
         return await asyncio.to_thread(_write, path, content, _workspace())
@@ -123,7 +119,7 @@ def _glob(pattern: str, workspace: Path) -> str:
 
 @tool("glob")
 async def glob(pattern: str) -> str:
-    """Find files by a relative glob pattern in the current session workspace."""
+    """Find files relative to the working folder; relaxed mode also accepts absolute glob patterns."""
     context = current_runtime_context()
     async with session_file_lock(context.user_id, context.session_id):
         return await asyncio.to_thread(_glob, pattern, _workspace())

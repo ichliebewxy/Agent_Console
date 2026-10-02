@@ -46,7 +46,64 @@ test("saves a session Skill allowlist and memory policy", async () => {
   assert.deepEqual(JSON.parse(sent.options.body), {
     project_id: "crm", skills: ["pdf"],
     memory_read_scopes: ["project", "session"], memory_write_scope: "session",
+    workspace_dir: null, permission_mode: "relaxed",
   });
+});
+
+test("folder selection preserves saved resources and clearing it returns to folderless mode", async () => {
+  let saved = { project_id: "crm", skills: ["pdf"], memory_read_scopes: ["session"], memory_write_scope: "session", permission_mode: "restricted", workspace_dir: null };
+  const instance = app(async (_url, options) => {
+    if (options) saved = JSON.parse(options.body);
+    return json(saved);
+  });
+  instance.notify = () => {};
+  instance.showFolderPicker = true;
+  await instance.setWorkspaceFolder("D:\\项目 with spaces");
+  assert.equal(instance.activeWorkspaceDir, "D:\\项目 with spaces");
+  assert.equal(instance.activePermissionMode, "restricted");
+  assert.deepEqual(saved.skills, ["pdf"]);
+  assert.equal(saved.project_id, "crm");
+  assert.equal(instance.showFolderPicker, false);
+  await instance.setWorkspaceFolder(null);
+  assert.equal(saved.workspace_dir, null);
+  assert.equal(instance.activeWorkspaceDir, null);
+});
+
+test("an active chat blocks directory and permission changes", async () => {
+  const calls = [];
+  const instance = app(async (url) => { calls.push(url); return json({}); });
+  instance.isLoading = true;
+  await instance.openFolderPicker();
+  await instance.setWorkspaceFolder("D:\\other");
+  await instance.saveSessionResources();
+  assert.deepEqual(calls, []);
+});
+
+test("a stale folder listing cannot replace a newer navigation", async () => {
+  let releaseOld;
+  const instance = app(async (url) => {
+    if (url.endsWith("old")) return new Promise((resolve) => { releaseOld = resolve; });
+    return json({ path: "new", directories: [], roots: [] });
+  });
+  instance.showFolderPicker = true;
+  const oldLoad = instance.browseFolder("old");
+  await instance.browseFolder("new");
+  releaseOld(json({ path: "old", directories: [], roots: [] }));
+  await oldLoad;
+  assert.equal(instance.folderListing.path, "new");
+  assert.equal(instance.folderPathInput, "new");
+  assert.equal(instance.folderLoading, false);
+});
+
+test("a folder save completing after a session switch cannot replace current resources", async () => {
+  let releaseSave;
+  const instance = app(async () => new Promise((resolve) => { releaseSave = resolve; }));
+  const pending = instance.persistSessionResources({ workspace_dir: "D:\\old" });
+  instance.sessionId = "new";
+  instance.activeWorkspaceDir = null;
+  releaseSave(json({ workspace_dir: "D:\\old", skills: null }));
+  assert.equal(await pending, false);
+  assert.equal(instance.activeWorkspaceDir, null);
 });
 
 test("memory panel reads the selected authorized scope", async () => {

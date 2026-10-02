@@ -23,12 +23,14 @@ class SessionResources:
     skills: tuple[str, ...] | None = None
     memory_read_scopes: tuple[str, ...] = ("user", "session")
     memory_write_scope: str = "session"
+    workspace_dir: str | None = None
+    permission_mode: str = "relaxed"
 
 
 def validate_resources(value: dict) -> SessionResources:
     if not isinstance(value, dict):
         raise ValueError("Session resources must be an object.")
-    if set(value) - {"project_id", "skills", "memory_read_scopes", "memory_write_scope"}:
+    if set(value) - {"project_id", "skills", "memory_read_scopes", "memory_write_scope", "workspace_dir", "permission_mode"}:
         raise ValueError("Unknown session resource field.")
     project_id = value.get("project_id") or None
     if project_id is not None and (not isinstance(project_id, str) or not _ID.fullmatch(project_id)):
@@ -49,7 +51,23 @@ def validate_resources(value: dict) -> SessionResources:
         raise ValueError("Invalid memory_write_scope.")
     if project_id is None and ("project" in read or write == "project"):
         raise ValueError("Project memory requires project_id.")
-    return SessionResources(project_id, tuple(skills) if skills is not None else None, tuple(read), write)
+    workspace_dir = value.get("workspace_dir")
+    if workspace_dir is not None:
+        if not isinstance(workspace_dir, str) or "\x00" in workspace_dir or len(workspace_dir) > 4096:
+            raise ValueError("Invalid workspace_dir.")
+        workspace_dir = workspace_dir.strip() or None
+        if workspace_dir is not None:
+            path = Path(workspace_dir).expanduser()
+            if not path.is_absolute():
+                raise ValueError("workspace_dir must be an absolute folder path.")
+            workspace_dir = str(path.resolve())
+    permission_mode = value.get("permission_mode", "relaxed")
+    if permission_mode not in {"relaxed", "restricted"}:
+        raise ValueError("Invalid permission_mode.")
+    return SessionResources(
+        project_id, tuple(skills) if skills is not None else None, tuple(read), write,
+        workspace_dir, permission_mode,
+    )
 
 
 class SessionResourceStore:
@@ -91,6 +109,8 @@ class SessionResourceStore:
     def put(self, user_id: str, session_id: str, value: dict) -> SessionResources:
         key = self._key(user_id, session_id)
         resources = validate_resources(value)
+        if resources.workspace_dir and not Path(resources.workspace_dir).is_dir():
+            raise ValueError("所选文件夹不存在或无法访问。")
         with self._lock:
             data = self._read()
             data[key] = asdict(resources)

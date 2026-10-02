@@ -36,6 +36,7 @@ class CoreLangChainToolTests(unittest.IsolatedAsyncioTestCase):
             root = Path(directory).resolve()
             with (
                 patch("runtime_context.BACKEND_TMP_DIR", root),
+                patch("runtime_context.current_permission_mode", return_value="restricted"),
                 bind_runtime_context("langchain-user", "langchain-session"),
             ):
                 written = await write_file.ainvoke(
@@ -66,6 +67,7 @@ class CoreLangChainToolTests(unittest.IsolatedAsyncioTestCase):
             root = Path(directory).resolve()
             with (
                 patch("runtime_context.BACKEND_TMP_DIR", root),
+                patch("runtime_context.current_permission_mode", return_value="restricted"),
                 bind_runtime_context("default-root-user", "default-root-session"),
             ):
                 resolved = _safe_path("notes/demo.txt")

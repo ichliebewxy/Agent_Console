@@ -1,0 +1,31 @@
+.chat-layout { position: relative; grid-template-rows: auto minmax(0, 1fr) auto; }
+.workspace-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+.workspace-path { flex: 1; min-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .85rem; }
+.workspace-permission { color: var(--green); font-size: .8rem; }
+.session-resource-fields { display: contents; border: 0; padding: 0; margin: 0; }
+.folder-picker-backdrop { position: fixed; inset: 0; z-index: 20; background: #10231f66; display: grid; place-items: center; padding: 16px; }
+.folder-picker { width: min(640px, 100%); max-height: 88vh; display: flex; flex-direction: column; gap: 14px; box-shadow: var(--shadow-lg); }
+.folder-picker header { gap: 16px; }
+.folder-picker header p { margin-bottom: 0; }
+.folder-path-form label { display: block; font-size: .85rem; margin-bottom: 8px; }
+.folder-path-form > div { display: flex; gap: 8px; }
+.folder-path-form input { flex: 1; min-width: 0; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); padding: 10px; }
+.folder-navigation { display: flex; flex-wrap: wrap; gap: 8px; }
+.folder-navigation button { border: 1px solid var(--line); padding: 6px 12px; border-radius: var(--radius-sm); background: var(--surface-soft); color: var(--ink); }
+.folder-list { min-height: 120px; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--radius); }
+.folder-list > button { width: 100%; display: flex; align-items: center; gap: 12px; padding: 12px; border: 0; border-bottom: 1px solid var(--line); background: var(--surface); text-align: left; color: var(--ink); overflow-wrap: anywhere; }
+.folder-list > button:hover { background: var(--surface-soft); }
+.folder-list > button i:first-child { color: var(--green); }
+.folder-list > button i:last-child { margin-left: auto; }
+.folder-list p { padding: 12px; color: var(--muted); }
+.folder-picker footer { display: flex; justify-content: space-between; gap: 12px; }
+@media (max-width: 600px) { .workspace-controls { padding: 10px 14px; } .workspace-path { flex-basis: 50%; } }

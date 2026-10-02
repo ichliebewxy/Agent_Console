@@ -1,4 +1,4 @@
-"""Constrained text-file tools for the skills agent workspace."""
+"""Text-file tools sharing the main agent's working folder and permission mode."""
 import asyncio
 import glob
 import os
@@ -8,17 +8,14 @@ from langchain_core.tools import tool
 from runtime_context import (
     current_runtime_context,
     session_file_lock,
-    session_files_dir,
+    active_workspace_dir,
+    resolve_workspace_path,
 )
 from settings import WORKSPACE_FILE_MAX_CHARS
 
 
 def _safe_path(relative_path: str, root: Path | None = None) -> Path:
-    workspace = (root or session_files_dir(create=True)).resolve()
-    target = (workspace / relative_path).resolve()
-    if not target.is_relative_to(workspace):
-        raise ValueError("Path escapes the current session workspace.")
-    return target
+    return resolve_workspace_path(relative_path, root)
 
 
 def _list_workspace_files(pattern: str, workspace: Path) -> str:
@@ -39,10 +36,10 @@ def _list_workspace_files(pattern: str, workspace: Path) -> str:
 
 @tool
 async def list_workspace_files(pattern: str = "**/*") -> str:
-    """List up to 200 files in the current agent_workspace/sessions session using a relative glob."""
+    """List up to 200 files relative to the working folder, or by absolute glob in relaxed mode."""
     context = current_runtime_context()
     async with session_file_lock(context.user_id, context.session_id):
-        workspace = session_files_dir(create=True)
+        workspace = active_workspace_dir(create=True)
         return await asyncio.to_thread(_list_workspace_files, pattern, workspace)
 
 
@@ -68,10 +65,10 @@ def _read_workspace_file(path: str, workspace: Path) -> str:
 
 @tool
 async def read_workspace_file(path: str) -> str:
-    """Read a UTF-8 text file from the current agent_workspace/sessions session by relative path."""
+    """Read a UTF-8 text file relative to the working folder, or by absolute path in relaxed mode."""
     context = current_runtime_context()
     async with session_file_lock(context.user_id, context.session_id):
-        workspace = session_files_dir(create=True)
+        workspace = active_workspace_dir(create=True)
         return await asyncio.to_thread(_read_workspace_file, path, workspace)
 
 
@@ -103,10 +100,10 @@ def _write_workspace_file(
 
 @tool
 async def write_workspace_file(path: str, content: str, overwrite: bool = False) -> str:
-    """Write a UTF-8 text artifact under the current agent_workspace/sessions session; overwrite must be explicit."""
+    """Write a UTF-8 file using the working folder and permission mode; overwrite must be explicit."""
     context = current_runtime_context()
     async with session_file_lock(context.user_id, context.session_id):
-        workspace = session_files_dir(create=True)
+        workspace = active_workspace_dir(create=True)
         return await asyncio.to_thread(
             _write_workspace_file,
             path,

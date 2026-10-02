@@ -28,15 +28,18 @@ async def list_artifacts(
     limit: int = Query(default=200, ge=1, le=500),
     token: str | None = Query(default=None),
 ):
-    if not verify_artifact_access(user_id, session_id, token or ""):
+    try:
+        async with session_async_lock(user_id, session_id):
+            if not verify_artifact_access(user_id, session_id, token or ""):
+                raise HTTPException(status_code=404, detail="Artifact session not found")
+            rows = await asyncio.to_thread(
+                list_session_artifacts,
+                user_id,
+                session_id,
+                limit,
+            )
+    except (OSError, ValueError):
         raise HTTPException(status_code=404, detail="Artifact session not found")
-    async with session_async_lock(user_id, session_id):
-        rows = await asyncio.to_thread(
-            list_session_artifacts,
-            user_id,
-            session_id,
-            limit,
-        )
     return ArtifactListResponse(artifacts=[ArtifactInfo(**row) for row in rows])
 
 
@@ -47,10 +50,10 @@ async def download_artifact(
     artifact_path: str,
     token: str | None = Query(default=None),
 ):
-    if not verify_artifact_access(user_id, session_id, token or ""):
-        raise HTTPException(status_code=404, detail="Artifact not found")
     try:
         async with session_async_lock(user_id, session_id):
+            if not verify_artifact_access(user_id, session_id, token or ""):
+                raise HTTPException(status_code=404, detail="Artifact not found")
             handle, path, stat = await asyncio.to_thread(
                 open_session_artifact,
                 user_id,

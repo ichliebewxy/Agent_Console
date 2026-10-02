@@ -8,7 +8,7 @@ from langchain_core.tools import tool
 from config_service import CONFIG_STORE
 from local_runtime_service import run_local_command
 from ops_store import record_bash_audit
-from runtime_context import current_runtime_context
+from runtime_context import current_permission_mode, current_runtime_context
 from settings import LOCAL_RUN_COMMAND_MAX_CHARS
 
 
@@ -138,8 +138,10 @@ def review_bash_command(
         return PermissionDecision("deny", "invalid-empty", "命令不能为空")
     if "\x00" in command or len(command) > LOCAL_RUN_COMMAND_MAX_CHARS:
         return PermissionDecision("deny", "invalid-command", "命令包含 NUL 或超过长度限制")
+    relaxed = current_permission_mode() == "relaxed"
     shell_control = _unquoted_shell_control(command)
-    if shell_control:
+    # Keep dynamic external operations individually reviewable in either mode.
+    if shell_control and (not relaxed or re.search(r"\bopencli\b", command, re.IGNORECASE)):
         return PermissionDecision(
             "deny",
             "deny-shell-chaining",
@@ -148,6 +150,8 @@ def review_bash_command(
 
     config = CONFIG_STORE.bash_permissions()
     for rule in config.get("deny") or []:
+        if relaxed and rule.get("id") == "deny-workspace-escape":
+            continue
         for pattern in rule.get("patterns") or []:
             try:
                 if re.search(pattern, command, flags=re.IGNORECASE):
@@ -230,6 +234,12 @@ def review_bash_command(
             except re.error:
                 continue
 
+    if relaxed:
+        return PermissionDecision(
+            "allow", "relaxed-local-command",
+            "当前会话使用宽松权限，允许本地命令、绝对路径和 shell 组合命令。",
+        )
+
     return PermissionDecision(
         "deny",
         "default-deny",
@@ -248,7 +258,7 @@ async def bash(
     user_authorized_side_effect: bool = False,
     opencli_access: Literal["unknown", "read", "write", "p4"] = "unknown",
 ) -> str:
-    """Review and run one command in agent_workspace/sessions; OpenCLI access must match live registry evidence."""
+    """Run in the selected working folder with session permissions; OpenCLI access must match registry evidence."""
     command = (command or "").strip()
     decision = review_bash_command(
         command,

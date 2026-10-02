@@ -125,6 +125,8 @@ class SessionResourcesRequest(BaseModel):
     skills: Optional[List[RuntimeId]] = None
     memory_read_scopes: List[Literal["user", "project", "session"]] = Field(default_factory=lambda: ["user", "session"])
     memory_write_scope: Literal["user", "project", "session"] = "session"
+    workspace_dir: Optional[str] = Field(default=None, max_length=4096)
+    permission_mode: Literal["relaxed", "restricted"] = "relaxed"
 
 
 class WorkflowActionRequest(BaseModel):

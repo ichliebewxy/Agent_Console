@@ -6,7 +6,7 @@
   <meta name="theme-color" content="#122b22">
   <title>Agent Console</title>
   <link rel="icon" type="image/png" href="assets/agent-console-logo.png">
-  <link rel="stylesheet" href="style.css?v=ui-refresh-1">
+  <link rel="stylesheet" href="style.css?v=workspace-2">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=Space+Grotesk:wght@500;600;700&amp;display=swap" rel="stylesheet">
@@ -78,6 +78,12 @@
       </header>
 
       <section v-show="activeView === 'chat'" class="chat-layout">
+        <div class="workspace-controls" aria-label="运行目录与权限">
+          <button type="button" class="secondary-action inline" :disabled="isLoading || sessionResourcesLoading || sessionResourcesSaving" @click="openFolderPicker"><i class="fas fa-folder-open"></i>选择文件夹</button>
+          <span class="workspace-path" :title="activeWorkspaceDir || '使用独立会话目录'">{{ activeWorkspaceDir || '不选文件夹运行' }}</span>
+          <button v-if="activeWorkspaceDir" type="button" class="secondary-action inline" :disabled="isLoading || sessionResourcesLoading || sessionResourcesSaving" @click="setWorkspaceFolder(null)">不选文件夹运行</button>
+          <span class="workspace-permission">{{ activePermissionMode === 'restricted' ? '受限权限' : '宽松权限' }}</span>
+        </div>
         <div class="chat-stream" ref="chatContainer" :aria-busy="isLoading">
           <div v-if="messages.length === 0" class="empty-state">
             <i class="fas fa-compass"></i>
@@ -285,7 +291,7 @@
             @input="autoResize"
           ></textarea>
           <button v-if="isLoading" type="button" class="stop" title="终止" aria-label="终止回答" @click="handleStop"><i class="fas fa-stop"></i></button>
-          <button v-else type="submit" title="发送" aria-label="发送消息" :disabled="!userInput.trim()"><i class="fas fa-paper-plane"></i></button>
+          <button v-else type="submit" title="发送" aria-label="发送消息" :disabled="!userInput.trim() || sessionResourcesLoading || sessionResourcesSaving"><i class="fas fa-paper-plane"></i></button>
         </form>
       </section>
 
@@ -393,6 +399,9 @@
         <section class="config-card session-resource-card">
           <header><div><h4>当前会话资源：{{ sessionId }}</h4><p>选择本会话可加载的 Skill，以及记忆的读取和写入范围。初始配置将新记忆写入本会话。</p></div></header>
           <form class="config-form" @submit.prevent="saveSessionResources" v-if="!sessionResourcesLoading">
+            <fieldset class="session-resource-fields" :disabled="isLoading || sessionResourcesSaving">
+            <label class="wide">运行文件夹（留空即可不选文件夹运行）<input v-model="sessionResources.workspace_dir" placeholder="例如 D:\work\my-project，或 /home/user/project"></label>
+            <label class="wide">文件与命令权限<select v-model="sessionResources.permission_mode"><option value="relaxed">宽松：本地路径访问与常规命令</option><option value="restricted">受限：工作目录内与命令白名单</option></select></label>
             <label class="wide">项目 ID（启用项目记忆时填写）<input v-model="sessionResources.project_id" pattern="[A-Za-z0-9][A-Za-z0-9_.-]*" placeholder="例如 crm"></label>
             <label class="check-line wide"><input v-model="sessionSkillSelection" type="checkbox" @change="onSessionSkillModeChange"> 为当前会话单独选择 Skills（不勾选时继承用户和项目设置）</label>
             <div v-if="sessionSkillSelection" class="wide tool-chips">
@@ -402,7 +411,8 @@
               <label v-for="scope in ['user', 'project', 'session']" :key="scope" class="check-line"><input v-model="sessionResources.memory_read_scopes" :value="scope" type="checkbox" :disabled="scope === 'project' && !sessionResources.project_id"> {{ scope }}</label>
             </div></div>
             <label>新记忆写入范围<select v-model="sessionResources.memory_write_scope"><option value="session">当前会话</option><option value="user">当前用户</option><option value="project" :disabled="!sessionResources.project_id">当前项目</option></select></label>
-            <button class="primary-action" type="submit">保存会话配置</button>
+            <button class="primary-action" type="submit">{{ sessionResourcesSaving ? '保存中' : '保存会话配置' }}</button>
+            </fieldset>
           </form>
         </section>
 
@@ -454,7 +464,7 @@
         </div>
 
         <section v-if="runtimeConfig && runtimeConfig.permissions" class="config-card permission-card">
-          <header><div><h4>Bash 自动审查</h4><p>优先级固定为 deny → allow → default deny；所有决策写入 Bash audit。</p></div></header>
+          <header><div><h4>Bash 自动审查</h4><p>默认宽松权限允许常规命令、绝对路径及组合命令；受限权限使用目录限制和命令白名单。系统破坏与外部写操作仍按以下规则审查，所有决策记录到审计。</p></div></header>
           <div class="permission-columns">
             <div><strong>拒绝规则</strong><span v-for="rule in runtimeConfig.permissions.bash.deny" :key="rule.id"><b>{{ rule.id }}</b>{{ rule.description }}</span></div>
             <div><strong>需明确授权</strong><span v-for="rule in (runtimeConfig.permissions.bash.authorize || [])" :key="rule.id"><b>{{ rule.id }}</b>{{ rule.description }}</span></div>
@@ -541,14 +551,27 @@
       </section>
     </aside>
 
+    <div v-if="showFolderPicker" class="folder-picker-backdrop" @click.self="showFolderPicker = false" @keydown.esc="showFolderPicker = false">
+      <section class="folder-picker config-card" role="dialog" aria-modal="true" aria-labelledby="folder-picker-title">
+        <header><div><h4 id="folder-picker-title">选择运行文件夹</h4><p>浏览运行服务的电脑上的文件夹。选择后，文件操作会直接作用于该目录。</p></div><button type="button" class="topbar-icon" aria-label="关闭文件夹选择" @click="showFolderPicker = false"><i class="fas fa-xmark"></i></button></header>
+        <form class="folder-path-form" @submit.prevent="browseFolder()"><label for="folder-path">文件夹绝对路径</label><div><input id="folder-path" v-model="folderPathInput" placeholder="输入文件夹路径"><button type="submit" class="secondary-action inline" :disabled="folderLoading">打开</button></div></form>
+        <div v-if="folderListing" class="folder-navigation"><button v-for="root in folderListing.roots" :key="root" type="button" @click="browseFolder(root)" :disabled="folderLoading">{{ root }}</button><button type="button" :disabled="!folderListing.parent || folderLoading" @click="browseFolder(folderListing.parent)">上一级</button></div>
+        <p v-if="folderError" class="config-error" role="alert">{{ folderError }}</p>
+        <div class="folder-list" :aria-busy="folderLoading">
+          <p v-if="folderLoading">正在读取文件夹…</p>
+          <template v-else-if="folderListing"><button v-for="folder in folderListing.directories" :key="folder.path" type="button" @click="browseFolder(folder.path)"><i class="fas fa-folder"></i>{{ folder.name }}<i class="fas fa-chevron-right"></i></button><p v-if="!folderListing.directories.length">此文件夹没有子文件夹，可直接选择。</p><p v-if="folderListing.truncated">仅显示前 1000 个子文件夹，可输入完整路径打开。</p></template>
+        </div>
+        <footer><button type="button" class="secondary-action inline" :disabled="isLoading || sessionResourcesLoading || sessionResourcesSaving" @click="setWorkspaceFolder(null)">不选文件夹运行</button><button type="button" class="primary-action" :disabled="!folderListing || folderLoading || !!folderError || isLoading || sessionResourcesLoading || sessionResourcesSaving" @click="setWorkspaceFolder(folderPathInput)">{{ sessionResourcesSaving ? '保存中' : '使用此文件夹' }}</button></footer>
+      </section>
+    </div>
     <div v-if="toast" class="toast" role="status" aria-live="polite">{{ toast }}</div>
   </div>
 
-  <script src="js/app-core.js?v=ui-refresh-1"></script>
-  <script src="js/chat.js?v=ui-refresh-1"></script>
+  <script src="js/app-core.js?v=workspace-2"></script>
+  <script src="js/chat.js?v=workspace-2"></script>
   <script src="js/knowledge.js?v=ui-refresh-1"></script>
   <script src="js/config.js?v=ui-refresh-1"></script>
-  <script src="js/session-resources.js?v=ui-refresh-1"></script>
+  <script src="js/session-resources.js?v=workspace-2"></script>
   <script src="js/memory.js?v=ui-refresh-1"></script>
   <script src="js/formatters.js?v=ui-refresh-1"></script>
   <script src="script.js?v=ui-refresh-1"></script>

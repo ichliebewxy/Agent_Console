@@ -59,8 +59,8 @@ class MemoryScopeTests(unittest.TestCase):
                 with bind_runtime_context("user", "b"):
                     b = asyncio.run(resource_context.build_resource_context(history, "question", "user", "b"))
             self.assertEqual(len(history), 1)
-            self.assertIn("pdf", a[1].content)
-            self.assertNotIn("- pdf:", b[1].content)
+            self.assertIn("pdf", a[2].content)
+            self.assertNotIn("- pdf:", b[2].content)
             self.assertNotEqual(a[0].content, b[0].content)
 
 

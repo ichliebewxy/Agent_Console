@@ -37,12 +37,12 @@ Agent Console 是一个面向本地可信环境的 LangChain 多 Agent + RAG 工
 | 混合检索 | BGE-M3 dense embedding + BM25 sparse embedding + Milvus Hybrid Search + RRF 融合，可选接入 rerank API。 |
 | 查询扩展 | 初始召回相关性不足时，LangGraph 自动选择 Step-back、HyDE 或 complex 策略再次召回。 |
 | `.doc` 兼容 | `.docx` 走 OpenXML；旧版二进制 `.doc` 在 Windows 优先使用 Word COM，并降级到 LibreOffice/antiword。中文路径会先复制到 ASCII 临时路径。 |
-| 会话工作区 | 每个 `user_id/session_id` 拥有独立的 `agent_workspace/sessions/<session-key>/`；脚本、缓存、预览等中间文件留在会话目录，最终产物统一放在其 `deliverables/` 子目录。 |
-| 工具安全 | Bash 默认拒绝，执行顺序为 deny → authorize → allow → default deny；阻止路径逃逸、shell 拼接、危险系统命令和高风险 OpenCLI。 |
+| 运行文件夹 | 可以选择服务所在电脑的本地文件夹，直接运行命令和编辑文件；也可以不选文件夹，使用独立的 `agent_workspace/sessions/<session-key>/`。下载产物保存在当前工作目录的 `deliverables/`。 |
+| 工具权限 | 会话默认采用宽松权限，允许绝对路径、父目录访问、常规本地命令与 shell 组合；可切换到工作目录限制与命令白名单。系统破坏类命令和高风险 OpenCLI 仍被拦截。 |
 | 可观察但不扰人 | 前端展示当前对话实际产生的工具/RAG 轨迹和引用；没有引用时不展示检索轨迹。旧的“运行回调”只读页面和公开回调接口不再提供，失败记录仅留在服务端诊断文件。 |
 | Goal 模式 | `/goal 完成条件` 保存会话目标；独立判断器根据实际执行记录判断完成情况，未达标则自动续轮。 |
 | 调用上限 | 每次请求最多进行 100 轮 Agent 模型调用，达到上限立即熔断；工具调用另有默认 250 次的独立上限。 |
-| Durable Plan-and-Execute | 多步骤任务由 LangGraph 状态图执行；每个 run 使用独立 `thread_id` 和 SQLite 检查点，步骤在私有 staging 中事务化执行，失败可重试、修改、跳过、终止或从历史检查点回滚。 |
+| Durable Plan-and-Execute | 不选文件夹时，多步骤任务由 LangGraph 状态图执行；每个 run 使用独立 `thread_id` 和 SQLite 检查点。选中文件夹时由主 Agent 直接完成多步骤任务，修改直接落在原目录。 |
 | 分范围记忆（mem0） | 每个会话独立选择用户、项目、会话记忆的读取范围与默认写入范围。 |
 
 ## Goal 模式与循环熔断
@@ -88,6 +88,8 @@ Agent Console 是一个面向本地可信环境的 LangChain 多 Agent + RAG 工
 ```json
 {"project_id":"crm","skills":["pdf"],"memory_read_scopes":["user","project","session"],"memory_write_scope":"session"}
 ```
+
+同一接口支持 `workspace_dir` 和 `permission_mode`：`workspace_dir` 是服务所在电脑上已存在的绝对文件夹路径，`null` 或空白字符串表示不选文件夹；`permission_mode` 为 `relaxed`（默认）或 `restricted`。旧会话没有这两个字段时，自动采用不选文件夹和宽松权限。文件夹路径不改变项目记忆的 `project_id`。
 
 项目 Skill 绑定示例：`{"bindings":{"pdf":false,"code-review":true}}`。这仍是面向本地可信环境的逻辑隔离；`user_id` 来自请求参数，部署到多用户环境前必须增加身份认证，并由服务端确定用户和项目归属。
 
@@ -739,7 +741,13 @@ Invoke-RestMethod http://127.0.0.1:8080/documents
 
 ### 对话
 
-直接在聊天框输入问题。需要知识库时可明确说“根据知识库回答”；需要网页/下载/浏览器时，主 Agent 会委派 OpenCLI Skill。模型生成的最终文件会显示在回答下方的 Artifact 卡片中（需位于会话 workspace 的 `deliverables/` 目录）。
+聊天页顶部点击“选择文件夹”，浏览本机磁盘或输入绝对路径，再点击“使用此文件夹”。主 Agent 和 Skills 小 Agent 的文件工具与命令会使用同一个选中目录；选择后可点击“不选文件夹运行”切回独立会话目录。每个会话分别保存文件夹和权限设置，刷新页面或切回历史会话会恢复它们。
+
+配置中心的“当前会话资源”也支持直接填写文件夹路径和切换宽松／受限权限，点击“保存会话配置”后生效。任务运行期间不能修改这项配置。
+
+直接在聊天框输入问题。需要知识库时可明确说“根据知识库回答”；需要网页/下载/浏览器时，主 Agent 会委派 OpenCLI Skill。最终下载文件保存在当前工作目录的 `deliverables/`，并显示在回答下方的 Artifact 卡片中。删除会话只清理应用管理的会话数据，不删除所选本地项目文件夹。切换文件夹后，原文件夹的产物下载链接会失效，切回原目录后可以再次获取。
+
+本地文件夹模式直接修改项目，不使用会话 staging 的自动回滚。已有会话工作流需要先切回“不选文件夹运行”再恢复或回滚；宽松模式通过绝对路径操作的外部文件同样不属于会话事务回滚范围。
 
 ### 配置中心
 
@@ -783,9 +791,9 @@ Invoke-RestMethod http://127.0.0.1:8080/documents
 
 ## 安全边界
 
-- Bash 默认 `deny`，只有明确允许的开发工具和会话目录命令才能执行。
-- 阻止提权、关机、磁盘格式化、系统配置破坏、路径逃逸、未加引号 shell 链接、命令替换、下载后直接执行和危险 OpenCLI 操作。
-- `read_file/write_file/edit_file/glob` 将路径限制在当前会话目录；Artifact 下载拒绝绝对路径、`..` 和符号链接。
+- 会话默认为 `relaxed`：允许常规本地命令、绝对路径、父目录访问及 shell 组合。配置中心可改为 `restricted`，恢复工作目录内的文件访问与 Bash 命令白名单。
+- 两种模式都保留提权、关机、磁盘格式化、系统配置破坏、下载后直接执行和高风险 OpenCLI 的审查；OpenCLI 外部写操作仍须由用户明确要求，并使用独立命令进行审查。
+- Artifact 下载始终限制在当前工作目录的 `deliverables/`，拒绝绝对路径、`..` 和符号链接；本地文件夹的下载 token 绑定到该目录。
 - stdio MCP 会复用 Bash 审查，拒绝内联解释器代码和未使用 `--no-install` 的 `npx`；不要在配置中放远程安装命令。
 - MCP URL、headers、args、env 通过 API 返回时会脱敏；真实密钥只应来自环境变量占位符。
 - `ARTIFACT_SIGNING_KEY` 应在生产环境显式设置并安全保管；更换 key 会使旧下载链接失效。
