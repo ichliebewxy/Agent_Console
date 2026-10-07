@@ -1,10 +1,17 @@
 .context-panel {
+  width: var(--context-w);
+  max-width: var(--context-w);
+  height: 100vh;
+  height: 100dvh;
   min-width: 0;
   min-height: 0;
+  max-height: 100dvh;
   padding: 18px 16px 22px;
   border-left: 1px solid var(--line);
   background: rgba(255, 255, 255, 0.76);
+  overflow-x: hidden;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .context-head {
@@ -119,6 +126,7 @@
 
 .context-timeline {
   position: relative;
+  min-width: 0;
   margin-top: 15px;
   display: grid;
 }
@@ -135,6 +143,7 @@
 
 .context-step {
   position: relative;
+  min-width: 0;
   min-height: 50px;
   padding: 7px 2px 7px 39px;
   display: grid;
@@ -173,6 +182,8 @@
 .context-step strong,
 .context-step small {
   display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .context-step strong {

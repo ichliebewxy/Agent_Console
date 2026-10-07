@@ -124,10 +124,11 @@ a:focus-visible {
   overflow: hidden;
   display: grid;
   grid-template-columns: var(--rail-w) 1fr;
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .shell.has-context {
-  grid-template-columns: var(--rail-w) minmax(0, 1fr) var(--context-w);
+  grid-template-columns: var(--rail-w) minmax(0, 1fr) minmax(0, var(--context-w));
 }
 
 /* ── 侧边导航轨 ─────────────────────────────────────── */
